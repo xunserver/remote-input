@@ -21,6 +21,10 @@
       this.name = "AIInputError";
       this.code = code;
     }
+
+    toString() {
+      return `${this.name} [${this.code}]: ${this.message}`;
+    }
   }
 
   function encodeControlFrame(type, taskId, totalBytes, totalChunks) {
@@ -76,13 +80,137 @@
     return status;
   }
 
+  function assertTextSize(bytes) {
+    if (bytes.byteLength > MAX_TEXT_BYTES) {
+      throw new AIInputError("TEXT_TOO_LARGE", "Text exceeds 16 KB UTF-8 limit");
+    }
+  }
+
+  class AIInputDevice {
+    constructor(device, server, controlChar, dataChar, statusChar) {
+      this.device = device;
+      this.server = server;
+      this.controlChar = controlChar;
+      this.dataChar = dataChar;
+      this.statusChar = statusChar;
+      this.taskId = 1;
+      this.pending = null;
+      this.connected = true;
+      this._statusNotificationsStarted = false;
+      this._onDisconnected = this._onDisconnected.bind(this);
+      this._onStatusChanged = this._onStatusChanged.bind(this);
+      this.device.addEventListener("gattserverdisconnected", this._onDisconnected);
+    }
+
+    async startNotifications() {
+      await this.statusChar.startNotifications();
+      this._statusNotificationsStarted = true;
+      this.statusChar.addEventListener("characteristicvaluechanged", this._onStatusChanged);
+    }
+
+    async typeText(text) {
+      if (!this.connected) {
+        throw new AIInputError("NOT_CONNECTED", "Device is not connected");
+      }
+      if (this.pending) {
+        throw new AIInputError("CLIENT_BUSY", "A typeText call is already pending");
+      }
+
+      const bytes = new TextEncoder().encode(text);
+      assertTextSize(bytes);
+
+      const taskId = this.taskId;
+      this.taskId = (this.taskId % 65535) + 1;
+
+      const frames = createDataFrames(taskId, bytes);
+      const startFrame = encodeControlFrame(CONTROL_START, taskId, bytes.byteLength, frames.length);
+      const commitFrame = encodeControlFrame(CONTROL_COMMIT, taskId, bytes.byteLength, frames.length);
+
+      const completion = new Promise((resolve, reject) => {
+        this.pending = { taskId, resolve, reject };
+      });
+
+      try {
+        await this.controlChar.writeValueWithResponse(startFrame);
+        for (const frame of frames) {
+          await this.dataChar.writeValueWithResponse(frame);
+        }
+        await this.controlChar.writeValueWithResponse(commitFrame);
+      } catch (error) {
+        this._rejectPending("BLE_WRITE_FAILED", error.message || "BLE write failed");
+      }
+
+      return completion;
+    }
+
+    async getStatus() {
+      if (!this.connected) {
+        throw new AIInputError("NOT_CONNECTED", "Device is not connected");
+      }
+      const value = await this.statusChar.readValue();
+      return decodeStatusFrame(value);
+    }
+
+    async disconnect() {
+      this.connected = false;
+      this._rejectPending("DISCONNECTED", "Device disconnected");
+
+      try {
+        this.statusChar.removeEventListener("characteristicvaluechanged", this._onStatusChanged);
+        if (this._statusNotificationsStarted && this.statusChar.stopNotifications) {
+          await this.statusChar.stopNotifications();
+          this._statusNotificationsStarted = false;
+        }
+      } catch (_) {
+        // Ignore cleanup errors during disconnect.
+      }
+
+      this.device.removeEventListener("gattserverdisconnected", this._onDisconnected);
+      if (this.device.gatt && this.device.gatt.connected) {
+        this.device.gatt.disconnect();
+      }
+    }
+
+    _onStatusChanged(event) {
+      const status = decodeStatusFrame(event.target.value);
+      if (!this.pending || status.lastTaskId !== this.pending.taskId) {
+        return;
+      }
+      if (status.state === "done") {
+        const pending = this.pending;
+        this.pending = null;
+        pending.resolve(status);
+        return;
+      }
+      if (status.state === "error") {
+        this._rejectPending(`DEVICE_ERROR_${status.lastErrorCode}`, "Device returned an error");
+      }
+    }
+
+    _onDisconnected() {
+      this.connected = false;
+      this._rejectPending("DISCONNECTED", "Device disconnected");
+    }
+
+    _rejectPending(code, message) {
+      if (!this.pending) {
+        return;
+      }
+      const pending = this.pending;
+      this.pending = null;
+      pending.reject(new AIInputError(code, message));
+    }
+  }
+
   const AIInput = {
     connect,
     AIInputError,
+    AIInputDevice,
     _internals: {
       encodeControlFrame,
       createDataFrames,
       decodeStatusFrame,
+      assertTextSize,
       constants: {
         VERSION,
         SERVICE_UUID,
@@ -99,7 +227,28 @@
   };
 
   async function connect() {
-    throw new AIInputError("WEB_BLUETOOTH_UNSUPPORTED", "Connection is implemented in the next task");
+    if (!navigator.bluetooth) {
+      throw new AIInputError("WEB_BLUETOOTH_UNSUPPORTED", "Web Bluetooth is not available");
+    }
+
+    let device;
+    try {
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE_UUID] }],
+        optionalServices: [SERVICE_UUID],
+      });
+    } catch (error) {
+      throw new AIInputError("DEVICE_SELECTION_CANCELLED", error.message || "Device selection cancelled");
+    }
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    const controlChar = await service.getCharacteristic(CONTROL_UUID);
+    const dataChar = await service.getCharacteristic(DATA_UUID);
+    const statusChar = await service.getCharacteristic(STATUS_UUID);
+    const aiDevice = new AIInputDevice(device, server, controlChar, dataChar, statusChar);
+    await aiDevice.startNotifications();
+    return aiDevice;
   }
 
   global.AIInput = AIInput;

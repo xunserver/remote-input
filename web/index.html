@@ -37,26 +37,40 @@
       typeButton.disabled = !value;
     }
 
+    function formatError(error) {
+      return `${error.code || "ERROR"}: ${error.message}`;
+    }
+
     connectButton.addEventListener("click", async () => {
       try {
         device = await AIInput.connect();
         setConnected(true);
         statusOutput.textContent = "已连接";
       } catch (error) {
-        statusOutput.textContent = `${error.code || "ERROR"}: ${error.message}`;
+        statusOutput.textContent = formatError(error);
       }
     });
 
     disconnectButton.addEventListener("click", async () => {
-      if (device) await device.disconnect();
-      device = null;
-      setConnected(false);
-      statusOutput.textContent = "已断开";
+      try {
+        if (device) await device.disconnect();
+        statusOutput.textContent = "已断开";
+      } catch (error) {
+        statusOutput.textContent = formatError(error);
+      } finally {
+        device = null;
+        setConnected(false);
+      }
     });
 
     statusButton.addEventListener("click", async () => {
-      const status = await device.getStatus();
-      statusOutput.textContent = JSON.stringify(status, null, 2);
+      try {
+        const status = await device.getStatus();
+        statusOutput.textContent = JSON.stringify(status, null, 2);
+      } catch (error) {
+        statusOutput.textContent = formatError(error);
+        if (!device || !device.connected) setConnected(false);
+      }
     });
 
     typeButton.addEventListener("click", async () => {
@@ -65,9 +79,9 @@
         await device.typeText(textInput.value);
         statusOutput.textContent = "输入完成";
       } catch (error) {
-        statusOutput.textContent = `${error.code || "ERROR"}: ${error.message}`;
+        statusOutput.textContent = formatError(error);
       } finally {
-        typeButton.disabled = false;
+        typeButton.disabled = !device || !device.connected;
       }
     });
   </script>
