@@ -84,13 +84,16 @@
       createDataFrames,
       decodeStatusFrame,
       constants: {
+        VERSION,
         SERVICE_UUID,
         CONTROL_UUID,
         DATA_UUID,
         STATUS_UUID,
         CONTROL_START,
         CONTROL_COMMIT,
+        DATA_FRAME,
         MAX_TEXT_BYTES,
+        DATA_PAYLOAD_BYTES,
       },
     },
   };

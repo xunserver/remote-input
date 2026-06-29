@@ -18,6 +18,13 @@ vm.runInContext(source, context);
 const internals = context.window.AIInput._internals;
 
 {
+  const { constants } = internals;
+  assert.equal(constants.VERSION, 1);
+  assert.equal(constants.DATA_FRAME, 16);
+  assert.equal(constants.DATA_PAYLOAD_BYTES, 12);
+}
+
+{
   const frame = internals.encodeControlFrame(1, 7, 16, 2);
   assert.equal(frame.byteLength, 12);
   assert.deepEqual(Array.from(frame), [1, 1, 7, 0, 16, 0, 0, 0, 2, 0, 0, 0]);
