@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Input Demo</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app">
+    <section class="panel">
+      <h1>AI Input</h1>
+      <div class="toolbar">
+        <button id="connectButton" type="button">连接</button>
+        <button id="disconnectButton" type="button" disabled>断开</button>
+        <button id="statusButton" type="button" disabled>状态</button>
+      </div>
+      <textarea id="textInput" rows="8" maxlength="16384" placeholder="输入要发送到目标 Windows 的文本"></textarea>
+      <button id="typeButton" type="button" disabled>发送并等待输入完成</button>
+      <pre id="statusOutput">未连接</pre>
+    </section>
+  </main>
+  <script src="./ai-input-sdk.js"></script>
+  <script>
+    let device = null;
+    const statusOutput = document.querySelector("#statusOutput");
+    const connectButton = document.querySelector("#connectButton");
+    const disconnectButton = document.querySelector("#disconnectButton");
+    const statusButton = document.querySelector("#statusButton");
+    const typeButton = document.querySelector("#typeButton");
+    const textInput = document.querySelector("#textInput");
+
+    function setConnected(value) {
+      connectButton.disabled = value;
+      disconnectButton.disabled = !value;
+      statusButton.disabled = !value;
+      typeButton.disabled = !value;
+    }
+
+    connectButton.addEventListener("click", async () => {
+      try {
+        device = await AIInput.connect();
+        setConnected(true);
+        statusOutput.textContent = "已连接";
+      } catch (error) {
+        statusOutput.textContent = `${error.code || "ERROR"}: ${error.message}`;
+      }
+    });
+
+    disconnectButton.addEventListener("click", async () => {
+      if (device) await device.disconnect();
+      device = null;
+      setConnected(false);
+      statusOutput.textContent = "已断开";
+    });
+
+    statusButton.addEventListener("click", async () => {
+      const status = await device.getStatus();
+      statusOutput.textContent = JSON.stringify(status, null, 2);
+    });
+
+    typeButton.addEventListener("click", async () => {
+      try {
+        typeButton.disabled = true;
+        await device.typeText(textInput.value);
+        statusOutput.textContent = "输入完成";
+      } catch (error) {
+        statusOutput.textContent = `${error.code || "ERROR"}: ${error.message}`;
+      } finally {
+        typeButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
