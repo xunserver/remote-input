@@ -91,14 +91,20 @@ class FakeCharacteristic {
     this.notificationsStopped = false;
     this.readValueResult = createStatusFrame(0, 0);
     this.writeError = null;
+    this.writeNeverResolves = false;
+    this.startNotificationsError = null;
   }
 
   async writeValueWithResponse(value) {
     if (this.writeError) throw this.writeError;
     this.writes.push(Array.from(value));
+    if (this.writeNeverResolves) {
+      return new Promise(() => {});
+    }
   }
 
   async startNotifications() {
+    if (this.startNotificationsError) throw this.startNotificationsError;
     this.notificationsStarted = true;
     return this;
   }
@@ -140,9 +146,11 @@ class FakeDevice {
         return server;
       },
       disconnect: () => {
+        this.disconnectCalls += 1;
         this.gatt.connected = false;
       },
     };
+    this.disconnectCalls = 0;
   }
 
   addEventListener(type, listener) {
@@ -199,7 +207,18 @@ function createFakeBluetooth() {
   };
 }
 
-async function assertRejectsWithCode(promise, code) {
+async function assertRejectsWithCode(value, code) {
+  let promise;
+  if (typeof value === "function") {
+    try {
+      promise = Promise.resolve(value());
+    } catch (error) {
+      assert.equal(error.code, code);
+      return;
+    }
+  } else {
+    promise = value;
+  }
   await assert.rejects(
     promise,
     (error) => {
@@ -215,6 +234,19 @@ async function flushMicrotasks(count = 8) {
   }
 }
 
+function timeoutAfter(ms, label) {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(label)), ms);
+  });
+}
+
+async function assertRejectsWithCodeBeforeTimeout(promise, code) {
+  await assertRejectsWithCode(
+    Promise.race([promise, timeoutAfter(50, `Timed out waiting for ${code}`)]),
+    code
+  );
+}
+
 async function runSdkFlowTests() {
   const { AIInput } = context.window;
 
@@ -226,10 +258,23 @@ async function runSdkFlowTests() {
   {
     context.navigator.bluetooth = {
       requestDevice: async () => {
-        throw new Error("cancelled");
+        const error = new Error("cancelled");
+        error.name = "NotFoundError";
+        throw error;
       },
     };
     await assertRejectsWithCode(AIInput.connect(), "DEVICE_SELECTION_CANCELLED");
+  }
+
+  {
+    context.navigator.bluetooth = {
+      requestDevice: async () => {
+        const error = new Error("blocked");
+        error.name = "SecurityError";
+        throw error;
+      },
+    };
+    await assertRejectsWithCode(AIInput.connect(), "DEVICE_REQUEST_FAILED");
   }
 
   {
@@ -245,6 +290,14 @@ async function runSdkFlowTests() {
     assert.equal(typeof aiDevice.typeText, "function");
     assert.equal(typeof aiDevice.getStatus, "function");
     assert.equal(typeof aiDevice.disconnect, "function");
+  }
+
+  {
+    const fake = createFakeBluetooth();
+    fake.statusChar.startNotificationsError = new Error("notify failed");
+    await assert.rejects(AIInput.connect());
+    assert.equal(fake.device.disconnectCalls, 1);
+    assert.equal(fake.device.gatt.connected, false);
   }
 
   {
@@ -266,8 +319,30 @@ async function runSdkFlowTests() {
   {
     const fake = createFakeBluetooth();
     const aiDevice = await AIInput.connect();
+    fake.controlChar.writeNeverResolves = true;
+    const completion = aiDevice.typeText("hung");
+    await flushMicrotasks();
+    fake.device.emitDisconnected();
+    await assertRejectsWithCodeBeforeTimeout(completion, "DISCONNECTED");
+    assert.equal(aiDevice.pending, null);
+  }
+
+  {
+    const fake = createFakeBluetooth();
+    const aiDevice = await AIInput.connect();
+    fake.controlChar.writeNeverResolves = true;
+    const completion = aiDevice.typeText("hung error");
+    await flushMicrotasks();
+    fake.statusChar.emitStatus(createStatusFrame(4, 1, 77, 0, 10));
+    await assertRejectsWithCodeBeforeTimeout(completion, "DEVICE_ERROR_77");
+    assert.equal(aiDevice.pending, null);
+  }
+
+  {
+    const fake = createFakeBluetooth();
+    const aiDevice = await AIInput.connect();
     const first = aiDevice.typeText("busy");
-    await assertRejectsWithCode(aiDevice.typeText("again"), "CLIENT_BUSY");
+    await assertRejectsWithCode(() => aiDevice.typeText("again"), "CLIENT_BUSY");
     fake.statusChar.emitStatus(createStatusFrame(3, 1, 0, 4, 4));
     await first;
   }
@@ -293,6 +368,16 @@ async function runSdkFlowTests() {
     await flushMicrotasks();
     fake.statusChar.emitStatus(createStatusFrame(4, 1, 42, 4, 4));
     await assertRejectsWithCode(completion, "DEVICE_ERROR_42");
+  }
+
+  {
+    const fake = createFakeBluetooth();
+    const aiDevice = await AIInput.connect();
+    const completion = aiDevice.typeText("bad status");
+    await flushMicrotasks();
+    fake.statusChar.emitStatus(new DataView(new ArrayBuffer(2)));
+    await assertRejectsWithCode(completion, "INVALID_STATUS_FRAME");
+    assert.equal(aiDevice.pending, null);
   }
 
   {

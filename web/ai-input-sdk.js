@@ -16,10 +16,13 @@
   const STATES = ["idle", "receiving", "typing", "done", "error"];
 
   class AIInputError extends Error {
-    constructor(code, message) {
+    constructor(code, message, cause) {
       super(message);
       this.name = "AIInputError";
       this.code = code;
+      if (cause !== undefined) {
+        this.cause = cause;
+      }
     }
 
     toString() {
@@ -108,16 +111,20 @@
       this.statusChar.addEventListener("characteristicvaluechanged", this._onStatusChanged);
     }
 
-    async typeText(text) {
+    typeText(text) {
       if (!this.connected) {
-        throw new AIInputError("NOT_CONNECTED", "Device is not connected");
+        return Promise.reject(new AIInputError("NOT_CONNECTED", "Device is not connected"));
       }
       if (this.pending) {
-        throw new AIInputError("CLIENT_BUSY", "A typeText call is already pending");
+        return Promise.reject(new AIInputError("CLIENT_BUSY", "A typeText call is already pending"));
       }
 
       const bytes = new TextEncoder().encode(text);
-      assertTextSize(bytes);
+      try {
+        assertTextSize(bytes);
+      } catch (error) {
+        return Promise.reject(error);
+      }
 
       const taskId = this.taskId;
       this.taskId = (this.taskId % 65535) + 1;
@@ -130,6 +137,12 @@
         this.pending = { taskId, resolve, reject };
       });
 
+      this._pumpWrites(taskId, startFrame, frames, commitFrame);
+
+      return completion;
+    }
+
+    async _pumpWrites(taskId, startFrame, frames, commitFrame) {
       try {
         await this.controlChar.writeValueWithResponse(startFrame);
         for (const frame of frames) {
@@ -137,10 +150,10 @@
         }
         await this.controlChar.writeValueWithResponse(commitFrame);
       } catch (error) {
-        this._rejectPending("BLE_WRITE_FAILED", error.message || "BLE write failed");
+        if (this.pending && this.pending.taskId === taskId) {
+          this._rejectPending("BLE_WRITE_FAILED", error.message || "BLE write failed", error);
+        }
       }
-
-      return completion;
     }
 
     async getStatus() {
@@ -172,7 +185,15 @@
     }
 
     _onStatusChanged(event) {
-      const status = decodeStatusFrame(event.target.value);
+      let status;
+      try {
+        status = decodeStatusFrame(event.target.value);
+      } catch (error) {
+        if (this.pending) {
+          this._rejectPending("INVALID_STATUS_FRAME", error.message, error);
+        }
+        return;
+      }
       if (!this.pending || status.lastTaskId !== this.pending.taskId) {
         return;
       }
@@ -192,13 +213,13 @@
       this._rejectPending("DISCONNECTED", "Device disconnected");
     }
 
-    _rejectPending(code, message) {
+    _rejectPending(code, message, cause) {
       if (!this.pending) {
         return;
       }
       const pending = this.pending;
       this.pending = null;
-      pending.reject(new AIInputError(code, message));
+      pending.reject(new AIInputError(code, message, cause));
     }
   }
 
@@ -238,17 +259,30 @@
         optionalServices: [SERVICE_UUID],
       });
     } catch (error) {
-      throw new AIInputError("DEVICE_SELECTION_CANCELLED", error.message || "Device selection cancelled");
+      if (error.name === "NotFoundError") {
+        throw new AIInputError("DEVICE_SELECTION_CANCELLED", error.message || "Device selection cancelled", error);
+      }
+      throw new AIInputError("DEVICE_REQUEST_FAILED", error.message || "Device request failed", error);
     }
 
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    const controlChar = await service.getCharacteristic(CONTROL_UUID);
-    const dataChar = await service.getCharacteristic(DATA_UUID);
-    const statusChar = await service.getCharacteristic(STATUS_UUID);
-    const aiDevice = new AIInputDevice(device, server, controlChar, dataChar, statusChar);
-    await aiDevice.startNotifications();
-    return aiDevice;
+    let aiDevice = null;
+    try {
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      const controlChar = await service.getCharacteristic(CONTROL_UUID);
+      const dataChar = await service.getCharacteristic(DATA_UUID);
+      const statusChar = await service.getCharacteristic(STATUS_UUID);
+      aiDevice = new AIInputDevice(device, server, controlChar, dataChar, statusChar);
+      await aiDevice.startNotifications();
+      return aiDevice;
+    } catch (error) {
+      if (aiDevice) {
+        await aiDevice.disconnect();
+      } else if (device.gatt && device.gatt.connected) {
+        device.gatt.disconnect();
+      }
+      throw error;
+    }
   }
 
   global.AIInput = AIInput;
