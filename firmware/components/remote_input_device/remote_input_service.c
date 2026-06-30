@@ -11,6 +11,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -262,9 +263,7 @@ static void on_disconnect(void)
     remote_input_display_set_ble_connected(false);
 
     if (!is_typing_active()) {
-        if (g_task.active) {
-            update_status(REMOTE_INPUT_STATE_IDLE, 0, REMOTE_INPUT_ERR_OK, 0, 0);
-        }
+        update_status(REMOTE_INPUT_STATE_IDLE, 0, REMOTE_INPUT_ERR_OK, 0, 0);
         reset_receive_task();
     }
 }
@@ -279,10 +278,14 @@ esp_err_t remote_input_service_init(void)
         ESP_LOGE(TAG, "led init failed: %s", esp_err_to_name(led_err));
     }
 
+#if CONFIG_REMOTE_INPUT_DISPLAY_ENABLED
     esp_err_t display_err = remote_input_display_init(REMOTE_INPUT_FIRMWARE_VERSION);
     if (display_err != ESP_OK) {
         ESP_LOGE(TAG, "display init failed: %s", esp_err_to_name(display_err));
     }
+#else
+    ESP_LOGI(TAG, "display disabled");
+#endif
 
     g_typing_queue = xQueueCreate(REMOTE_INPUT_TYPING_QUEUE_LEN, sizeof(typing_job_t *));
     if (g_typing_queue == NULL) {
