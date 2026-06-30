@@ -60,16 +60,16 @@ bool ai_input_hid_ready(void)
 static uint8_t hex_keycode(char c)
 {
     static const uint8_t digit_keycodes[] = {
-        HID_KEY_0,
-        HID_KEY_1,
-        HID_KEY_2,
-        HID_KEY_3,
-        HID_KEY_4,
-        HID_KEY_5,
-        HID_KEY_6,
-        HID_KEY_7,
-        HID_KEY_8,
-        HID_KEY_9,
+        HID_KEY_KEYPAD_0,
+        HID_KEY_KEYPAD_1,
+        HID_KEY_KEYPAD_2,
+        HID_KEY_KEYPAD_3,
+        HID_KEY_KEYPAD_4,
+        HID_KEY_KEYPAD_5,
+        HID_KEY_KEYPAD_6,
+        HID_KEY_KEYPAD_7,
+        HID_KEY_KEYPAD_8,
+        HID_KEY_KEYPAD_9,
     };
 
     if (c >= '0' && c <= '9') {
