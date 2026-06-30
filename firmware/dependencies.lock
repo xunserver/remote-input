@@ -49,10 +49,18 @@ dependencies:
     source:
       type: idf
     version: 6.0.1
+  lvgl/lvgl:
+    component_hash: d7c1ac037ae6e85d94897f807d6e7ba0946a83e720074fc95a4f6241da9f9f53
+    dependencies: []
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 8.4.0
 direct_dependencies:
 - espressif/esp_tinyusb
 - espressif/led_strip
 - idf
-manifest_hash: 99f51e71bcc9a14f51e4bfb41eac8f8fe03f6f79aa514a6d7e3eb8616fa49305
+- lvgl/lvgl
+manifest_hash: d269829f21ec745fa39a3db6ae6b94cd7074791bbdbd8cd0bcbfa6d55583ec00
 target: esp32s3
 version: 3.0.0
