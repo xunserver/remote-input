@@ -13,6 +13,7 @@ idf_component_register(
         esp_tinyusb
         tinyusb
         led_strip
+    PRIV_REQUIRES
+        freertos
         lvgl
-    PRIV_REQUIRES freertos
 )
