@@ -2,6 +2,7 @@
 
 #include "remote_input_ble.h"
 #include "remote_input_hid.h"
+#include "remote_input_led.h"
 #include "remote_input_status.h"
 #include "remote_input_task.h"
 #include "remote_input_utf8.h"
@@ -112,21 +113,30 @@ static bool type_codepoint_cb(uint32_t codepoint, void *ctx)
     return true;
 }
 
+static void finish_typing_with_status(remote_input_state_t state,
+                                      uint16_t task_id,
+                                      remote_input_error_t error,
+                                      size_t len)
+{
+    remote_input_status_set(state, task_id, error, (uint32_t)len, (uint32_t)len);
+    remote_input_ble_notify_status();
+    remote_input_led_set_typing(false);
+}
+
 static void run_typing_task(uint16_t task_id, const uint8_t *bytes, size_t len)
 {
+    remote_input_led_set_typing(true);
     remote_input_status_set(REMOTE_INPUT_STATE_TYPING, task_id, REMOTE_INPUT_ERR_OK, (uint32_t)len, (uint32_t)len);
     remote_input_ble_notify_status();
 
     bool valid = remote_input_utf8_decode_each(bytes, len, validate_codepoint_cb, NULL);
     if (!valid) {
-        remote_input_status_set(REMOTE_INPUT_STATE_ERROR, task_id, REMOTE_INPUT_ERR_INVALID_UTF8, (uint32_t)len, (uint32_t)len);
-        remote_input_ble_notify_status();
+        finish_typing_with_status(REMOTE_INPUT_STATE_ERROR, task_id, REMOTE_INPUT_ERR_INVALID_UTF8, len);
         return;
     }
 
     if (!remote_input_hid_ready()) {
-        remote_input_status_set(REMOTE_INPUT_STATE_ERROR, task_id, REMOTE_INPUT_ERR_USB_NOT_READY, (uint32_t)len, (uint32_t)len);
-        remote_input_ble_notify_status();
+        finish_typing_with_status(REMOTE_INPUT_STATE_ERROR, task_id, REMOTE_INPUT_ERR_USB_NOT_READY, len);
         return;
     }
 
@@ -139,13 +149,11 @@ static void run_typing_task(uint16_t task_id, const uint8_t *bytes, size_t len)
         if (error == REMOTE_INPUT_ERR_OK) {
             error = REMOTE_INPUT_ERR_INVALID_UTF8;
         }
-        remote_input_status_set(REMOTE_INPUT_STATE_ERROR, task_id, error, (uint32_t)len, (uint32_t)len);
-        remote_input_ble_notify_status();
+        finish_typing_with_status(REMOTE_INPUT_STATE_ERROR, task_id, error, len);
         return;
     }
 
-    remote_input_status_set(REMOTE_INPUT_STATE_DONE, task_id, REMOTE_INPUT_ERR_OK, (uint32_t)len, (uint32_t)len);
-    remote_input_ble_notify_status();
+    finish_typing_with_status(REMOTE_INPUT_STATE_DONE, task_id, REMOTE_INPUT_ERR_OK, len);
 }
 
 static void typing_worker_task(void *ctx)
@@ -239,8 +247,15 @@ static void on_data(const remote_input_data_frame_t *frame)
     reset_pending_task();
 }
 
+static void on_connect(void)
+{
+    remote_input_led_set_connected(true);
+}
+
 static void on_disconnect(void)
 {
+    remote_input_led_set_connected(false);
+
     if (!is_typing_active()) {
         if (g_task.active) {
             remote_input_status_set(REMOTE_INPUT_STATE_IDLE, 0, REMOTE_INPUT_ERR_OK, 0, 0);
@@ -253,6 +268,11 @@ esp_err_t remote_input_service_init(void)
 {
     remote_input_status_init();
     remote_input_task_init(&g_task);
+
+    esp_err_t led_err = remote_input_led_init();
+    if (led_err != ESP_OK) {
+        ESP_LOGE(TAG, "led init failed: %s", esp_err_to_name(led_err));
+    }
 
     g_typing_queue = xQueueCreate(REMOTE_INPUT_TYPING_QUEUE_LEN, sizeof(typing_job_t *));
     if (g_typing_queue == NULL) {
@@ -276,6 +296,7 @@ esp_err_t remote_input_service_init(void)
     }
 
     const remote_input_ble_callbacks_t callbacks = {
+        .on_connect = on_connect,
         .on_control = on_control,
         .on_data = on_data,
         .on_disconnect = on_disconnect,
