@@ -212,10 +212,15 @@ static void on_data(const ai_input_data_frame_t *frame)
     ai_input_error_t err = ai_input_task_add_chunk(&g_task, frame);
     if (err == AI_INPUT_ERR_OK) {
         ai_input_status_set(AI_INPUT_STATE_RECEIVING, frame->task_id, AI_INPUT_ERR_OK, g_task.received_bytes, g_task.total_bytes);
-    } else {
-        ai_input_status_set(AI_INPUT_STATE_ERROR, frame->task_id, err, g_task.received_bytes, g_task.total_bytes);
+        ai_input_ble_notify_status();
+        return;
     }
+
+    uint32_t received = g_task.received_bytes;
+    uint32_t total = g_task.total_bytes;
+    ai_input_status_set(AI_INPUT_STATE_ERROR, frame->task_id, err, received, total);
     ai_input_ble_notify_status();
+    reset_pending_task();
 }
 
 void app_main(void)
