@@ -175,7 +175,7 @@ esp_err_t remote_input_led_init(void)
     s_connected = false;
     s_typing = false;
     s_mode = REMOTE_INPUT_LED_WAITING_CONNECTION;
-    s_initialized = false;
+    s_initialized = true;
     portEXIT_CRITICAL(&s_led_lock);
 
     BaseType_t created = xTaskCreate(led_task,
@@ -186,13 +186,12 @@ esp_err_t remote_input_led_init(void)
                                      &s_led_task_handle);
     if (created != pdPASS) {
         s_led_task_handle = NULL;
+        portENTER_CRITICAL(&s_led_lock);
+        s_initialized = false;
+        portEXIT_CRITICAL(&s_led_lock);
         cleanup_led_strip();
         return ESP_ERR_NO_MEM;
     }
-
-    portENTER_CRITICAL(&s_led_lock);
-    s_initialized = true;
-    portEXIT_CRITICAL(&s_led_lock);
 
     notify_led_task();
     return ESP_OK;
