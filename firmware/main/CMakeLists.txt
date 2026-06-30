@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "app_main.c"
+        "ai_input_ble.c"
         "ai_input_hid.c"
         "ai_input_utf8.c"
         "ai_input_protocol.c"
