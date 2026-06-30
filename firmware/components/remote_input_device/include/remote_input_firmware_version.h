@@ -1,0 +1,5 @@
+#pragma once
+
+#ifndef REMOTE_INPUT_FIRMWARE_VERSION
+#define REMOTE_INPUT_FIRMWARE_VERSION "2026.6.1-1"
+#endif
