@@ -4,6 +4,30 @@
 
 #define AI_INPUT_CHUNK_SEEN_LEN ((uint16_t)(sizeof(((ai_input_task_buffer_t *)0)->chunk_seen) / sizeof(uint8_t)))
 
+static uint16_t expected_chunks_for_total(uint32_t total_bytes)
+{
+    if (total_bytes == 0) {
+        return 1;
+    }
+
+    return (uint16_t)((total_bytes + AI_INPUT_DATA_PAYLOAD_BYTES - 1) / AI_INPUT_DATA_PAYLOAD_BYTES);
+}
+
+static size_t expected_payload_len_for_chunk(const ai_input_task_buffer_t *task, uint16_t chunk_index)
+{
+    if (task->total_bytes == 0) {
+        return 0;
+    }
+
+    const uint32_t offset = (uint32_t)chunk_index * AI_INPUT_DATA_PAYLOAD_BYTES;
+    const uint32_t remaining = task->total_bytes - offset;
+    if (remaining < AI_INPUT_DATA_PAYLOAD_BYTES) {
+        return remaining;
+    }
+
+    return AI_INPUT_DATA_PAYLOAD_BYTES;
+}
+
 void ai_input_task_init(ai_input_task_buffer_t *task)
 {
     if (task == NULL) {
@@ -25,6 +49,9 @@ ai_input_error_t ai_input_task_start(ai_input_task_buffer_t *task, const ai_inpu
         return AI_INPUT_ERR_TASK_TOO_LARGE;
     }
     if (frame->total_chunks == 0) {
+        return AI_INPUT_ERR_INVALID_COMMAND;
+    }
+    if (frame->total_chunks != expected_chunks_for_total(frame->total_bytes)) {
         return AI_INPUT_ERR_INVALID_COMMAND;
     }
     if (frame->total_chunks > AI_INPUT_CHUNK_SEEN_LEN) {
@@ -58,7 +85,12 @@ ai_input_error_t ai_input_task_add_chunk(ai_input_task_buffer_t *task, const ai_
     }
 
     const uint32_t offset = (uint32_t)frame->chunk_index * AI_INPUT_DATA_PAYLOAD_BYTES;
-    if (frame->payload_len > task->total_bytes || offset > task->total_bytes - frame->payload_len) {
+    if (offset > task->total_bytes) {
+        return AI_INPUT_ERR_INVALID_CHUNK;
+    }
+
+    const size_t expected_payload_len = expected_payload_len_for_chunk(task, frame->chunk_index);
+    if (frame->payload_len != expected_payload_len) {
         return AI_INPUT_ERR_INVALID_CHUNK;
     }
 
