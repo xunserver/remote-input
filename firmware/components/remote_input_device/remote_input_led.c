@@ -23,6 +23,17 @@ static bool s_typing;
 static remote_input_led_mode_t s_mode = REMOTE_INPUT_LED_WAITING_CONNECTION;
 static bool s_initialized;
 
+static void cleanup_led_strip(void)
+{
+    if (s_led_strip != NULL) {
+        esp_err_t err = led_strip_del(s_led_strip);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "failed to delete led strip: %s", esp_err_to_name(err));
+        }
+        s_led_strip = NULL;
+    }
+}
+
 static remote_input_led_mode_t derive_mode_locked(void)
 {
     if (s_typing) {
@@ -152,13 +163,19 @@ esp_err_t remote_input_led_init(void)
     ESP_RETURN_ON_ERROR(led_strip_new_rmt_device(&strip_config, &rmt_config, &s_led_strip),
                         TAG,
                         "failed to create led strip");
-    ESP_RETURN_ON_ERROR(led_strip_clear(s_led_strip), TAG, "failed to clear led strip");
+
+    esp_err_t err = led_strip_clear(s_led_strip);
+    if (err != ESP_OK) {
+        cleanup_led_strip();
+        ESP_LOGE(TAG, "failed to clear led strip: %s", esp_err_to_name(err));
+        return err;
+    }
 
     portENTER_CRITICAL(&s_led_lock);
     s_connected = false;
     s_typing = false;
     s_mode = REMOTE_INPUT_LED_WAITING_CONNECTION;
-    s_initialized = true;
+    s_initialized = false;
     portEXIT_CRITICAL(&s_led_lock);
 
     BaseType_t created = xTaskCreate(led_task,
@@ -169,8 +186,13 @@ esp_err_t remote_input_led_init(void)
                                      &s_led_task_handle);
     if (created != pdPASS) {
         s_led_task_handle = NULL;
+        cleanup_led_strip();
         return ESP_ERR_NO_MEM;
     }
+
+    portENTER_CRITICAL(&s_led_lock);
+    s_initialized = true;
+    portEXIT_CRITICAL(&s_led_lock);
 
     notify_led_task();
     return ESP_OK;
