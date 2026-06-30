@@ -5,8 +5,8 @@
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=d:\\project\\remote-input\\firmware\\build"
+    "--compile-commands-dir=build"
   ],
-  "C_Cpp.default.compileCommands": "${workspaceFolder}\\firmware\\build\\compile_commands.json",
+  "C_Cpp.default.compileCommands": "${workspaceFolder}\\build\\compile_commands.json",
   "idf.flashType": "UART"
 }

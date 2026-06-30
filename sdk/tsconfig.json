@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "noImplicitOverride": true
   },
-  "include": ["sdk/src/**/*.ts"]
+  "include": ["src/**/*.ts"]
 }
