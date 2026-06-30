@@ -16,6 +16,7 @@ static const uint8_t REPORT_ID_KEYBOARD = 1;
 
 enum {
     REPORT_ID_KEYBOARD_DESCRIPTOR = 1,
+    HID_RELEASE_RETRY_COUNT = 10,
     TUSB_DESC_TOTAL_LEN = TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN,
 };
 
@@ -95,13 +96,22 @@ static esp_err_t send_report(uint8_t modifier, uint8_t const keycode[6])
 static esp_err_t release_all_keys(void)
 {
     const uint8_t keys[6] = {0};
-    esp_err_t ret = ESP_OK;
 
-    if (!tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keys)) {
-        ret = ESP_ERR_INVALID_RESPONSE;
+    for (int attempt = 0; attempt < HID_RELEASE_RETRY_COUNT; ++attempt) {
+        if (!tud_mounted()) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        if (tud_hid_ready()) {
+            if (!tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keys)) {
+                return ESP_ERR_INVALID_RESPONSE;
+            }
+            vTaskDelay(pdMS_TO_TICKS(AI_INPUT_HID_DELAY_MS));
+            return ESP_OK;
+        }
+        vTaskDelay(pdMS_TO_TICKS(AI_INPUT_HID_DELAY_MS));
     }
-    vTaskDelay(pdMS_TO_TICKS(AI_INPUT_HID_DELAY_MS));
-    return ret;
+
+    return ESP_ERR_TIMEOUT;
 }
 
 static esp_err_t send_alt_modified_key(uint8_t keycode)
