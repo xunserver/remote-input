@@ -2,7 +2,20 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
-const source = fs.readFileSync("web/remote-input-sdk.js", "utf8");
+const viteConfig = fs.readFileSync("vite.config.ts", "utf8");
+assert.match(viteConfig, /defineConfig/);
+assert.match(viteConfig, /entry:\s*resolve\(__dirname,\s*"src\/index\.ts"\)/);
+assert.match(viteConfig, /name:\s*"RemoteInput"/);
+assert.match(viteConfig, /formats:\s*\["iife"\]/);
+assert.match(viteConfig, /outDir:\s*"dist"/);
+assert.match(viteConfig, /fileName:\s*\(\)\s*=>\s*"remote-input-sdk\.js"/);
+assert.doesNotMatch(viteConfig, /emptyOutDir:\s*false/);
+
+const demoHtml = fs.readFileSync("index.html", "utf8");
+assert.match(demoHtml, /<script type="module">/);
+assert.match(demoHtml, /import \* as RemoteInput from "\.\/src\/index\.ts";/);
+
+const source = fs.readFileSync("dist/remote-input-sdk.js", "utf8");
 const context = {
   window: {},
   navigator: {},

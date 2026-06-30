@@ -21,8 +21,9 @@
       <pre id="statusOutput">未连接</pre>
     </section>
   </main>
-  <script src="./remote-input-sdk.js"></script>
-  <script>
+  <script type="module">
+    import * as RemoteInput from "./src/index.ts";
+
     let device = null;
     const statusOutput = document.querySelector("#statusOutput");
     const connectButton = document.querySelector("#connectButton");
