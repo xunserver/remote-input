@@ -235,6 +235,9 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
         if (event->connect.status == 0) {
             s_conn_handle = event->connect.conn_handle;
             ESP_LOGI(TAG, "connected handle=%u", s_conn_handle);
+            if (s_callbacks.on_connect != NULL) {
+                s_callbacks.on_connect();
+            }
         } else {
             s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
             start_advertising();
