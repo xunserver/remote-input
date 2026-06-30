@@ -74,8 +74,11 @@
       throw new AIInputError("INVALID_STATUS_FRAME", "Invalid status frame");
     }
     const stateCode = view.getUint8(1);
+    if (stateCode >= STATES.length) {
+      throw new AIInputError("INVALID_STATUS_FRAME", "Invalid status frame");
+    }
     const status = createStatusObject();
-    status.state = STATES[stateCode] || "error";
+    status.state = STATES[stateCode];
     status.lastTaskId = view.getUint16(2, true);
     status.lastErrorCode = view.getUint16(4, true);
     status.receivedBytes = view.getUint32(6, true);
@@ -145,9 +148,12 @@
     async _pumpWrites(taskId, startFrame, frames, commitFrame) {
       try {
         await this.controlChar.writeValueWithResponse(startFrame);
+        if (!this._hasPendingTask(taskId)) return;
         for (const frame of frames) {
           await this.dataChar.writeValueWithResponse(frame);
+          if (!this._hasPendingTask(taskId)) return;
         }
+        if (!this._hasPendingTask(taskId)) return;
         await this.controlChar.writeValueWithResponse(commitFrame);
       } catch (error) {
         if (this.pending && this.pending.taskId === taskId) {
@@ -206,6 +212,10 @@
       if (status.state === "error") {
         this._rejectPending(`DEVICE_ERROR_${status.lastErrorCode}`, "Device returned an error");
       }
+    }
+
+    _hasPendingTask(taskId) {
+      return this.pending !== null && this.pending.taskId === taskId;
     }
 
     _onDisconnected() {

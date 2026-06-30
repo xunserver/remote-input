@@ -76,6 +76,13 @@ static void reset_pending_task(void)
     g_pending_len = 0;
 }
 
+static void reset_receive_task(void)
+{
+    if (g_task.active) {
+        reset_pending_task();
+    }
+}
+
 static bool validate_codepoint_cb(uint32_t codepoint, void *ctx)
 {
     (void)codepoint;
@@ -163,6 +170,7 @@ static void on_control(const ai_input_control_frame_t *frame)
             return;
         }
 
+        reset_receive_task();
         err = ai_input_task_start(&g_task, frame);
         if (err == AI_INPUT_ERR_OK) {
             ai_input_status_set(AI_INPUT_STATE_RECEIVING, frame->task_id, AI_INPUT_ERR_OK, 0, frame->total_bytes);
@@ -229,6 +237,16 @@ static void on_data(const ai_input_data_frame_t *frame)
     reset_pending_task();
 }
 
+static void on_disconnect(void)
+{
+    if (!is_typing_active()) {
+        if (g_task.active) {
+            ai_input_status_set(AI_INPUT_STATE_IDLE, 0, AI_INPUT_ERR_OK, 0, 0);
+        }
+        reset_receive_task();
+    }
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "AI Input firmware booting");
@@ -249,6 +267,7 @@ void app_main(void)
     const ai_input_ble_callbacks_t callbacks = {
         .on_control = on_control,
         .on_data = on_data,
+        .on_disconnect = on_disconnect,
     };
     ESP_ERROR_CHECK(ai_input_ble_init(&callbacks));
 

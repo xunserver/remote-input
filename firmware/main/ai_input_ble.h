@@ -6,10 +6,12 @@
 
 typedef void (*ai_input_control_cb_t)(const ai_input_control_frame_t *frame);
 typedef void (*ai_input_data_cb_t)(const ai_input_data_frame_t *frame);
+typedef void (*ai_input_disconnect_cb_t)(void);
 
 typedef struct {
     ai_input_control_cb_t on_control;
     ai_input_data_cb_t on_data;
+    ai_input_disconnect_cb_t on_disconnect;
 } ai_input_ble_callbacks_t;
 
 esp_err_t ai_input_ble_init(const ai_input_ble_callbacks_t *callbacks);

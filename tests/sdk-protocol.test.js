@@ -59,6 +59,13 @@ const internals = context.window.AIInput._internals;
 }
 
 {
+  assert.throws(
+    () => internals.decodeStatusFrame(createStatusFrame(99, 1)),
+    /INVALID_STATUS_FRAME/
+  );
+}
+
+{
   const oversized = new Uint8Array((16 * 1024) + 1);
   assert.throws(
     () => internals.assertTextSize(oversized),
@@ -90,6 +97,7 @@ class FakeCharacteristic {
     this.notificationsStarted = false;
     this.notificationsStopped = false;
     this.readValueResult = createStatusFrame(0, 0);
+    this.afterWrite = null;
     this.writeError = null;
     this.writeNeverResolves = false;
     this.startNotificationsError = null;
@@ -98,6 +106,7 @@ class FakeCharacteristic {
   async writeValueWithResponse(value) {
     if (this.writeError) throw this.writeError;
     this.writes.push(Array.from(value));
+    if (this.afterWrite) await this.afterWrite(value, this.writes.length);
     if (this.writeNeverResolves) {
       return new Promise(() => {});
     }
@@ -368,6 +377,21 @@ async function runSdkFlowTests() {
     await flushMicrotasks();
     fake.statusChar.emitStatus(createStatusFrame(4, 1, 42, 4, 4));
     await assertRejectsWithCode(completion, "DEVICE_ERROR_42");
+  }
+
+  {
+    const fake = createFakeBluetooth();
+    const aiDevice = await AIInput.connect();
+    fake.controlChar.afterWrite = (_value, writeCount) => {
+      if (writeCount === 1) {
+        fake.statusChar.emitStatus(createStatusFrame(4, 1, 1, 0, 4));
+      }
+    };
+    const completion = aiDevice.typeText("stop");
+    await assertRejectsWithCodeBeforeTimeout(completion, "DEVICE_ERROR_1");
+    await flushMicrotasks();
+    assert.equal(fake.controlChar.writes.length, 1);
+    assert.equal(fake.dataChar.writes.length, 0);
   }
 
   {

@@ -246,6 +246,9 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
         if (event->disconnect.conn.conn_handle == s_conn_handle) {
             s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         }
+        if (s_callbacks.on_disconnect != NULL) {
+            s_callbacks.on_disconnect();
+        }
         start_advertising();
         return 0;
 
