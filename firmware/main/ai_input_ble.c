@@ -193,9 +193,6 @@ static void start_advertising(void)
     struct ble_hs_adv_fields fields;
     memset(&fields, 0, sizeof(fields));
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    fields.name = (uint8_t *)AI_INPUT_BLE_DEVICE_NAME;
-    fields.name_len = strlen(AI_INPUT_BLE_DEVICE_NAME);
-    fields.name_is_complete = 1;
     fields.uuids128 = &service_uuid;
     fields.num_uuids128 = 1;
     fields.uuids128_is_complete = 1;
@@ -203,6 +200,18 @@ static void start_advertising(void)
     int rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
         ESP_LOGE(TAG, "failed to set advertising fields rc=%d", rc);
+        return;
+    }
+
+    struct ble_hs_adv_fields rsp_fields;
+    memset(&rsp_fields, 0, sizeof(rsp_fields));
+    rsp_fields.name = (uint8_t *)AI_INPUT_BLE_DEVICE_NAME;
+    rsp_fields.name_len = strlen(AI_INPUT_BLE_DEVICE_NAME);
+    rsp_fields.name_is_complete = 1;
+
+    rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "failed to set scan response fields rc=%d", rc);
         return;
     }
 
