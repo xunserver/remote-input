@@ -89,7 +89,13 @@ static bool type_codepoint_cb(uint32_t codepoint, void *ctx)
     esp_err_t err = ai_input_hid_type_codepoint(codepoint);
     if (err != ESP_OK) {
         if (typing_ctx != NULL) {
-            typing_ctx->error = (err == ESP_ERR_INVALID_STATE) ? AI_INPUT_ERR_USB_NOT_READY : AI_INPUT_ERR_HID_INPUT_FAILED;
+            if (err == ESP_ERR_INVALID_STATE) {
+                typing_ctx->error = AI_INPUT_ERR_USB_NOT_READY;
+            } else if (err == ESP_ERR_INVALID_ARG) {
+                typing_ctx->error = AI_INPUT_ERR_INVALID_CODEPOINT;
+            } else {
+                typing_ctx->error = AI_INPUT_ERR_HID_INPUT_FAILED;
+            }
         }
         return false;
     }
