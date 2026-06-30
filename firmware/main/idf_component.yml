@@ -16,3 +16,4 @@ dependencies:
   #   public: true
   espressif/esp_tinyusb: '*'
   espressif/led_strip: '*'
+  lvgl/lvgl: ^8.4.0

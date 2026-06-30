@@ -1,0 +1,13 @@
+menu "Remote Input Device"
+
+config REMOTE_INPUT_DISPLAY_ENABLED
+    bool "Enable LCD status display"
+    default n
+    help
+        Enable the LVGL status screen for boards that already initialize
+        LCD hardware, LVGL tick handling, display flushing, and the LVGL
+        timer loop before remote_input_service_init() runs.
+
+        Keep this disabled on builds without a board-level LVGL port.
+
+endmenu

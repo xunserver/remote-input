@@ -1,6 +1,8 @@
 #include "remote_input_service.h"
 
 #include "remote_input_ble.h"
+#include "remote_input_display.h"
+#include "remote_input_firmware_version.h"
 #include "remote_input_hid.h"
 #include "remote_input_led.h"
 #include "remote_input_status.h"
@@ -9,6 +11,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -86,6 +89,17 @@ static void reset_receive_task(void)
     }
 }
 
+static void update_status(remote_input_state_t state,
+                          uint16_t task_id,
+                          remote_input_error_t error,
+                          uint32_t received,
+                          uint32_t total)
+{
+    remote_input_status_set(state, task_id, error, received, total);
+    remote_input_display_set_input_state(state);
+    remote_input_ble_notify_status();
+}
+
 static bool validate_codepoint_cb(uint32_t codepoint, void *ctx)
 {
     (void)codepoint;
@@ -118,16 +132,14 @@ static void finish_typing_with_status(remote_input_state_t state,
                                       remote_input_error_t error,
                                       size_t len)
 {
-    remote_input_status_set(state, task_id, error, (uint32_t)len, (uint32_t)len);
-    remote_input_ble_notify_status();
+    update_status(state, task_id, error, (uint32_t)len, (uint32_t)len);
     remote_input_led_set_typing(false);
 }
 
 static void run_typing_task(uint16_t task_id, const uint8_t *bytes, size_t len)
 {
     remote_input_led_set_typing(true);
-    remote_input_status_set(REMOTE_INPUT_STATE_TYPING, task_id, REMOTE_INPUT_ERR_OK, (uint32_t)len, (uint32_t)len);
-    remote_input_ble_notify_status();
+    update_status(REMOTE_INPUT_STATE_TYPING, task_id, REMOTE_INPUT_ERR_OK, (uint32_t)len, (uint32_t)len);
 
     bool valid = remote_input_utf8_decode_each(bytes, len, validate_codepoint_cb, NULL);
     if (!valid) {
@@ -175,34 +187,30 @@ static void on_control(const remote_input_control_frame_t *frame)
 
     if (frame->type == REMOTE_INPUT_CONTROL_START) {
         if (is_typing_active()) {
-            remote_input_status_set(REMOTE_INPUT_STATE_ERROR, frame->task_id, REMOTE_INPUT_ERR_DEVICE_BUSY, 0, frame->total_bytes);
-            remote_input_ble_notify_status();
+            update_status(REMOTE_INPUT_STATE_ERROR, frame->task_id, REMOTE_INPUT_ERR_DEVICE_BUSY, 0, frame->total_bytes);
             return;
         }
 
         reset_receive_task();
         err = remote_input_task_start(&g_task, frame);
         if (err == REMOTE_INPUT_ERR_OK) {
-            remote_input_status_set(REMOTE_INPUT_STATE_RECEIVING, frame->task_id, REMOTE_INPUT_ERR_OK, 0, frame->total_bytes);
+            update_status(REMOTE_INPUT_STATE_RECEIVING, frame->task_id, REMOTE_INPUT_ERR_OK, 0, frame->total_bytes);
         } else {
-            remote_input_status_set(REMOTE_INPUT_STATE_ERROR, frame->task_id, err, 0, frame->total_bytes);
+            update_status(REMOTE_INPUT_STATE_ERROR, frame->task_id, err, 0, frame->total_bytes);
         }
-        remote_input_ble_notify_status();
         return;
     }
 
     if (frame->type == REMOTE_INPUT_CONTROL_COMMIT) {
         err = remote_input_task_commit(&g_task, frame, &g_pending_bytes, &g_pending_len);
         if (err != REMOTE_INPUT_ERR_OK) {
-            remote_input_status_set(REMOTE_INPUT_STATE_ERROR, frame->task_id, err, g_task.received_bytes, frame->total_bytes);
-            remote_input_ble_notify_status();
+            update_status(REMOTE_INPUT_STATE_ERROR, frame->task_id, err, g_task.received_bytes, frame->total_bytes);
             reset_pending_task();
             return;
         }
 
         if (!reserve_typing_worker()) {
-            remote_input_status_set(REMOTE_INPUT_STATE_ERROR, frame->task_id, REMOTE_INPUT_ERR_DEVICE_BUSY, g_task.received_bytes, frame->total_bytes);
-            remote_input_ble_notify_status();
+            update_status(REMOTE_INPUT_STATE_ERROR, frame->task_id, REMOTE_INPUT_ERR_DEVICE_BUSY, g_task.received_bytes, frame->total_bytes);
             reset_pending_task();
             return;
         }
@@ -218,8 +226,7 @@ static void on_control(const remote_input_control_frame_t *frame)
 
         typing_job_t *job = &g_pending_job;
         if (g_typing_queue == NULL || xQueueSend(g_typing_queue, &job, 0) != pdTRUE) {
-            remote_input_status_set(REMOTE_INPUT_STATE_ERROR, frame->task_id, REMOTE_INPUT_ERR_DEVICE_BUSY, received_bytes, total_bytes);
-            remote_input_ble_notify_status();
+            update_status(REMOTE_INPUT_STATE_ERROR, frame->task_id, REMOTE_INPUT_ERR_DEVICE_BUSY, received_bytes, total_bytes);
             set_typing_active(false);
             return;
         }
@@ -227,39 +234,36 @@ static void on_control(const remote_input_control_frame_t *frame)
         return;
     }
 
-    remote_input_status_set(REMOTE_INPUT_STATE_ERROR, frame->task_id, REMOTE_INPUT_ERR_INVALID_COMMAND, 0, frame->total_bytes);
-    remote_input_ble_notify_status();
+    update_status(REMOTE_INPUT_STATE_ERROR, frame->task_id, REMOTE_INPUT_ERR_INVALID_COMMAND, 0, frame->total_bytes);
 }
 
 static void on_data(const remote_input_data_frame_t *frame)
 {
     remote_input_error_t err = remote_input_task_add_chunk(&g_task, frame);
     if (err == REMOTE_INPUT_ERR_OK) {
-        remote_input_status_set(REMOTE_INPUT_STATE_RECEIVING, frame->task_id, REMOTE_INPUT_ERR_OK, g_task.received_bytes, g_task.total_bytes);
-        remote_input_ble_notify_status();
+        update_status(REMOTE_INPUT_STATE_RECEIVING, frame->task_id, REMOTE_INPUT_ERR_OK, g_task.received_bytes, g_task.total_bytes);
         return;
     }
 
     uint32_t received = g_task.received_bytes;
     uint32_t total = g_task.total_bytes;
-    remote_input_status_set(REMOTE_INPUT_STATE_ERROR, frame->task_id, err, received, total);
-    remote_input_ble_notify_status();
+    update_status(REMOTE_INPUT_STATE_ERROR, frame->task_id, err, received, total);
     reset_pending_task();
 }
 
 static void on_connect(void)
 {
     remote_input_led_set_connected(true);
+    remote_input_display_set_ble_connected(true);
 }
 
 static void on_disconnect(void)
 {
     remote_input_led_set_connected(false);
+    remote_input_display_set_ble_connected(false);
 
     if (!is_typing_active()) {
-        if (g_task.active) {
-            remote_input_status_set(REMOTE_INPUT_STATE_IDLE, 0, REMOTE_INPUT_ERR_OK, 0, 0);
-        }
+        update_status(REMOTE_INPUT_STATE_IDLE, 0, REMOTE_INPUT_ERR_OK, 0, 0);
         reset_receive_task();
     }
 }
@@ -273,6 +277,15 @@ esp_err_t remote_input_service_init(void)
     if (led_err != ESP_OK) {
         ESP_LOGE(TAG, "led init failed: %s", esp_err_to_name(led_err));
     }
+
+#if CONFIG_REMOTE_INPUT_DISPLAY_ENABLED
+    esp_err_t display_err = remote_input_display_init(REMOTE_INPUT_FIRMWARE_VERSION);
+    if (display_err != ESP_OK) {
+        ESP_LOGE(TAG, "display init failed: %s", esp_err_to_name(display_err));
+    }
+#else
+    ESP_LOGI(TAG, "display disabled");
+#endif
 
     g_typing_queue = xQueueCreate(REMOTE_INPUT_TYPING_QUEUE_LEN, sizeof(typing_job_t *));
     if (g_typing_queue == NULL) {

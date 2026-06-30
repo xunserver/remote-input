@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "remote_input_ble.c"
+        "remote_input_display.c"
         "remote_input_hid.c"
         "remote_input_led.c"
         "remote_input_service.c"
@@ -12,5 +13,7 @@ idf_component_register(
         esp_tinyusb
         tinyusb
         led_strip
-    PRIV_REQUIRES freertos
+    PRIV_REQUIRES
+        freertos
+        lvgl
 )
