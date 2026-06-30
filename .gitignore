@@ -1,4 +1,5 @@
 .worktrees/
+node_modules/
 firmware/build/
 firmware/managed_components/
 firmware/sdkconfig

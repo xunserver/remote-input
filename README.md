@@ -1,6 +1,6 @@
-# AI Input
+# Remote Input
 
-AI Input 使用 ESP32-S3 作为 BLE 到 USB HID 的输入桥。控制端桌面 Chrome/Edge 通过 Web Bluetooth 发送文本，ESP32-S3 插在目标 Windows 上并模拟 HID 键盘输入 Unicode。
+Remote Input 使用 ESP32-S3 作为 BLE 到 USB HID 的输入桥。控制端桌面 Chrome/Edge 通过 Web Bluetooth 发送文本，ESP32-S3 插在目标 Windows 上并模拟 HID 键盘输入 Unicode。
 
 ## 仓库结构
 
@@ -30,7 +30,7 @@ idf.py -C firmware flash
 1. 把 ESP32-S3 插到目标 Windows。
 2. 打开 Notepad 并把光标放入文本区。
 3. 在控制端 Chrome/Edge 打开 `web/index.html`；如果浏览器拒绝 Web Bluetooth，请通过 HTTPS 或本地 `localhost` 静态服务器访问。
-4. 点击连接，选择 `AI-Input-S3`。
+4. 点击连接，选择 `Remote-Input-S3`。
 5. 输入文本并点击发送。
 
 ## 验证

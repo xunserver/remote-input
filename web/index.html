@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI Input Demo</title>
+  <title>Remote Input Demo</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <main class="app">
     <section class="panel">
-      <h1>AI Input</h1>
+      <h1>Remote Input</h1>
       <div class="toolbar">
         <button id="connectButton" type="button">连接</button>
         <button id="disconnectButton" type="button" disabled>断开</button>
@@ -21,7 +21,7 @@
       <pre id="statusOutput">未连接</pre>
     </section>
   </main>
-  <script src="./ai-input-sdk.js"></script>
+  <script src="./remote-input-sdk.js"></script>
   <script>
     let device = null;
     const statusOutput = document.querySelector("#statusOutput");
@@ -44,7 +44,7 @@
 
     connectButton.addEventListener("click", async () => {
       try {
-        device = await AIInput.connect();
+        device = await RemoteInput.connect();
         setConnected(true);
         statusOutput.textContent = "已连接";
       } catch (error) {

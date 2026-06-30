@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
-const source = fs.readFileSync("web/ai-input-sdk.js", "utf8");
+const source = fs.readFileSync("web/remote-input-sdk.js", "utf8");
 const context = {
   window: {},
   navigator: {},
@@ -15,7 +15,8 @@ const context = {
 vm.createContext(context);
 vm.runInContext(source, context);
 
-const internals = context.window.AIInput._internals;
+const remoteInputGlobal = context.window.RemoteInput || context.RemoteInput;
+const internals = remoteInputGlobal._internals;
 
 {
   const { constants } = internals;
@@ -257,11 +258,11 @@ async function assertRejectsWithCodeBeforeTimeout(promise, code) {
 }
 
 async function runSdkFlowTests() {
-  const { AIInput } = context.window;
+  const RemoteInput = remoteInputGlobal;
 
   {
     delete context.navigator.bluetooth;
-    await assertRejectsWithCode(AIInput.connect(), "WEB_BLUETOOTH_UNSUPPORTED");
+    await assertRejectsWithCode(RemoteInput.connect(), "WEB_BLUETOOTH_UNSUPPORTED");
   }
 
   {
@@ -272,7 +273,7 @@ async function runSdkFlowTests() {
         throw error;
       },
     };
-    await assertRejectsWithCode(AIInput.connect(), "DEVICE_SELECTION_CANCELLED");
+    await assertRejectsWithCode(RemoteInput.connect(), "DEVICE_SELECTION_CANCELLED");
   }
 
   {
@@ -283,12 +284,12 @@ async function runSdkFlowTests() {
         throw error;
       },
     };
-    await assertRejectsWithCode(AIInput.connect(), "DEVICE_REQUEST_FAILED");
+    await assertRejectsWithCode(RemoteInput.connect(), "DEVICE_REQUEST_FAILED");
   }
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     assert.equal(fake.requestedOptions.filters.length, 1);
     assert.equal(fake.requestedOptions.filters[0].services.length, 1);
     assert.equal(fake.requestedOptions.filters[0].services[0], internals.constants.SERVICE_UUID);
@@ -304,14 +305,14 @@ async function runSdkFlowTests() {
   {
     const fake = createFakeBluetooth();
     fake.statusChar.startNotificationsError = new Error("notify failed");
-    await assert.rejects(AIInput.connect());
+    await assert.rejects(RemoteInput.connect());
     assert.equal(fake.device.disconnectCalls, 1);
     assert.equal(fake.device.gatt.connected, false);
   }
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     const completion = aiDevice.typeText("hello");
     await flushMicrotasks();
 
@@ -327,7 +328,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     fake.controlChar.writeNeverResolves = true;
     const completion = aiDevice.typeText("hung");
     await flushMicrotasks();
@@ -338,7 +339,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     fake.controlChar.writeNeverResolves = true;
     const completion = aiDevice.typeText("hung error");
     await flushMicrotasks();
@@ -349,7 +350,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     const first = aiDevice.typeText("busy");
     await assertRejectsWithCode(() => aiDevice.typeText("again"), "CLIENT_BUSY");
     fake.statusChar.emitStatus(createStatusFrame(3, 1, 0, 4, 4));
@@ -358,7 +359,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     fake.statusChar.readValueResult = createStatusFrame(2, 7, 0, 3, 9);
     const status = await aiDevice.getStatus();
     assert.deepEqual(status, {
@@ -372,7 +373,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     const completion = aiDevice.typeText("fail");
     await flushMicrotasks();
     fake.statusChar.emitStatus(createStatusFrame(4, 1, 42, 4, 4));
@@ -381,7 +382,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     fake.controlChar.afterWrite = (_value, writeCount) => {
       if (writeCount === 1) {
         fake.statusChar.emitStatus(createStatusFrame(4, 1, 1, 0, 4));
@@ -396,7 +397,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     const completion = aiDevice.typeText("bad status");
     await flushMicrotasks();
     fake.statusChar.emitStatus(new DataView(new ArrayBuffer(2)));
@@ -406,7 +407,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     fake.dataChar.writeError = new Error("write failed");
     await assertRejectsWithCode(aiDevice.typeText("fail"), "BLE_WRITE_FAILED");
     assert.equal(aiDevice.pending, null);
@@ -414,7 +415,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     const completion = aiDevice.typeText("disconnect");
     const rejection = assertRejectsWithCode(completion, "DISCONNECTED");
     await flushMicrotasks();
@@ -427,7 +428,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     const completion = aiDevice.typeText("link lost");
     const rejection = assertRejectsWithCode(completion, "DISCONNECTED");
     fake.device.emitDisconnected();
@@ -437,7 +438,7 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
-    const aiDevice = await AIInput.connect();
+    const aiDevice = await RemoteInput.connect();
     aiDevice.taskId = 65535;
     const completion = aiDevice.typeText("wrap");
     await flushMicrotasks();
