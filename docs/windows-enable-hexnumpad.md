@@ -10,6 +10,12 @@
 4. 设置值为 `1`。
 5. 注销并重新登录，或重启电脑。
 
+也可以在 PowerShell 中执行：
+
+```powershell
+New-ItemProperty -Path "HKCU:\Control Panel\Input Method" -Name EnableHexNumpad -Value 1 -PropertyType String -Force
+```
+
 ## 验证
 
 打开 Notepad，按住 `Alt`，按小键盘 `+`，输入 `4E2D`，松开 `Alt`。如果出现 `中`，说明配置生效。

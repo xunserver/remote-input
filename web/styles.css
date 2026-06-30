@@ -28,6 +28,12 @@ body {
   gap: 8px;
 }
 
+.hint {
+  margin: 0;
+  color: #52606d;
+  line-height: 1.5;
+}
+
 button {
   min-height: 40px;
   border: 1px solid #9aa5b1;
