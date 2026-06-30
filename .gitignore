@@ -1,1 +1,6 @@
 .worktrees/
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/.clangd
+firmware/.vscode/
