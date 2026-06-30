@@ -14,6 +14,7 @@ AI Input 使用 ESP32-S3 作为 BLE 到 USB HID 的输入桥。控制端桌面 C
 - ESP32-S3。
 - ESP-IDF 6.x。
 - 控制端桌面 Chrome 或 Edge。
+- Web Bluetooth 需要受支持浏览器和安全上下文；优先使用 HTTPS 或 `localhost` 打开 demo。
 - 目标 Windows 已启用 `EnableHexNumpad=1` 并重新登录。
 
 ## 构建固件
@@ -28,7 +29,7 @@ idf.py -C firmware flash
 
 1. 把 ESP32-S3 插到目标 Windows。
 2. 打开 Notepad 并把光标放入文本区。
-3. 在控制端 Chrome/Edge 打开 `web/index.html`。
+3. 在控制端 Chrome/Edge 打开 `web/index.html`；如果浏览器拒绝 Web Bluetooth，请通过 HTTPS 或本地 `localhost` 静态服务器访问。
 4. 点击连接，选择 `AI-Input-S3`。
 5. 输入文本并点击发送。
 
