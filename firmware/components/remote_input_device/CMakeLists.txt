@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "remote_input_ble.c"
         "remote_input_hid.c"
+        "remote_input_led.c"
         "remote_input_service.c"
     INCLUDE_DIRS "include"
     REQUIRES
@@ -10,5 +11,6 @@ idf_component_register(
         nvs_flash
         esp_tinyusb
         tinyusb
+        led_strip
     PRIV_REQUIRES freertos
 )
