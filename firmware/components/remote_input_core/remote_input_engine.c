@@ -100,6 +100,9 @@ void remote_input_engine_handle_control(remote_input_engine_t *engine,
         remote_input_error_t err = remote_input_task_start(&engine->task, frame);
         if (err == REMOTE_INPUT_ERR_OK) {
             err = capture_config(engine, &engine->task.config);
+            if (err != REMOTE_INPUT_ERR_OK) {
+                remote_input_engine_reset_receive(engine);
+            }
         }
         if (err == REMOTE_INPUT_ERR_OK) {
             notify_status(engine,
