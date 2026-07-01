@@ -35,6 +35,8 @@ assert.equal(typeof remoteInputGlobal.connect, "function");
 assert.equal(remoteInputGlobal.connectBle, remoteInputGlobal.connect);
 assert.equal(typeof remoteInputGlobal.RemoteInputClient, "function");
 assert.equal(remoteInputGlobal.RemoteInputDevice, remoteInputGlobal.RemoteInputClient);
+assert.equal(typeof remoteInputGlobal.connectWs, "function");
+assert.equal(remoteInputGlobal.RemoteInput.connectWs, remoteInputGlobal.connectWs);
 
 {
   const { constants } = internals;
@@ -235,6 +237,75 @@ function createFakeBluetooth() {
   };
 }
 
+class FakeWebSocket {
+  static instances = [];
+  static OPEN = 1;
+  static CONNECTING = 0;
+  static CLOSED = 3;
+
+  constructor(url) {
+    this.url = url;
+    this.readyState = FakeWebSocket.CONNECTING;
+    this.binaryType = "";
+    this.sent = [];
+    this.listeners = new Map();
+    FakeWebSocket.instances.push(this);
+  }
+
+  addEventListener(type, listener) {
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(listener);
+  }
+
+  removeEventListener(type, listener) {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  send(value) {
+    if (this.readyState !== FakeWebSocket.OPEN) {
+      throw new Error("socket is not open");
+    }
+    this.sent.push(value instanceof Uint8Array ? Array.from(value) : value);
+  }
+
+  close() {
+    this.readyState = FakeWebSocket.CLOSED;
+    this.emit("close", {});
+  }
+
+  openWithInitialStatus(status = createStatusFrame(0, 0)) {
+    this.readyState = FakeWebSocket.OPEN;
+    this.emit("open", {});
+    this.emitMessage(status);
+  }
+
+  emitMessage(data) {
+    this.emit("message", { data });
+  }
+
+  emitError(error = new Error("ws failed")) {
+    this.emit("error", error);
+  }
+
+  emit(type, event) {
+    for (const listener of this.listeners.get(type) || []) {
+      listener(event);
+    }
+  }
+}
+
+async function connectFakeWs(RemoteInput, url) {
+  FakeWebSocket.instances = [];
+  context.WebSocket = FakeWebSocket;
+  const promise = url === undefined ? RemoteInput.connectWs() : RemoteInput.connectWs(url);
+  await flushMicrotasks();
+  const socket = FakeWebSocket.instances[0];
+  assert.ok(socket);
+  socket.openWithInitialStatus();
+  const device = await promise;
+  return { device, socket };
+}
+
 async function assertRejectsWithCode(value, code) {
   let promise;
   if (typeof value === "function") {
@@ -281,6 +352,64 @@ async function runSdkFlowTests() {
   {
     delete context.navigator.bluetooth;
     await assertRejectsWithCode(RemoteInput.connect(), "WEB_BLUETOOTH_UNSUPPORTED");
+  }
+
+  {
+    delete context.WebSocket;
+    await assertRejectsWithCode(RemoteInput.connectWs(), "WEB_SOCKET_UNSUPPORTED");
+  }
+
+  {
+    const { device, socket } = await connectFakeWs(RemoteInput);
+    assert.equal(socket.url, "ws://192.168.4.1/ws");
+    assert.equal(socket.binaryType, "arraybuffer");
+    assert.equal(device.connected, true);
+    const status = await device.getStatus();
+    assert.equal(status.state, "idle");
+  }
+
+  {
+    const { socket } = await connectFakeWs(RemoteInput, "ws://192.168.4.1/ws");
+    assert.equal(socket.url, "ws://192.168.4.1/ws");
+  }
+
+  {
+    const { device, socket } = await connectFakeWs(RemoteInput);
+    const completion = device.typeText("ws");
+    await flushMicrotasks();
+    assert.deepEqual(socket.sent[0], [1, 1, 1, 0, 2, 0, 0, 0, 1, 0, 0, 0]);
+    assert.deepEqual(socket.sent[1], [1, 16, 1, 0, 0, 0, 1, 0, 119, 115]);
+    assert.deepEqual(socket.sent[2], [1, 2, 1, 0, 2, 0, 0, 0, 1, 0, 0, 0]);
+    socket.emitMessage(createStatusFrame(3, 1, 0, 2, 2));
+    const status = await completion;
+    assert.equal(status.state, "done");
+  }
+
+  {
+    const { device, socket } = await connectFakeWs(RemoteInput);
+    const completion = device.typeText("close");
+    await flushMicrotasks();
+    socket.close();
+    await assertRejectsWithCodeBeforeTimeout(completion, "DISCONNECTED");
+    assert.equal(device.connected, false);
+  }
+
+  {
+    const { device, socket } = await connectFakeWs(RemoteInput);
+    const completion = device.typeText("bad");
+    await flushMicrotasks();
+    socket.emitMessage(new ArrayBuffer(2));
+    await assertRejectsWithCode(completion, "INVALID_STATUS_FRAME");
+    assert.equal(device.pending, null);
+  }
+
+  {
+    FakeWebSocket.instances = [];
+    context.WebSocket = FakeWebSocket;
+    const promise = RemoteInput.connectWs();
+    await flushMicrotasks();
+    FakeWebSocket.instances[0].emitError(new Error("cannot connect"));
+    await assertRejectsWithCode(promise, "WEB_SOCKET_CONNECT_FAILED");
   }
 
   {

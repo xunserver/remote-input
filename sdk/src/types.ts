@@ -44,3 +44,30 @@ export interface RemoteBluetooth {
 export interface RemoteNavigator extends Navigator {
   bluetooth?: RemoteBluetooth;
 }
+
+export interface RemoteWebSocketEventMap {
+  open: Event;
+  close: CloseEvent;
+  error: Event;
+  message: MessageEvent;
+}
+
+export interface RemoteWebSocket {
+  readonly readyState: number;
+  binaryType: BinaryType;
+  addEventListener<K extends keyof RemoteWebSocketEventMap>(
+    type: K,
+    listener: (event: RemoteWebSocketEventMap[K]) => void,
+  ): void;
+  removeEventListener<K extends keyof RemoteWebSocketEventMap>(
+    type: K,
+    listener: (event: RemoteWebSocketEventMap[K]) => void,
+  ): void;
+  send(data: Uint8Array): void;
+  close(): void;
+}
+
+export interface RemoteWebSocketConstructor {
+  readonly OPEN: number;
+  new (url: string): RemoteWebSocket;
+}
