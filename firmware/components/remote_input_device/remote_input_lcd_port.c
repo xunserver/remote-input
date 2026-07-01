@@ -1,13 +1,14 @@
 #include "remote_input_lcd_port.h"
 
-#include "remote_input_lcd_panel_st7789t.h"
-
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
 #include "esp_check.h"
+#include "esp_lcd_panel_commands.h"
+#include "esp_lcd_panel_dev.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
+#include "esp_lcd_panel_st7789.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -173,6 +174,42 @@ static esp_err_t backlight_set_percent(uint8_t percent)
     return ESP_OK;
 }
 
+static esp_err_t lcd_panel_vendor_init(esp_lcd_panel_io_handle_t io_handle)
+{
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0xB0, (uint8_t[]){0x00, 0xE8}, 2), TAG,
+                        "ram control failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0xB2, (uint8_t[]){0x0c, 0x0c, 0x00, 0x33, 0x33}, 5),
+                        TAG, "porch setting failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0xB7, (uint8_t[]){0x75}, 1), TAG,
+                        "gate control failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0xBB, (uint8_t[]){0x1A}, 1), TAG,
+                        "vcom setting failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0xC0, (uint8_t[]){0x80}, 1), TAG,
+                        "lcm control failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0xC2, (uint8_t[]){0x01, 0xff}, 2), TAG,
+                        "vdv/vrh failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0xC3, (uint8_t[]){0x13}, 1), TAG, "vrh failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0xC4, (uint8_t[]){0x20}, 1), TAG, "vdv failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0xC6, (uint8_t[]){0x0F}, 1), TAG,
+                        "frame rate failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, 0xD0, (uint8_t[]){0xA4, 0xA1}, 2), TAG,
+                        "power control failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(
+                            io_handle, 0xE0,
+                            (uint8_t[]){0xD0, 0x0D, 0x14, 0x0D, 0x0D, 0x09, 0x38, 0x44, 0x4E, 0x3A, 0x17, 0x18,
+                                        0x2F, 0x30},
+                            14),
+                        TAG, "positive gamma failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(
+                            io_handle, 0xE1,
+                            (uint8_t[]){0xD0, 0x09, 0x0F, 0x08, 0x07, 0x14, 0x37, 0x44, 0x4D, 0x38, 0x15, 0x16,
+                                        0x2C, 0x2E},
+                            14),
+                        TAG, "negative gamma failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io_handle, LCD_CMD_INVON, NULL, 0), TAG, "invert on failed");
+    return ESP_OK;
+}
+
 static esp_err_t lcd_panel_init(void)
 {
     spi_bus_config_t buscfg = {
@@ -202,15 +239,17 @@ static esp_err_t lcd_panel_init(void)
                                                  &io_handle),
                         TAG, "install panel IO failed");
 
-    remote_input_lcd_panel_st7789t_config_t panel_config = {
+    esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = REMOTE_INPUT_LCD_PIN_RST,
         .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
+        .data_endian = LCD_RGB_DATA_ENDIAN_BIG,
         .bits_per_pixel = 16,
     };
-    ESP_RETURN_ON_ERROR(remote_input_lcd_new_panel_st7789t(io_handle, &panel_config, &s_panel_handle), TAG,
-                        "install ST7789T panel failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_st7789(io_handle, &panel_config, &s_panel_handle), TAG,
+                        "install ST7789 panel failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(s_panel_handle), TAG, "reset panel failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_init(s_panel_handle), TAG, "init panel failed");
+    ESP_RETURN_ON_ERROR(lcd_panel_vendor_init(io_handle), TAG, "vendor init failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(s_panel_handle, true, false), TAG, "mirror panel failed");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(s_panel_handle, true), TAG, "turn display on failed");
     return ESP_OK;
