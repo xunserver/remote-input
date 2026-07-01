@@ -5,6 +5,7 @@
 #include "remote_input_engine.h"
 #include "remote_input_firmware_version.h"
 #include "remote_input_hid.h"
+#include "remote_input_lcd_port.h"
 #include "remote_input_led.h"
 #include "remote_input_receiver.h"
 #include "remote_input_status.h"
@@ -116,9 +117,19 @@ esp_err_t remote_input_service_init(void)
     }
 
 #if CONFIG_REMOTE_INPUT_DISPLAY_ENABLED
-    esp_err_t display_err = remote_input_display_init(REMOTE_INPUT_FIRMWARE_VERSION);
-    if (display_err != ESP_OK) {
-        ESP_LOGE(TAG, "display init failed: %s", esp_err_to_name(display_err));
+    esp_err_t lcd_err = remote_input_lcd_port_init();
+    if (lcd_err != ESP_OK) {
+        ESP_LOGE(TAG, "lcd init failed: %s", esp_err_to_name(lcd_err));
+    } else {
+        esp_err_t display_err = remote_input_display_init(REMOTE_INPUT_FIRMWARE_VERSION);
+        if (display_err != ESP_OK) {
+            ESP_LOGE(TAG, "display init failed: %s", esp_err_to_name(display_err));
+        } else {
+            esp_err_t lcd_start_err = remote_input_lcd_port_start();
+            if (lcd_start_err != ESP_OK) {
+                ESP_LOGE(TAG, "lcd task start failed: %s", esp_err_to_name(lcd_start_err));
+            }
+        }
     }
 #else
     ESP_LOGI(TAG, "display disabled");
