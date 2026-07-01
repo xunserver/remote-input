@@ -121,7 +121,7 @@ esp_err_t remote_input_service_init(void)
     if (lcd_err != ESP_OK) {
         ESP_LOGE(TAG, "lcd init failed: %s", esp_err_to_name(lcd_err));
     } else {
-        esp_err_t display_err = remote_input_display_init(REMOTE_INPUT_FIRMWARE_VERSION);
+        esp_err_t display_err = remote_input_display_init(remote_input_firmware_version_get());
         if (display_err != ESP_OK) {
             ESP_LOGE(TAG, "display init failed: %s", esp_err_to_name(display_err));
         } else {
