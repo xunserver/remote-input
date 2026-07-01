@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Auto Push"
+  short_description: "Commit changes and push current branch"
+  default_prompt: "Use $git-auto-push to commit my local changes and push the current branch."
