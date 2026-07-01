@@ -1,5 +1,9 @@
 .worktrees/
+eim.log
+eim_config.toml
+build_codex_check/
 sdk/node_modules/
 firmware/build/
+firmware/build_codex_check/
 firmware/managed_components/
 firmware/sdkconfig

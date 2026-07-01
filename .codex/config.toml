@@ -1,0 +1,9 @@
+[mcp_servers.espressif]
+url = "https://mcp.espressif.com/docs"
+
+[mcp_servers.esp_idf]
+command = "eim"
+args = ["run", "idf.py -C firmware mcp-server"]
+cwd = "/home/xun/project/remote-input"
+startup_timeout_sec = 60
+tool_timeout_sec = 120
