@@ -70,7 +70,8 @@ static remote_input_error_t submit_text_cb(uint16_t task_id, const uint8_t *byte
 {
     (void)ctx;
 
-    return remote_input_writer_runner_submit(task_id, bytes, len);
+    remote_input_config_t config = remote_input_config_get();
+    return remote_input_writer_runner_submit(task_id, bytes, len, config);
 }
 
 static remote_input_error_t apply_config_cb(const remote_input_config_frame_t *frame, void *ctx)

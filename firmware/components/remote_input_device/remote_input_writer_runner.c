@@ -15,6 +15,7 @@
 typedef struct {
     uint16_t task_id;
     size_t len;
+    remote_input_config_t config;
     uint8_t bytes[REMOTE_INPUT_MAX_TEXT_BYTES];
 } writer_job_t;
 
@@ -71,7 +72,7 @@ static remote_input_error_t write_job(const writer_job_t *job)
         return REMOTE_INPUT_ERR_HID_INPUT_FAILED;
     }
 
-    return s_writer->write_text(job->bytes, job->len, s_writer->ctx);
+    return s_writer->write_text(job->bytes, job->len, &job->config, s_writer->ctx);
 }
 
 static void writer_worker_task(void *ctx)
@@ -166,7 +167,8 @@ bool remote_input_writer_runner_busy(void)
 
 remote_input_error_t remote_input_writer_runner_submit(uint16_t task_id,
                                                        const uint8_t *bytes,
-                                                       size_t len)
+                                                       size_t len,
+                                                       remote_input_config_t config)
 {
     if (!s_initialized || s_queue == NULL) {
         return REMOTE_INPUT_ERR_DEVICE_BUSY;
@@ -177,12 +179,17 @@ remote_input_error_t remote_input_writer_runner_submit(uint16_t task_id,
     if (bytes == NULL && len > 0) {
         return REMOTE_INPUT_ERR_INVALID_COMMAND;
     }
+    if (config.key_delay_ms < REMOTE_INPUT_KEY_DELAY_MIN_MS ||
+        config.key_delay_ms > REMOTE_INPUT_KEY_DELAY_MAX_MS) {
+        return REMOTE_INPUT_ERR_INVALID_COMMAND;
+    }
     if (!reserve_writer()) {
         return REMOTE_INPUT_ERR_DEVICE_BUSY;
     }
 
     s_pending_job.task_id = task_id;
     s_pending_job.len = len;
+    s_pending_job.config = config;
     if (len > 0) {
         memcpy(s_pending_job.bytes, bytes, len);
     }

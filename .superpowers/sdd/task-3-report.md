@@ -1,132 +1,38 @@
-# Task 3 Report: Multi-Receiver Service and Connected State
+# Task 3 Report: Firmware Writer Snapshot and HID Delay Application
 
-## Summary
+## 实现内容
 
-Implemented Task 3 exactly as specified in the brief:
+- 扩展 `remote_input_writer_t.write_text` 接口，增加 `const remote_input_config_t *config` 参数，使 writer 可以消费运行时配置快照。
+- 扩展 `remote_input_writer_runner_submit()` 接口，接收 `remote_input_config_t config` 值拷贝。
+- 在 `writer_job_t` 中新增 `config` 字段，并在 submit 时保存快照；worker 执行写入时将该快照地址传给 writer。
+- 在 writer runner 提交入口增加 `key_delay_ms` 范围校验；超出 `REMOTE_INPUT_KEY_DELAY_MIN_MS` / `REMOTE_INPUT_KEY_DELAY_MAX_MS` 时返回 `REMOTE_INPUT_ERR_INVALID_COMMAND`。
+- 在 `remote_input_service.c` 的 `submit_text_cb()` 中，提交任务前调用 `remote_input_config_get()` 获取当前配置，并将其作为该次 writer job 的固定快照传入。
+- 调整 HID 写入接口与内部调用链，使每次字符注入都使用 job 快照中的 `key_delay_ms`。
+- `remote_input_hid_write_text()` 对传入配置做延时值校验；当 `config == NULL` 时回退到 `REMOTE_INPUT_KEY_DELAY_DEFAULT_MS`。
 
-- updated display connected-state semantics from BLE-specific to client-level
-- kept `remote_input_display_set_ble_connected(bool connected)` as a wrapper
-- integrated multiple service receivers through a fixed receiver slot list
-- broadcasted status updates to every initialized receiver
-- aggregated connected state across BLE and WebSocket receivers with a shared connection count
-- required at least one receiver to initialize successfully before service init returns success
+## 测试命令和结果
 
-## Files Changed
+- 命令：`eim run "idf.py -C firmware -B firmware/build build"`
+- 结果：通过，退出码 `0`，成功生成 `firmware/build/remote_input.bin`
 
-- `firmware/components/remote_input_device/remote_input_service.c`
-- `firmware/components/remote_input_device/include/remote_input_display.h`
-- `firmware/components/remote_input_device/remote_input_display.c`
+## 变更文件
 
-## Build Verification
-
-Command run:
-
-```bash
-eim run "idf.py -C firmware -B firmware/build build"
-```
-
-Observed result:
-
-- compilation reached link and image generation successfully
-- generated `firmware/build/remote_input.bin`
-- final build command exited non-zero because partition size validation failed
-
-Relevant failure:
-
-```text
-Error: app partition is too small for binary remote_input.bin size 0x147770:
-  - Part 'factory' 0/0 @ 0x10000 size 0x100000 (overflow 0x47770)
-```
-
-Binary generated:
-
-- `firmware/build/remote_input.bin` (`1341296` bytes)
-
-## Commit Created
-
-- `fc1ddf8 feat: support multiple input receivers`
-
-## Self-Review
-
-Reviewed the committed diff and checked:
-
-- display API and label text match the brief verbatim
-- BLE display setter is preserved as a wrapper to the new client-connected setter
-- service status notification now iterates over all initialized receivers
-- connection callbacks use aggregate client counting and only reset engine state when total connected clients reaches zero and writer is idle
-- receiver initialization loops over BLE and optional WebSocket receiver slots and only fails when none initialize
-- commit contains only the three Task 3 files
-
-## Concerns
-
-1. The brief expected a PASS build, but the required build command currently fails at the partition size check after producing the binary. This appears to be an existing image-size/configuration issue rather than a compile break introduced by Task 3.
-2. No hardware validation was performed in this environment, so aggregated connected-state behavior across simultaneous BLE/WebSocket clients remains unverified on device.
-
-## Follow-up Fix: Partition Table Size
-
-The build failure was caused by the default single-app partition layout being too small for the current firmware image, not by the Task 3 code itself. The image size was about `0x147770` bytes, while the configured `factory` partition was only `0x100000`.
-
-### Configuration Change
-
-- `firmware/sdkconfig.defaults`
-  - added `CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y`
-
-This uses ESP-IDF's built-in `partitions_singleapp_large.csv`, which provides a `1500K` factory partition and stays within the existing `2MB` flash layout.
-
-### Build Verification
-
-Command run:
-
-```bash
-eim run "idf.py -C firmware -B firmware/build build"
-```
-
-Result:
-
-- PASS
-- generated `firmware/build/remote_input.bin`
-- final size check reported `remote_input.bin` at `0x147770` bytes with the smallest app partition at `0x177000` bytes
-
-### Files Changed
-
-- `firmware/sdkconfig.defaults`
-
-### Concerns
-
-1. `firmware/sdkconfig` remains a generated, ignored file in this worktree, so the committed fix is intentionally scoped to the default configuration source.
-2. No hardware validation was performed after the partition change; only the firmware build and partition-size check were verified here.
-
-## Review Fix: Aggregate Connection Count Race
-
-### What Changed
-
-- `firmware/components/remote_input_device/remote_input_service.c`
-  - added a `portMUX_TYPE` lock for `s_connected_clients`
-  - guarded connect/disconnect read-modify-write operations with a critical section
-  - kept the existing saturation behavior: connect increments only below `INT_MAX`
-  - kept the existing floor behavior: disconnect decrements only above zero
-  - computes the aggregate connected state while locked, then updates LED/display after releasing the lock
-  - keeps idle status and receive-engine reset gated on aggregate disconnected state and `remote_input_writer_runner_busy() == false`
-
-### Build Verification
-
-Command run:
-
-```bash
-eim run "idf.py -C firmware -B firmware/build build"
-```
-
-Result:
-
-- PASS
-- generated `firmware/build/remote_input.bin`
-- partition size check passed: `remote_input.bin` size `0x1477b0`, smallest app partition `0x177000`, `0x2f850` bytes free
-
-### Files Changed
-
+- `firmware/components/remote_input_core/include/remote_input_writer.h`
+- `firmware/components/remote_input_device/include/remote_input_writer_runner.h`
+- `firmware/components/remote_input_device/remote_input_writer_runner.c`
+- `firmware/components/remote_input_device/include/remote_input_hid.h`
+- `firmware/components/remote_input_device/remote_input_hid.c`
 - `firmware/components/remote_input_device/remote_input_service.c`
 
-### Concerns
+## 自检结果
 
-1. No hardware validation was performed in this environment, so simultaneous BLE/WebSocket connect/disconnect behavior was not exercised on device.
-2. No dedicated automated race test exists for these firmware callbacks; coverage for this review fix is the ESP-IDF firmware build plus source inspection of the critical section boundaries.
+- 已按 brief 仅修改指定 writer/HID/service 文件。
+- writer submit 与 HID write 两侧都做了 `key_delay_ms` 范围保护，避免非法快照进入执行路径。
+- writer job 现在保存配置值快照，因此任务入队后即使全局配置再变化，执行中的 HID 延时仍使用提交时配置。
+- 通过完整 ESP-IDF 固件构建验证了签名变更、include 依赖和链接结果。
+- 未执行 `flash`、`monitor` 或任何实机硬件验证；这超出当前 agent 环境职责。
+
+## 疑虑
+
+- 无功能性疑虑。
+- `sdk/package-lock.json` 在工作区中为未跟踪文件，与本任务无关，未纳入修改或提交。
