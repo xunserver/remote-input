@@ -15,3 +15,4 @@ CONFIG_REMOTE_INPUT_DISPLAY_ENABLED=y
 # The firmware only uses LVGL core widgets; compiling bundled examples adds
 # hundreds of source files to clean builds.
 CONFIG_LV_BUILD_EXAMPLES=n
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
