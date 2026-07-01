@@ -1,108 +1,106 @@
-# Task 4 Report
+# Task 4 Report: Protocol Documentation and Full Verification
 
-## Completed Changes
+## Status
 
-- Updated `sdk/index.html` demo toolbar to support BLE and WebSocket connection entry points.
-- Added `ws://192.168.4.1/ws` input handling and `RemoteInput.connectWs()` wiring in the demo.
-- Updated `docs/remote-input-protocol.md` with the WebSocket transport section, the SoftAP defaults, binary message mapping, status push behavior, and the security boundary.
-- Renumbered later protocol sections so the headings remain monotonic.
+DONE
 
-## Verification
+## Scope Executed
 
-### SDK tests
+- Updated `docs/remote-input-protocol.md` exactly per brief:
+  - basic limits table Control row
+  - Control frame introduction to include CONFIG
+  - CONFIG type row
+  - CONFIG frame format, validation rules, and runtime-only semantics
+  - normal flow note for optional CONFIG after connect
+- Did not modify SDK or firmware implementation.
+
+## Verification Evidence
+
+### 1. SDK verification
 
 Command:
 
-```bash
+```sh
 npm --prefix sdk run test:sdk
-```
-
-Result: passed. The command built `sdk/dist/remote-input-sdk.js` and ended with `sdk protocol tests passed`.
-
-### Firmware build
-
-Command:
-
-```bash
-eim run "idf.py -C firmware -B firmware/build build"
-```
-
-Result: passed. The build completed successfully and generated `firmware/build/remote_input.bin`.
-
-### Final diff checks
-
-Commands:
-
-```bash
-git status --short
-git diff --check
-git diff --stat
 ```
 
 Result:
 
-- `git diff --check` produced no output.
-- Tracked changes were limited to `docs/remote-input-protocol.md` and `sdk/index.html`.
-- `sdk/package-lock.json` remained untracked and was not included in the commit.
+- Exit code `0`
+- Built `sdk/dist/remote-input-sdk.js`
+- Output included: `sdk protocol tests passed`
 
-## Commit
-
-- `e5fe26b` `docs: describe websocket transport`
-
-## Concerns
-
-- No hardware verification was run in this environment.
-- The WebSocket demo and protocol documentation were updated, but connecting to the ESP32 SoftAP and exercising live WebSocket traffic still needs confirmation on hardware-capable test equipment.
-
-## Review Fix: Transport-Neutral Protocol Wording
-
-### What changed
-
-- Updated `docs/remote-input-protocol.md` so Control, Data, and Status frame definitions distinguish BLE characteristic behavior from WebSocket binary message behavior.
-- Updated the normal send flow to describe sending frames through the active transport instead of only writing BLE characteristics.
-- Renamed the outdated WiFi future-support section to a generic future transport extension section and removed WebSocket-obsolete WiFi-specific wording.
-- Protocol bytes, frame sizes, field layouts, status codes, and error codes were unchanged.
-
-### Verification
+### 2. Firmware verification
 
 Command:
 
-```bash
-git diff --check
+```sh
+eim run "idf.py -C firmware -B firmware/build build"
 ```
 
-Result: passed with no output.
+Result:
 
-### Files changed
+- Exit code `0`
+- Output included: `Generated /home/xun/project/remote-input/.worktrees/runtime-device-config/firmware/build/remote_input.bin`
+- Verified file exists: `firmware/build/remote_input.bin`
 
-- `docs/remote-input-protocol.md`
-- `.superpowers/sdd/task-4-report.md`
+Notes:
 
-### Concerns
+- Build output included ESP-IDF Kconfig notifications for upstream bool default parsing, but build completed successfully.
+- Did not run `flash` or `monitor`, per repository and task constraints.
 
-- Documentation-only fix; SDK and firmware suites were not rerun.
+## Git Status Review
 
-## Review Fix: WebSocket/SoftAP Defaults Table
+Checked with:
 
-### What changed
-
-- Updated the WebSocket/SoftAP defaults table in `docs/remote-input-protocol.md` to include the binding plan constraints for AP channel `6` and maximum client count `1`.
-
-### Verification
-
-Command:
-
-```bash
-git diff --check
+```sh
+git status --short
 ```
 
-Result: passed with no output.
+Observed before commit:
 
-### Files changed
+- `M docs/remote-input-protocol.md`
+- `?? sdk/package-lock.json`
 
-- `docs/remote-input-protocol.md`
-- `.superpowers/sdd/task-4-report.md`
+Observed after commit:
 
-### Concerns
+- `?? sdk/package-lock.json`
 
-- Documentation-only fix; no runtime behavior changed and no hardware verification was needed for this table update.
+Actions taken:
+
+- Did not add or commit `firmware/build`
+- Did not add or commit `sdk/package-lock.json`
+- No `firmware/dependencies.lock` change was present
+
+## Commit Created
+
+- `111f07d` `docs: describe runtime config frame`
+
+## Self-Check
+
+- Brief-required document text was applied.
+- Required SDK verification command was run and passed.
+- Required firmware build command was run and passed.
+- No implementation files were modified.
+- No forbidden flash/monitor commands were run.
+- Commit message matches brief exactly.
+
+## Remaining Concerns
+
+- Hardware-dependent validation remains unexecuted in this environment by design: BLE/WebSocket live behavior, runtime CONFIG application on device, HID timing behavior on a real host, pairing/connection checks, and any LED/user-visible device behavior.
+
+## Fix Report: Review Findings
+
+- Clarified the Control section so the first 12-byte layout table is explicitly labeled as the START/COMMIT frame format.
+- Split validation text into START/COMMIT rules and CONFIG rules so `type = 3` is documented as a legal Control frame value without conflicting with the START/COMMIT checks.
+- Updated the CONFIG table to render `reserved` as `` `bytes` `` for consistent type formatting.
+- Ran the requested lightweight check:
+
+```sh
+rg -n "type.*START|START/COMMIT|CONFIG 帧格式|reserved" docs/remote-input-protocol.md
+```
+
+- Check result confirmed the expected locations:
+  - START/COMMIT layout and validation remain present.
+  - CONFIG frame format is documented separately.
+  - CONFIG `reserved` now uses the backticked `bytes` type.
