@@ -36,6 +36,8 @@ Remote-Input-S3
 | --- | --- |
 | AP SSID | `Remote-Input-S3` |
 | AP 密码 | `remoteinput` |
+| AP 频道 | `6` |
+| 最大客户端数 | `1` |
 | URL | `ws://192.168.4.1/ws` |
 | 消息类型 | binary |
 
