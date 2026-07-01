@@ -68,6 +68,8 @@ SDK 先把输入文本编码为 UTF-8 字节，再按 12 字节切片发送。ES
 
 Control 帧固定为 12 字节。在 BLE 传输中，START、COMMIT 和 CONFIG 帧写入 Control 特征值；在 WebSocket 传输中，START、COMMIT 和 CONFIG 帧分别作为独立 binary message 发送。
 
+START/COMMIT 帧格式：
+
 | 偏移 | 长度 | 类型 | 字段 | 说明 |
 | --- | ---: | --- | --- | --- |
 | 0 | 1 | `uint8` | `version` | 必须为 `1` |
@@ -85,7 +87,7 @@ Control 帧类型：
 | 2 | COMMIT | 表示所有 Data 分片已经发送完，可以提交执行 |
 | 3 | CONFIG | 更新设备运行时配置 |
 
-校验规则：
+START/COMMIT 校验规则：
 
 - `version` 必须为 `1`。
 - `type` 只能是 START 或 COMMIT。
@@ -103,7 +105,7 @@ CONFIG 帧格式：
 | 1 | 1 | `uint8` | `type` | 必须为 `3` |
 | 2 | 2 | `uint16` | `flags` | 保留字段，必须为 `0` |
 | 4 | 2 | `uint16` | `key_delay_ms` | HID report 之间的延迟，范围 `1..200` 毫秒 |
-| 6 | 6 | bytes | `reserved` | 保留字段，必须全部为 `0` |
+| 6 | 6 | `bytes` | `reserved` | 保留字段，必须全部为 `0` |
 
 CONFIG 校验规则：
 
