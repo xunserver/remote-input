@@ -1,5 +1,6 @@
 import { RemoteInputClient } from "../device";
 import { getErrorMessage, RemoteInputError } from "../errors";
+import { decodeStatusFrame } from "../protocol";
 import type { RemoteWebSocket, RemoteWebSocketConstructor } from "../types";
 import type {
   RemoteInputDisconnectListener,
@@ -165,6 +166,7 @@ export async function connectWs(url = DEFAULT_WS_URL): Promise<RemoteInputClient
       let initialStatus: DataView;
       try {
         initialStatus = toDataView(event.data);
+        decodeStatusFrame(initialStatus);
       } catch (error) {
         fail("INVALID_STATUS_FRAME", getErrorMessage(error, "Invalid status frame"), error);
         return;

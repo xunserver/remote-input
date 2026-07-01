@@ -408,6 +408,19 @@ async function runSdkFlowTests() {
     context.WebSocket = FakeWebSocket;
     const promise = RemoteInput.connectWs();
     await flushMicrotasks();
+    const socket = FakeWebSocket.instances[0];
+    assert.ok(socket);
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.emit("open", {});
+    socket.emitMessage(new ArrayBuffer(2));
+    await assertRejectsWithCode(promise, "INVALID_STATUS_FRAME");
+  }
+
+  {
+    FakeWebSocket.instances = [];
+    context.WebSocket = FakeWebSocket;
+    const promise = RemoteInput.connectWs();
+    await flushMicrotasks();
     FakeWebSocket.instances[0].emitError(new Error("cannot connect"));
     await assertRejectsWithCode(promise, "WEB_SOCKET_CONNECT_FAILED");
   }
