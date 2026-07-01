@@ -224,6 +224,15 @@ static esp_err_t ws_handler(httpd_req_t *req)
         return err;
     }
 
+    if (!frame.final || frame.type == HTTPD_WS_TYPE_CONTINUE) {
+        notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
+        remove_client_and_notify(fd);
+        if (s_server != NULL) {
+            httpd_sess_trigger_close(s_server, fd);
+        }
+        return ESP_ERR_INVALID_SIZE;
+    }
+
     if (frame.type == HTTPD_WS_TYPE_CLOSE) {
         remove_client_and_notify(fd);
         return ESP_OK;

@@ -95,3 +95,35 @@ Result: PASS
 
 - Corrected the previous report claim about `httpd_req_recv()` drain behavior. The implementation no longer relies on that unsupported receive path.
 - No hardware/runtime validation was performed for actual connect/disconnect timing, browser-generated control frames, or oversized-frame close behavior in this environment.
+
+## Fragmented Frame Rejection Follow-Up
+
+### What changed
+
+- Added an explicit post-receive validation in `ws_handler()` to reject fragmented WebSocket messages.
+- After `httpd_ws_recv_frame()` populates the frame metadata, the handler now checks:
+  - `frame.final == false`
+  - `frame.type == HTTPD_WS_TYPE_CONTINUE`
+- Either condition now reports `REMOTE_INPUT_ERR_INVALID_COMMAND`, removes the tracked client, emits disconnect once if that client was tracked, and triggers a session close using the same oversized-frame failure path.
+- This prevents fragmented binary messages from being parsed as protocol control or data frames.
+
+### Build command and result
+
+```bash
+eim run "idf.py -C firmware -B firmware/build build"
+```
+
+Result: PASS
+
+- Generated `firmware/build/remote_input.bin`
+- Final binary size reported as `0xbb030 bytes`
+- App partition free space reported as `0x44fd0 bytes (27%) free`
+
+### Files changed
+
+- `firmware/components/remote_input_device/remote_input_ws.c`
+- `.superpowers/sdd/task-2-report.md`
+
+### Any concerns
+
+- No new functional concerns beyond the existing lack of hardware/runtime verification for actual browser traffic.
