@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "remote_input_config.h"
 #include "remote_input_status.h"
 #include "remote_input_writer.h"
 
@@ -27,4 +28,5 @@ esp_err_t remote_input_writer_runner_init(const remote_input_writer_t *writer,
 bool remote_input_writer_runner_busy(void);
 remote_input_error_t remote_input_writer_runner_submit(uint16_t task_id,
                                                        const uint8_t *bytes,
-                                                       size_t len);
+                                                       size_t len,
+                                                       remote_input_config_t config);

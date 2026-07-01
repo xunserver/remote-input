@@ -2,6 +2,7 @@ import { CONTROL_UUID, DATA_UUID, SERVICE_UUID, STATUS_UUID } from "../constants
 import { RemoteInputClient } from "../device";
 import { getErrorMessage, getErrorName, RemoteInputError } from "../errors";
 import type {
+  RemoteInputConfig,
   RemoteBluetoothCharacteristic,
   RemoteBluetoothDevice,
   RemoteBluetoothServer,
@@ -121,7 +122,11 @@ export class BleTransport implements RemoteInputTransport {
   }
 }
 
-export async function connectBle(): Promise<RemoteInputClient> {
+export interface ConnectBleOptions {
+  config?: RemoteInputConfig;
+}
+
+export async function connectBle(options: ConnectBleOptions = {}): Promise<RemoteInputClient> {
   const remoteNavigator = navigator as RemoteNavigator;
   if (!remoteNavigator.bluetooth) {
     throw new RemoteInputError("WEB_BLUETOOTH_UNSUPPORTED", "Web Bluetooth is not available");
@@ -149,7 +154,11 @@ export async function connectBle(): Promise<RemoteInputClient> {
     const statusChar = await service.getCharacteristic(STATUS_UUID);
     transport = new BleTransport(device, server, controlChar, dataChar, statusChar);
     await transport.startNotifications();
-    return new RemoteInputClient(transport);
+    const client = new RemoteInputClient(transport);
+    if (options.config) {
+      await client.setConfig(options.config);
+    }
+    return client;
   } catch (error) {
     if (transport) {
       await transport.disconnect();

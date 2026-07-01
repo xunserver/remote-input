@@ -3,6 +3,7 @@
 #include <limits.h>
 
 #include "remote_input_ble.h"
+#include "remote_input_config.h"
 #include "remote_input_display.h"
 #include "remote_input_engine.h"
 #include "remote_input_firmware_version.h"
@@ -65,11 +66,34 @@ static bool writer_busy_cb(void *ctx)
     return remote_input_writer_runner_busy();
 }
 
-static remote_input_error_t submit_text_cb(uint16_t task_id, const uint8_t *bytes, size_t len, void *ctx)
+static remote_input_error_t capture_config_cb(remote_input_config_t *config, void *ctx)
 {
     (void)ctx;
 
-    return remote_input_writer_runner_submit(task_id, bytes, len);
+    if (config == NULL) {
+        return REMOTE_INPUT_ERR_INVALID_COMMAND;
+    }
+
+    *config = remote_input_config_get();
+    return REMOTE_INPUT_ERR_OK;
+}
+
+static remote_input_error_t submit_text_cb(uint16_t task_id,
+                                           const uint8_t *bytes,
+                                           size_t len,
+                                           remote_input_config_t config,
+                                           void *ctx)
+{
+    (void)ctx;
+
+    return remote_input_writer_runner_submit(task_id, bytes, len, config);
+}
+
+static remote_input_error_t apply_config_cb(const remote_input_config_frame_t *frame, void *ctx)
+{
+    (void)ctx;
+
+    return remote_input_config_update(frame);
 }
 
 static void status_cb(remote_input_state_t state,
@@ -103,6 +127,13 @@ static void on_data(const remote_input_data_frame_t *frame, void *ctx)
     (void)ctx;
 
     remote_input_engine_handle_data(&s_engine, frame);
+}
+
+static void on_config(const remote_input_config_frame_t *frame, void *ctx)
+{
+    (void)ctx;
+
+    remote_input_engine_handle_config(&s_engine, frame);
 }
 
 static void on_receiver_error(remote_input_error_t error, void *ctx)
@@ -158,6 +189,7 @@ static void on_disconnect(void *ctx)
 esp_err_t remote_input_service_init(void)
 {
     remote_input_status_init();
+    remote_input_config_init();
 
     esp_err_t led_err = remote_input_led_init();
     if (led_err != ESP_OK) {
@@ -196,7 +228,9 @@ esp_err_t remote_input_service_init(void)
 
     const remote_input_engine_callbacks_t engine_callbacks = {
         .output_busy = writer_busy_cb,
+        .capture_config = capture_config_cb,
         .submit_text = submit_text_cb,
+        .apply_config = apply_config_cb,
         .on_status = status_cb,
         .ctx = NULL,
     };
@@ -205,6 +239,7 @@ esp_err_t remote_input_service_init(void)
     const remote_input_receiver_callbacks_t callbacks = {
         .on_connect = on_connect,
         .on_control = on_control,
+        .on_config = on_config,
         .on_data = on_data,
         .on_error = on_receiver_error,
         .on_disconnect = on_disconnect,

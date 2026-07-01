@@ -6,6 +6,10 @@ export interface RemoteInputStatus {
   totalBytes: number;
 }
 
+export interface RemoteInputConfig {
+  keyDelayMs: number;
+}
+
 export interface PendingTask {
   taskId: number;
   resolve: (status: RemoteInputStatus) => void;

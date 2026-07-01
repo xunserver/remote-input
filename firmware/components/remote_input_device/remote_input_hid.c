@@ -18,6 +18,7 @@ static const uint8_t REPORT_ID_KEYBOARD = 1;
 
 typedef struct {
     remote_input_error_t error;
+    uint16_t key_delay_ms;
 } hid_write_context_t;
 
 static bool validate_codepoint_cb(uint32_t codepoint, void *ctx)
@@ -94,7 +95,7 @@ static uint8_t hex_keycode(char c)
     return 0;
 }
 
-static esp_err_t send_report(uint8_t modifier, uint8_t const keycode[6])
+static esp_err_t send_report(uint8_t modifier, uint8_t const keycode[6], uint16_t key_delay_ms)
 {
     if (!tud_hid_ready()) {
         return ESP_ERR_INVALID_STATE;
@@ -102,11 +103,11 @@ static esp_err_t send_report(uint8_t modifier, uint8_t const keycode[6])
     if (!tud_hid_keyboard_report(REPORT_ID_KEYBOARD, modifier, keycode)) {
         return ESP_ERR_INVALID_RESPONSE;
     }
-    vTaskDelay(pdMS_TO_TICKS(REMOTE_INPUT_HID_DELAY_MS));
+    vTaskDelay(pdMS_TO_TICKS(key_delay_ms));
     return ESP_OK;
 }
 
-static esp_err_t release_all_keys(void)
+static esp_err_t release_all_keys(uint16_t key_delay_ms)
 {
     const uint8_t keys[6] = {0};
 
@@ -118,26 +119,26 @@ static esp_err_t release_all_keys(void)
             if (!tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keys)) {
                 return ESP_ERR_INVALID_RESPONSE;
             }
-            vTaskDelay(pdMS_TO_TICKS(REMOTE_INPUT_HID_DELAY_MS));
+            vTaskDelay(pdMS_TO_TICKS(key_delay_ms));
             return ESP_OK;
         }
-        vTaskDelay(pdMS_TO_TICKS(REMOTE_INPUT_HID_DELAY_MS));
+        vTaskDelay(pdMS_TO_TICKS(key_delay_ms));
     }
 
     return ESP_ERR_TIMEOUT;
 }
 
-static esp_err_t send_alt_modified_key(uint8_t keycode)
+static esp_err_t send_alt_modified_key(uint8_t keycode, uint16_t key_delay_ms)
 {
     const uint8_t keys[6] = {keycode, 0, 0, 0, 0, 0};
     const uint8_t no_keys[6] = {0};
 
-    ESP_RETURN_ON_ERROR(send_report(KEYBOARD_MODIFIER_LEFTALT, keys), TAG, "hid key press failed");
-    ESP_RETURN_ON_ERROR(send_report(KEYBOARD_MODIFIER_LEFTALT, no_keys), TAG, "hid key release failed");
+    ESP_RETURN_ON_ERROR(send_report(KEYBOARD_MODIFIER_LEFTALT, keys, key_delay_ms), TAG, "hid key press failed");
+    ESP_RETURN_ON_ERROR(send_report(KEYBOARD_MODIFIER_LEFTALT, no_keys, key_delay_ms), TAG, "hid key release failed");
     return ESP_OK;
 }
 
-esp_err_t remote_input_hid_type_codepoint(uint32_t codepoint)
+esp_err_t remote_input_hid_type_codepoint(uint32_t codepoint, uint16_t key_delay_ms)
 {
     if (!remote_input_hid_ready()) {
         return ESP_ERR_INVALID_STATE;
@@ -153,39 +154,39 @@ esp_err_t remote_input_hid_type_codepoint(uint32_t codepoint)
     }
 
     const uint8_t no_keys[6] = {0};
-    esp_err_t ret = send_report(KEYBOARD_MODIFIER_LEFTALT, no_keys);
+    esp_err_t ret = send_report(KEYBOARD_MODIFIER_LEFTALT, no_keys, key_delay_ms);
     if (ret != ESP_OK) {
-        (void)release_all_keys();
+        (void)release_all_keys(key_delay_ms);
         return ret;
     }
 
-    ret = send_alt_modified_key(HID_KEY_KEYPAD_ADD);
+    ret = send_alt_modified_key(HID_KEY_KEYPAD_ADD, key_delay_ms);
     if (ret != ESP_OK) {
-        (void)release_all_keys();
+        (void)release_all_keys(key_delay_ms);
         return ret;
     }
 
     for (const char *p = hex; *p != '\0'; ++p) {
         uint8_t keycode = hex_keycode(*p);
         if (keycode == 0) {
-            (void)release_all_keys();
+            (void)release_all_keys(key_delay_ms);
             return ESP_ERR_INVALID_ARG;
         }
 
-        ret = send_alt_modified_key(keycode);
+        ret = send_alt_modified_key(keycode, key_delay_ms);
         if (ret != ESP_OK) {
-            (void)release_all_keys();
+            (void)release_all_keys(key_delay_ms);
             return ret;
         }
     }
 
-    return release_all_keys();
+    return release_all_keys(key_delay_ms);
 }
 
 static bool type_codepoint_cb(uint32_t codepoint, void *ctx)
 {
     hid_write_context_t *write_ctx = (hid_write_context_t *)ctx;
-    esp_err_t err = remote_input_hid_type_codepoint(codepoint);
+    esp_err_t err = remote_input_hid_type_codepoint(codepoint, write_ctx->key_delay_ms);
     if (err != ESP_OK) {
         if (write_ctx != NULL) {
             if (err == ESP_ERR_INVALID_STATE) {
@@ -214,11 +215,18 @@ static bool hid_writer_ready(void *ctx)
     return remote_input_hid_ready();
 }
 
-remote_input_error_t remote_input_hid_write_text(const uint8_t *bytes, size_t len, void *ctx)
+remote_input_error_t remote_input_hid_write_text(const uint8_t *bytes,
+                                                 size_t len,
+                                                 const remote_input_config_t *config,
+                                                 void *ctx)
 {
     (void)ctx;
+    const uint16_t key_delay_ms = config != NULL ? config->key_delay_ms : REMOTE_INPUT_KEY_DELAY_DEFAULT_MS;
 
     if (bytes == NULL && len > 0) {
+        return REMOTE_INPUT_ERR_INVALID_COMMAND;
+    }
+    if (key_delay_ms < REMOTE_INPUT_KEY_DELAY_MIN_MS || key_delay_ms > REMOTE_INPUT_KEY_DELAY_MAX_MS) {
         return REMOTE_INPUT_ERR_INVALID_COMMAND;
     }
 
@@ -232,6 +240,7 @@ remote_input_error_t remote_input_hid_write_text(const uint8_t *bytes, size_t le
 
     hid_write_context_t write_ctx = {
         .error = REMOTE_INPUT_ERR_OK,
+        .key_delay_ms = key_delay_ms,
     };
     if (!remote_input_utf8_decode_each(bytes, len, type_codepoint_cb, &write_ctx)) {
         if (write_ctx.error == REMOTE_INPUT_ERR_OK) {

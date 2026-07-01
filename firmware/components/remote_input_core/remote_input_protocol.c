@@ -43,6 +43,32 @@ bool remote_input_parse_control_frame(const uint8_t *data, size_t len, remote_in
     return true;
 }
 
+bool remote_input_parse_config_frame(const uint8_t *data, size_t len, remote_input_config_frame_t *out)
+{
+    if (data == NULL || out == NULL || len != REMOTE_INPUT_CONTROL_FRAME_LEN) {
+        return false;
+    }
+    if (data[0] != REMOTE_INPUT_PROTOCOL_VERSION || data[1] != REMOTE_INPUT_CONTROL_CONFIG) {
+        return false;
+    }
+    if (read_le16(&data[2]) != 0) {
+        return false;
+    }
+
+    const uint16_t key_delay_ms = read_le16(&data[4]);
+    if (key_delay_ms < REMOTE_INPUT_KEY_DELAY_MIN_MS || key_delay_ms > REMOTE_INPUT_KEY_DELAY_MAX_MS) {
+        return false;
+    }
+    for (size_t i = 6; i < REMOTE_INPUT_CONTROL_FRAME_LEN; i += 1) {
+        if (data[i] != 0) {
+            return false;
+        }
+    }
+
+    out->key_delay_ms = key_delay_ms;
+    return true;
+}
+
 bool remote_input_parse_data_frame(const uint8_t *data, size_t len, remote_input_data_frame_t *out)
 {
     if (data == NULL || out == NULL || len < REMOTE_INPUT_DATA_FRAME_HEADER_LEN ||

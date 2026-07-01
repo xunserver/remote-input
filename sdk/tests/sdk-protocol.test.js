@@ -48,9 +48,23 @@ assert.equal(remoteInputGlobal.RemoteInput.connectWs, remoteInputGlobal.connectW
 }
 
 {
+  const { constants } = internals;
+  assert.equal(constants.CONTROL_CONFIG, 3);
+  assert.equal(constants.DEFAULT_KEY_DELAY_MS, 20);
+  assert.equal(constants.MIN_KEY_DELAY_MS, 1);
+  assert.equal(constants.MAX_KEY_DELAY_MS, 200);
+}
+
+{
   const frame = internals.encodeControlFrame(1, 7, 16, 2);
   assert.equal(frame.byteLength, 12);
   assert.deepEqual(Array.from(frame), [1, 1, 7, 0, 16, 0, 0, 0, 2, 0, 0, 0]);
+}
+
+{
+  const frame = internals.encodeConfigFrame({ keyDelayMs: 10 });
+  assert.equal(frame.byteLength, 12);
+  assert.deepEqual(Array.from(frame), [1, 3, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0]);
 }
 
 {
@@ -99,6 +113,15 @@ assert.equal(remoteInputGlobal.RemoteInput.connectWs, remoteInputGlobal.connectW
 {
   const valid = new Uint8Array(16 * 1024);
   assert.equal(internals.assertTextSize(valid), undefined);
+}
+
+{
+  assert.equal(internals.assertConfig({ keyDelayMs: 1 }), undefined);
+  assert.equal(internals.assertConfig({ keyDelayMs: 200 }), undefined);
+  assert.throws(() => internals.assertConfig({ keyDelayMs: 0 }), /INVALID_CONFIG/);
+  assert.throws(() => internals.assertConfig({ keyDelayMs: 201 }), /INVALID_CONFIG/);
+  assert.throws(() => internals.assertConfig({ keyDelayMs: 1.5 }), /INVALID_CONFIG/);
+  assert.throws(() => internals.assertConfig({ keyDelayMs: Number.NaN }), /INVALID_CONFIG/);
 }
 
 function createStatusFrame(stateCode, taskId, errorCode = 0, receivedBytes = 0, totalBytes = 0) {
@@ -313,6 +336,19 @@ async function connectFakeWs(RemoteInput, url) {
   return { device, socket };
 }
 
+async function connectFakeWsWithOptions(RemoteInput, url, options) {
+  FakeWebSocket.instances = [];
+  FakeWebSocket.throwOnConstruct = null;
+  context.WebSocket = FakeWebSocket;
+  const promise = RemoteInput.connectWs(url, options);
+  await flushMicrotasks();
+  const socket = FakeWebSocket.instances[0];
+  assert.ok(socket);
+  socket.openWithInitialStatus();
+  const device = await promise;
+  return { device, socket };
+}
+
 async function assertRejectsWithCode(value, code) {
   let promise;
   if (typeof value === "function") {
@@ -376,8 +412,46 @@ async function runSdkFlowTests() {
   }
 
   {
+    const { device, socket } = await connectFakeWs(RemoteInput);
+    assert.deepEqual(device.getConfig(), { keyDelayMs: 20 });
+    await device.setConfig({ keyDelayMs: 10 });
+    assert.deepEqual(socket.sent[0], [1, 3, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0]);
+    assert.deepEqual(device.getConfig(), { keyDelayMs: 10 });
+  }
+
+  {
+    const { device } = await connectFakeWs(RemoteInput);
+    await assertRejectsWithCode(() => device.setConfig({ keyDelayMs: 0 }), "INVALID_CONFIG");
+    assert.deepEqual(device.getConfig(), { keyDelayMs: 20 });
+  }
+
+  {
+    const { device, socket } = await connectFakeWs(RemoteInput);
+    socket.readyState = FakeWebSocket.CLOSED;
+    await assertRejectsWithCode(() => device.setConfig({ keyDelayMs: 10 }), "NOT_CONNECTED");
+    assert.deepEqual(device.getConfig(), { keyDelayMs: 20 });
+  }
+
+  {
     const { socket } = await connectFakeWs(RemoteInput, "ws://192.168.4.1/ws");
     assert.equal(socket.url, "ws://192.168.4.1/ws");
+  }
+
+  {
+    const { device, socket } = await connectFakeWsWithOptions(
+      RemoteInput,
+      "ws://192.168.4.1/ws",
+      { config: { keyDelayMs: 15 } }
+    );
+    assert.deepEqual(socket.sent[0], [1, 3, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0]);
+    assert.deepEqual(device.getConfig(), { keyDelayMs: 15 });
+  }
+
+  {
+    await assertRejectsWithCode(
+      () => connectFakeWsWithOptions(RemoteInput, "ws://192.168.4.1/ws", { config: { keyDelayMs: 201 } }),
+      "INVALID_CONFIG"
+    );
   }
 
   {
@@ -494,6 +568,13 @@ async function runSdkFlowTests() {
 
   {
     const fake = createFakeBluetooth();
+    const aiDevice = await RemoteInput.connect({ config: { keyDelayMs: 12 } });
+    assert.deepEqual(fake.controlChar.writes[0], [1, 3, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0]);
+    assert.deepEqual(aiDevice.getConfig(), { keyDelayMs: 12 });
+  }
+
+  {
+    const fake = createFakeBluetooth();
     fake.statusChar.startNotificationsError = new Error("notify failed");
     await assert.rejects(RemoteInput.connect());
     assert.equal(fake.device.disconnectCalls, 1);
@@ -514,6 +595,14 @@ async function runSdkFlowTests() {
     const status = await completion;
     assert.equal(status.state, "done");
     assert.equal(status.lastTaskId, 1);
+  }
+
+  {
+    const fake = createFakeBluetooth();
+    const aiDevice = await RemoteInput.connect();
+    fake.controlChar.writeError = new Error("config write failed");
+    await assertRejectsWithCode(() => aiDevice.setConfig({ keyDelayMs: 11 }), "BLE_WRITE_FAILED");
+    assert.deepEqual(aiDevice.getConfig(), { keyDelayMs: 20 });
   }
 
   {

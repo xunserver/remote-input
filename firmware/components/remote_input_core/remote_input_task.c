@@ -63,6 +63,7 @@ remote_input_error_t remote_input_task_start(remote_input_task_buffer_t *task, c
     task->total_chunks = frame->total_chunks;
     task->received_bytes = 0;
     task->received_chunks = 0;
+    task->config = (remote_input_config_t) {0};
     memset(task->buffer, 0, sizeof(task->buffer));
     memset(task->chunk_seen, 0, sizeof(task->chunk_seen));
     task->active = true;

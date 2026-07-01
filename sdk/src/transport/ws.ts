@@ -1,7 +1,7 @@
 import { RemoteInputClient } from "../device";
 import { getErrorMessage, RemoteInputError } from "../errors";
 import { decodeStatusFrame } from "../protocol";
-import type { RemoteWebSocket, RemoteWebSocketConstructor } from "../types";
+import type { RemoteInputConfig, RemoteWebSocket, RemoteWebSocketConstructor } from "../types";
 import type {
   RemoteInputDisconnectListener,
   RemoteInputStatusListener,
@@ -13,6 +13,7 @@ const DEFAULT_INITIAL_STATUS_TIMEOUT_MS = 5000;
 
 export interface ConnectWsOptions {
   initialStatusTimeoutMs?: number;
+  config?: RemoteInputConfig;
 }
 
 function toDataView(data: unknown): DataView {
@@ -194,7 +195,19 @@ export async function connectWs(url = DEFAULT_WS_URL, options: ConnectWsOptions 
       }
       settled = true;
       cleanupBeforeTransport();
-      resolve(new RemoteInputClient(new WsTransport(socket, WebSocketCtor, initialStatus)));
+      const transport = new WsTransport(socket, WebSocketCtor, initialStatus);
+      const client = new RemoteInputClient(transport);
+      if (options.config) {
+        client.setConfig(options.config).then(
+          () => resolve(client),
+          (error) => {
+            void transport.disconnect();
+            reject(error);
+          },
+        );
+        return;
+      }
+      resolve(client);
     };
 
     const handleError = (event: Event): void => {

@@ -158,6 +158,18 @@ static void handle_binary_frame(const uint8_t *payload, size_t len)
 
     const uint8_t type = len > 1 ? payload[1] : 0;
 
+    if (len == REMOTE_INPUT_CONTROL_FRAME_LEN && type == REMOTE_INPUT_CONTROL_CONFIG) {
+        remote_input_config_frame_t frame;
+        if (!remote_input_parse_config_frame(payload, len, &frame)) {
+            notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
+            return;
+        }
+        if (s_callbacks.on_config != NULL) {
+            s_callbacks.on_config(&frame, s_callbacks.ctx);
+        }
+        return;
+    }
+
     if (len == REMOTE_INPUT_CONTROL_FRAME_LEN &&
         (type == REMOTE_INPUT_CONTROL_START || type == REMOTE_INPUT_CONTROL_COMMIT)) {
         remote_input_control_frame_t frame;

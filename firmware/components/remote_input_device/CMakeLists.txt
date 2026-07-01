@@ -14,6 +14,7 @@ endif()
 idf_component_register(
     SRCS
         "remote_input_ble.c"
+        "remote_input_config.c"
         "remote_input_display.c"
         "remote_input_hid.c"
         "remote_input_lcd_port.c"

@@ -1,9 +1,13 @@
 import {
+  CONTROL_CONFIG,
   CONTROL_COMMIT,
   CONTROL_START,
+  DEFAULT_KEY_DELAY_MS,
   DATA_FRAME,
   DATA_PAYLOAD_BYTES,
+  MAX_KEY_DELAY_MS,
   MAX_TEXT_BYTES,
+  MIN_KEY_DELAY_MS,
   SERVICE_UUID,
   CONTROL_UUID,
   DATA_UUID,
@@ -12,7 +16,7 @@ import {
   VERSION,
 } from "./constants";
 import { RemoteInputError } from "./errors";
-import type { RemoteInputStatus } from "./types";
+import type { RemoteInputConfig, RemoteInputStatus } from "./types";
 
 export function encodeControlFrame(type: number, taskId: number, totalBytes: number, totalChunks: number): Uint8Array {
   const frame = new ArrayBuffer(12);
@@ -22,6 +26,33 @@ export function encodeControlFrame(type: number, taskId: number, totalBytes: num
   view.setUint16(2, taskId, true);
   view.setUint32(4, totalBytes, true);
   view.setUint16(8, totalChunks, true);
+  view.setUint16(10, 0, true);
+  return new Uint8Array(frame);
+}
+
+export function assertConfig(config: RemoteInputConfig): void {
+  if (
+    !config ||
+    !Number.isInteger(config.keyDelayMs) ||
+    config.keyDelayMs < MIN_KEY_DELAY_MS ||
+    config.keyDelayMs > MAX_KEY_DELAY_MS
+  ) {
+    throw new RemoteInputError(
+      "INVALID_CONFIG",
+      `keyDelayMs must be an integer from ${MIN_KEY_DELAY_MS} to ${MAX_KEY_DELAY_MS}`,
+    );
+  }
+}
+
+export function encodeConfigFrame(config: RemoteInputConfig): Uint8Array {
+  assertConfig(config);
+  const frame = new ArrayBuffer(12);
+  const view = new DataView(frame);
+  view.setUint8(0, VERSION);
+  view.setUint8(1, CONTROL_CONFIG);
+  view.setUint16(2, 0, true);
+  view.setUint16(4, config.keyDelayMs, true);
+  view.setUint32(6, 0, true);
   view.setUint16(10, 0, true);
   return new Uint8Array(frame);
 }
@@ -89,7 +120,11 @@ export const constants = {
   STATUS_UUID,
   CONTROL_START,
   CONTROL_COMMIT,
+  CONTROL_CONFIG,
   DATA_FRAME,
   MAX_TEXT_BYTES,
   DATA_PAYLOAD_BYTES,
+  DEFAULT_KEY_DELAY_MS,
+  MIN_KEY_DELAY_MS,
+  MAX_KEY_DELAY_MS,
 } as const;
