@@ -41,7 +41,7 @@ static const ble_uuid128_t status_uuid =
     BLE_UUID128_INIT(0x01, 0x00, 0x12, 0x9a, 0x6c, 0x0d, 0x2a, 0x9c,
                      0x3b, 0x4d, 0x2a, 0x4f, 0x04, 0x00, 0x7b, 0x9e);
 
-static remote_input_ble_callbacks_t s_callbacks;
+static remote_input_receiver_callbacks_t s_callbacks;
 static uint8_t s_own_addr_type;
 static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t s_status_val_handle;
@@ -101,10 +101,11 @@ static int copy_om_to_buffer(struct os_mbuf *om, uint8_t *buf, size_t buf_size, 
     return 0;
 }
 
-static void set_parse_error(remote_input_error_t error)
+static void notify_receiver_error(remote_input_error_t error)
 {
-    remote_input_status_set(REMOTE_INPUT_STATE_ERROR, 0, error, 0, 0);
-    remote_input_ble_notify_status();
+    if (s_callbacks.on_error != NULL) {
+        s_callbacks.on_error(error, s_callbacks.ctx);
+    }
 }
 
 static int control_access_cb(uint16_t conn_handle, uint16_t attr_handle,
@@ -122,18 +123,18 @@ static int control_access_cb(uint16_t conn_handle, uint16_t attr_handle,
     uint16_t len = 0;
     int rc = copy_om_to_buffer(ctxt->om, buf, sizeof(buf), &len);
     if (rc != 0) {
-        set_parse_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
+        notify_receiver_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
         return rc;
     }
 
     remote_input_control_frame_t frame;
     if (!remote_input_parse_control_frame(buf, len, &frame)) {
-        set_parse_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
+        notify_receiver_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
 
     if (s_callbacks.on_control != NULL) {
-        s_callbacks.on_control(&frame);
+        s_callbacks.on_control(&frame, s_callbacks.ctx);
     }
 
     return 0;
@@ -154,18 +155,18 @@ static int data_access_cb(uint16_t conn_handle, uint16_t attr_handle,
     uint16_t len = 0;
     int rc = copy_om_to_buffer(ctxt->om, buf, sizeof(buf), &len);
     if (rc != 0) {
-        set_parse_error(REMOTE_INPUT_ERR_INVALID_CHUNK);
+        notify_receiver_error(REMOTE_INPUT_ERR_INVALID_CHUNK);
         return rc;
     }
 
     remote_input_data_frame_t frame;
     if (!remote_input_parse_data_frame(buf, len, &frame)) {
-        set_parse_error(REMOTE_INPUT_ERR_INVALID_CHUNK);
+        notify_receiver_error(REMOTE_INPUT_ERR_INVALID_CHUNK);
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
 
     if (s_callbacks.on_data != NULL) {
-        s_callbacks.on_data(&frame);
+        s_callbacks.on_data(&frame, s_callbacks.ctx);
     }
 
     return 0;
@@ -236,7 +237,7 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
             s_conn_handle = event->connect.conn_handle;
             ESP_LOGI(TAG, "connected handle=%u", s_conn_handle);
             if (s_callbacks.on_connect != NULL) {
-                s_callbacks.on_connect();
+                s_callbacks.on_connect(s_callbacks.ctx);
             }
         } else {
             s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
@@ -250,7 +251,7 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
             s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         }
         if (s_callbacks.on_disconnect != NULL) {
-            s_callbacks.on_disconnect();
+            s_callbacks.on_disconnect(s_callbacks.ctx);
         }
         start_advertising();
         return 0;
@@ -307,7 +308,7 @@ void remote_input_ble_notify_status(void)
     }
 }
 
-esp_err_t remote_input_ble_init(const remote_input_ble_callbacks_t *callbacks)
+esp_err_t remote_input_ble_init(const remote_input_receiver_callbacks_t *callbacks)
 {
     if (callbacks != NULL) {
         s_callbacks = *callbacks;
@@ -359,3 +360,9 @@ esp_err_t remote_input_ble_init(const remote_input_ble_callbacks_t *callbacks)
     nimble_port_freertos_init(host_task);
     return ESP_OK;
 }
+
+const remote_input_receiver_t remote_input_ble_receiver = {
+    .name = "ble",
+    .init = remote_input_ble_init,
+    .notify_status = remote_input_ble_notify_status,
+};

@@ -5,6 +5,7 @@ idf_component_register(
         "remote_input_hid.c"
         "remote_input_led.c"
         "remote_input_service.c"
+        "remote_input_writer_runner.c"
     INCLUDE_DIRS "include"
     REQUIRES
         remote_input_core

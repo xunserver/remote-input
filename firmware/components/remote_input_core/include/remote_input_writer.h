@@ -1,0 +1,16 @@
+#pragma once
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "esp_err.h"
+#include "remote_input_status.h"
+
+typedef struct {
+    const char *name;
+    esp_err_t (*init)(void *ctx);
+    bool (*ready)(void *ctx);
+    remote_input_error_t (*write_text)(const uint8_t *bytes, size_t len, void *ctx);
+    void *ctx;
+} remote_input_writer_t;

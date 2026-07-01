@@ -1,10 +1,12 @@
 #include "remote_input_hid.h"
 
+#include <stddef.h>
 #include <stdio.h>
 
 #include "class/hid/hid_device.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "remote_input_utf8.h"
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
 #include "tusb.h"
@@ -13,6 +15,17 @@
 
 static const char *TAG = "remote_input_hid";
 static const uint8_t REPORT_ID_KEYBOARD = 1;
+
+typedef struct {
+    remote_input_error_t error;
+} hid_write_context_t;
+
+static bool validate_codepoint_cb(uint32_t codepoint, void *ctx)
+{
+    (void)codepoint;
+    (void)ctx;
+    return true;
+}
 
 enum {
     REPORT_ID_KEYBOARD_DESCRIPTOR = 1,
@@ -168,6 +181,75 @@ esp_err_t remote_input_hid_type_codepoint(uint32_t codepoint)
 
     return release_all_keys();
 }
+
+static bool type_codepoint_cb(uint32_t codepoint, void *ctx)
+{
+    hid_write_context_t *write_ctx = (hid_write_context_t *)ctx;
+    esp_err_t err = remote_input_hid_type_codepoint(codepoint);
+    if (err != ESP_OK) {
+        if (write_ctx != NULL) {
+            if (err == ESP_ERR_INVALID_STATE) {
+                write_ctx->error = REMOTE_INPUT_ERR_USB_NOT_READY;
+            } else if (err == ESP_ERR_INVALID_ARG) {
+                write_ctx->error = REMOTE_INPUT_ERR_INVALID_CODEPOINT;
+            } else {
+                write_ctx->error = REMOTE_INPUT_ERR_HID_INPUT_FAILED;
+            }
+        }
+        return false;
+    }
+
+    return true;
+}
+
+static esp_err_t hid_writer_init(void *ctx)
+{
+    (void)ctx;
+    return remote_input_hid_init();
+}
+
+static bool hid_writer_ready(void *ctx)
+{
+    (void)ctx;
+    return remote_input_hid_ready();
+}
+
+remote_input_error_t remote_input_hid_write_text(const uint8_t *bytes, size_t len, void *ctx)
+{
+    (void)ctx;
+
+    if (bytes == NULL && len > 0) {
+        return REMOTE_INPUT_ERR_INVALID_COMMAND;
+    }
+
+    if (!remote_input_utf8_decode_each(bytes, len, validate_codepoint_cb, NULL)) {
+        return REMOTE_INPUT_ERR_INVALID_UTF8;
+    }
+
+    if (!remote_input_hid_ready()) {
+        return REMOTE_INPUT_ERR_USB_NOT_READY;
+    }
+
+    hid_write_context_t write_ctx = {
+        .error = REMOTE_INPUT_ERR_OK,
+    };
+    if (!remote_input_utf8_decode_each(bytes, len, type_codepoint_cb, &write_ctx)) {
+        if (write_ctx.error == REMOTE_INPUT_ERR_OK) {
+            return REMOTE_INPUT_ERR_INVALID_UTF8;
+        }
+        return write_ctx.error;
+    }
+
+    return REMOTE_INPUT_ERR_OK;
+}
+
+const remote_input_writer_t remote_input_hid_writer = {
+    .name = "usb_hid",
+    .init = hid_writer_init,
+    .ready = hid_writer_ready,
+    .write_text = remote_input_hid_write_text,
+    .ctx = NULL,
+};
 
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
 {
