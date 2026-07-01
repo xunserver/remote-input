@@ -1,5 +1,5 @@
-# build
-# sdkconfig
-# sdkconfig.old
-# .vscode
-# managed_components
+build
+sdkconfig
+sdkconfig.old
+.vscode
+managed_components
