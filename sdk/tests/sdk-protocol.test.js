@@ -31,6 +31,11 @@ vm.runInContext(source, context);
 const remoteInputGlobal = context.window.RemoteInput || context.RemoteInput;
 const internals = remoteInputGlobal._internals;
 
+assert.equal(typeof remoteInputGlobal.connect, "function");
+assert.equal(remoteInputGlobal.connectBle, remoteInputGlobal.connect);
+assert.equal(typeof remoteInputGlobal.RemoteInputClient, "function");
+assert.equal(remoteInputGlobal.RemoteInputDevice, remoteInputGlobal.RemoteInputClient);
+
 {
   const { constants } = internals;
   assert.equal(constants.VERSION, 1);

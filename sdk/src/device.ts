@@ -1,40 +1,24 @@
 import { CONTROL_COMMIT, CONTROL_START } from "./constants";
 import { getErrorMessage, RemoteInputError } from "./errors";
 import { assertTextSize, createDataFrames, decodeStatusFrame, encodeControlFrame } from "./protocol";
-import type { PendingTask, RemoteBluetoothCharacteristic, RemoteBluetoothDevice, RemoteBluetoothServer, RemoteInputStatus } from "./types";
+import type { RemoteInputTransport } from "./transport/types";
+import type { PendingTask, RemoteInputStatus } from "./types";
 
-export class RemoteInputDevice {
-  readonly device: RemoteBluetoothDevice;
-  readonly server: RemoteBluetoothServer;
-  readonly controlChar: RemoteBluetoothCharacteristic;
-  readonly dataChar: RemoteBluetoothCharacteristic;
-  readonly statusChar: RemoteBluetoothCharacteristic;
+export class RemoteInputClient {
+  readonly transport: RemoteInputTransport;
   taskId = 1;
   pending: PendingTask | null = null;
-  connected = true;
-  private statusNotificationsStarted = false;
 
-  constructor(
-    device: RemoteBluetoothDevice,
-    server: RemoteBluetoothServer,
-    controlChar: RemoteBluetoothCharacteristic,
-    dataChar: RemoteBluetoothCharacteristic,
-    statusChar: RemoteBluetoothCharacteristic,
-  ) {
-    this.device = device;
-    this.server = server;
-    this.controlChar = controlChar;
-    this.dataChar = dataChar;
-    this.statusChar = statusChar;
+  constructor(transport: RemoteInputTransport) {
+    this.transport = transport;
     this.onDisconnected = this.onDisconnected.bind(this);
     this.onStatusChanged = this.onStatusChanged.bind(this);
-    this.device.addEventListener("gattserverdisconnected", this.onDisconnected);
+    this.transport.onDisconnect(this.onDisconnected);
+    this.transport.onStatus(this.onStatusChanged);
   }
 
-  async startNotifications(): Promise<void> {
-    await this.statusChar.startNotifications();
-    this.statusNotificationsStarted = true;
-    this.statusChar.addEventListener("characteristicvaluechanged", this.onStatusChanged);
+  get connected(): boolean {
+    return this.transport.connected;
   }
 
   typeText(text: string): Promise<RemoteInputStatus> {
@@ -71,55 +55,42 @@ export class RemoteInputDevice {
     if (!this.connected) {
       throw new RemoteInputError("NOT_CONNECTED", "Device is not connected");
     }
-    const value = await this.statusChar.readValue();
+    const value = await this.transport.readStatus();
     return decodeStatusFrame(value);
   }
 
   async disconnect(): Promise<void> {
-    this.connected = false;
     this.rejectPending("DISCONNECTED", "Device disconnected");
-
-    try {
-      this.statusChar.removeEventListener("characteristicvaluechanged", this.onStatusChanged);
-      if (this.statusNotificationsStarted && this.statusChar.stopNotifications) {
-        await this.statusChar.stopNotifications();
-        this.statusNotificationsStarted = false;
-      }
-    } catch {
-      // Ignore cleanup errors during disconnect.
-    }
-
-    this.device.removeEventListener("gattserverdisconnected", this.onDisconnected);
-    if (this.device.gatt?.connected) {
-      this.device.gatt.disconnect();
-    }
+    this.transport.offStatus(this.onStatusChanged);
+    this.transport.offDisconnect(this.onDisconnected);
+    await this.transport.disconnect();
   }
 
   private async pumpWrites(taskId: number, startFrame: Uint8Array, frames: Uint8Array[], commitFrame: Uint8Array): Promise<void> {
     try {
-      await this.controlChar.writeValueWithResponse(startFrame);
+      await this.transport.writeControl(startFrame);
       if (!this.hasPendingTask(taskId)) return;
       for (const frame of frames) {
-        await this.dataChar.writeValueWithResponse(frame);
+        await this.transport.writeData(frame);
         if (!this.hasPendingTask(taskId)) return;
       }
       if (!this.hasPendingTask(taskId)) return;
-      await this.controlChar.writeValueWithResponse(commitFrame);
+      await this.transport.writeControl(commitFrame);
     } catch (error) {
       if (this.pending?.taskId === taskId) {
-        this.rejectPending("BLE_WRITE_FAILED", getErrorMessage(error, "BLE write failed"), error);
+        this.rejectPending(this.writeErrorCode(), getErrorMessage(error, "Transport write failed"), error);
       }
     }
   }
 
-  private onStatusChanged(event: Event): void {
+  private writeErrorCode(): string {
+    return `${this.transport.kind.toUpperCase()}_WRITE_FAILED`;
+  }
+
+  private onStatusChanged(value: DataView): void {
     let status: RemoteInputStatus;
     try {
-      const target = event.target as { value?: DataView } | null;
-      if (!target?.value) {
-        throw new RemoteInputError("INVALID_STATUS_FRAME", "Invalid status frame");
-      }
-      status = decodeStatusFrame(target.value);
+      status = decodeStatusFrame(value);
     } catch (error) {
       if (this.pending) {
         this.rejectPending("INVALID_STATUS_FRAME", getErrorMessage(error, "Invalid status frame"), error);
@@ -146,7 +117,6 @@ export class RemoteInputDevice {
   }
 
   private onDisconnected(): void {
-    this.connected = false;
     this.rejectPending("DISCONNECTED", "Device disconnected");
   }
 
@@ -159,3 +129,5 @@ export class RemoteInputDevice {
     pending.reject(new RemoteInputError(code, message, cause));
   }
 }
+
+export { RemoteInputClient as RemoteInputDevice };
