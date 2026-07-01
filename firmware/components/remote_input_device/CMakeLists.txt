@@ -20,11 +20,16 @@ idf_component_register(
         "remote_input_led.c"
         "remote_input_service.c"
         "remote_input_writer_runner.c"
+        "remote_input_ws.c"
         "${remote_input_firmware_version_source}"
     INCLUDE_DIRS "include"
     REQUIRES
         remote_input_core
         bt
+        esp_event
+        esp_http_server
+        esp_netif
+        esp_wifi
         nvs_flash
         esp_tinyusb
         tinyusb

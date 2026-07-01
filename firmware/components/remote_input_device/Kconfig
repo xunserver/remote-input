@@ -1,5 +1,36 @@
 menu "Remote Input Device"
 
+config REMOTE_INPUT_WS_ENABLED
+    bool "Enable WebSocket input receiver"
+    default y
+    help
+        Start a WiFi SoftAP and WebSocket endpoint for browser-based
+        Remote Input protocol frames.
+
+config REMOTE_INPUT_WIFI_AP_SSID
+    string "WebSocket SoftAP SSID"
+    default "Remote-Input-S3"
+    depends on REMOTE_INPUT_WS_ENABLED
+
+config REMOTE_INPUT_WIFI_AP_PASSWORD
+    string "WebSocket SoftAP WPA2 password"
+    default "remoteinput"
+    depends on REMOTE_INPUT_WS_ENABLED
+    help
+        WPA2 password for the SoftAP. Must be at least 8 characters.
+
+config REMOTE_INPUT_WIFI_AP_CHANNEL
+    int "WebSocket SoftAP channel"
+    range 1 13
+    default 6
+    depends on REMOTE_INPUT_WS_ENABLED
+
+config REMOTE_INPUT_WS_MAX_CLIENTS
+    int "Maximum WebSocket clients"
+    range 1 4
+    default 1
+    depends on REMOTE_INPUT_WS_ENABLED
+
 config REMOTE_INPUT_DISPLAY_ENABLED
     bool "Enable LCD status display"
     default n
