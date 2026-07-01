@@ -7,3 +7,4 @@ firmware/build/
 firmware/build_codex_check/
 firmware/managed_components/
 firmware/sdkconfig
+firmware/.vscode
