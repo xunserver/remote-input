@@ -95,3 +95,38 @@ Result:
 
 1. `firmware/sdkconfig` remains a generated, ignored file in this worktree, so the committed fix is intentionally scoped to the default configuration source.
 2. No hardware validation was performed after the partition change; only the firmware build and partition-size check were verified here.
+
+## Review Fix: Aggregate Connection Count Race
+
+### What Changed
+
+- `firmware/components/remote_input_device/remote_input_service.c`
+  - added a `portMUX_TYPE` lock for `s_connected_clients`
+  - guarded connect/disconnect read-modify-write operations with a critical section
+  - kept the existing saturation behavior: connect increments only below `INT_MAX`
+  - kept the existing floor behavior: disconnect decrements only above zero
+  - computes the aggregate connected state while locked, then updates LED/display after releasing the lock
+  - keeps idle status and receive-engine reset gated on aggregate disconnected state and `remote_input_writer_runner_busy() == false`
+
+### Build Verification
+
+Command run:
+
+```bash
+eim run "idf.py -C firmware -B firmware/build build"
+```
+
+Result:
+
+- PASS
+- generated `firmware/build/remote_input.bin`
+- partition size check passed: `remote_input.bin` size `0x1477b0`, smallest app partition `0x177000`, `0x2f850` bytes free
+
+### Files Changed
+
+- `firmware/components/remote_input_device/remote_input_service.c`
+
+### Concerns
+
+1. No hardware validation was performed in this environment, so simultaneous BLE/WebSocket connect/disconnect behavior was not exercised on device.
+2. No dedicated automated race test exists for these firmware callbacks; coverage for this review fix is the ESP-IDF firmware build plus source inspection of the critical section boundaries.

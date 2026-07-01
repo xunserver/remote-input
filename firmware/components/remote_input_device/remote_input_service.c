@@ -16,6 +16,7 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "remote_input_service";
@@ -38,6 +39,7 @@ static receiver_slot_t s_receivers[REMOTE_INPUT_MAX_RECEIVERS] = {
 };
 
 static int s_connected_clients;
+static portMUX_TYPE s_connected_clients_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static void update_status(remote_input_state_t state,
                           uint16_t task_id,
@@ -120,22 +122,34 @@ static void on_connect(void *ctx)
 {
     (void)ctx;
 
+    bool connected;
+
+    portENTER_CRITICAL(&s_connected_clients_lock);
     if (s_connected_clients < INT_MAX) {
         s_connected_clients += 1;
     }
-    set_client_connected(s_connected_clients > 0);
+    connected = s_connected_clients > 0;
+    portEXIT_CRITICAL(&s_connected_clients_lock);
+
+    set_client_connected(connected);
 }
 
 static void on_disconnect(void *ctx)
 {
     (void)ctx;
 
+    bool connected;
+
+    portENTER_CRITICAL(&s_connected_clients_lock);
     if (s_connected_clients > 0) {
         s_connected_clients -= 1;
     }
-    set_client_connected(s_connected_clients > 0);
+    connected = s_connected_clients > 0;
+    portEXIT_CRITICAL(&s_connected_clients_lock);
 
-    if (s_connected_clients == 0 && !remote_input_writer_runner_busy()) {
+    set_client_connected(connected);
+
+    if (!connected && !remote_input_writer_runner_busy()) {
         update_status(REMOTE_INPUT_STATE_IDLE, 0, REMOTE_INPUT_ERR_OK, 0, 0);
         remote_input_engine_reset_receive(&s_engine);
     }
