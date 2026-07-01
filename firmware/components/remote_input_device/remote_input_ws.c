@@ -19,7 +19,6 @@
 
 #define REMOTE_INPUT_WS_URI "/ws"
 #define REMOTE_INPUT_DATA_FRAME_MAX_LEN (REMOTE_INPUT_DATA_FRAME_HEADER_LEN + REMOTE_INPUT_DATA_PAYLOAD_BYTES)
-#define REMOTE_INPUT_WS_DRAIN_CHUNK_LEN 32
 
 static const char *TAG = "remote_input_ws";
 
@@ -100,10 +99,15 @@ static void notify_disconnect_if_removed(int fd)
     }
 }
 
+static void remove_client_and_notify(int fd)
+{
+    notify_disconnect_if_removed(fd);
+}
+
 static esp_err_t send_status_to_fd(int fd)
 {
     if (s_server == NULL || httpd_ws_get_fd_info(s_server, fd) != HTTPD_WS_CLIENT_WEBSOCKET) {
-        remove_client(fd);
+        remove_client_and_notify(fd);
         return ESP_FAIL;
     }
 
@@ -120,38 +124,20 @@ static esp_err_t send_status_to_fd(int fd)
     esp_err_t err = httpd_ws_send_frame_async(s_server, fd, &frame);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "failed to send status fd=%d: %s", fd, esp_err_to_name(err));
-        remove_client(fd);
+        remove_client_and_notify(fd);
     }
     return err;
 }
 
-static esp_err_t recv_frame_payload(httpd_req_t *req,
-                                    httpd_ws_frame_t *frame,
-                                    uint8_t *payload,
-                                    size_t payload_capacity)
+static esp_err_t recv_frame_payload(httpd_req_t *req, httpd_ws_frame_t *frame, uint8_t *payload)
 {
     if (frame->len == 0) {
         frame->payload = NULL;
         return ESP_OK;
     }
 
-    if (frame->len <= payload_capacity) {
-        frame->payload = payload;
-        return httpd_ws_recv_frame(req, frame, payload_capacity);
-    }
-
-    size_t remaining = frame->len;
-    while (remaining > 0) {
-        const size_t chunk_len = remaining > payload_capacity ? payload_capacity : remaining;
-        const int received = httpd_req_recv(req, (char *)payload, chunk_len);
-        if (received <= 0) {
-            return ESP_FAIL;
-        }
-        remaining -= (size_t)received;
-    }
-
-    frame->payload = NULL;
-    return ESP_OK;
+    frame->payload = payload;
+    return httpd_ws_recv_frame(req, frame, REMOTE_INPUT_DATA_FRAME_MAX_LEN);
 }
 
 static void handle_binary_frame(const uint8_t *payload, size_t len)
@@ -203,7 +189,6 @@ static esp_err_t ws_handler(httpd_req_t *req)
         }
         esp_err_t status_err = send_status_to_fd(fd);
         if (status_err != ESP_OK) {
-            remove_client(fd);
             return status_err;
         }
         ESP_LOGI(TAG, "websocket connected fd=%d", fd);
@@ -216,26 +201,31 @@ static esp_err_t ws_handler(httpd_req_t *req)
     httpd_ws_frame_t frame = { 0 };
     esp_err_t err = httpd_ws_recv_frame(req, &frame, 0);
     if (err != ESP_OK) {
-        notify_disconnect_if_removed(fd);
+        remove_client_and_notify(fd);
         return err;
     }
 
     uint8_t payload[REMOTE_INPUT_DATA_FRAME_MAX_LEN];
-    uint8_t drain[REMOTE_INPUT_WS_DRAIN_CHUNK_LEN];
-    uint8_t *buffer = frame.len <= sizeof(payload) ? payload : drain;
-    const size_t buffer_len = frame.len <= sizeof(payload) ? sizeof(payload) : sizeof(drain);
-    err = recv_frame_payload(req, &frame, buffer, buffer_len);
+    if (frame.len > sizeof(payload)) {
+        notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
+        remove_client_and_notify(fd);
+        if (s_server != NULL) {
+            httpd_sess_trigger_close(s_server, fd);
+        }
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    err = recv_frame_payload(req, &frame, payload);
     if (err != ESP_OK) {
-        if (frame.type == HTTPD_WS_TYPE_CLOSE) {
-            notify_disconnect_if_removed(fd);
-        } else {
+        remove_client_and_notify(fd);
+        if (frame.type != HTTPD_WS_TYPE_CLOSE) {
             notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
         }
         return err;
     }
 
     if (frame.type == HTTPD_WS_TYPE_CLOSE) {
-        notify_disconnect_if_removed(fd);
+        remove_client_and_notify(fd);
         return ESP_OK;
     }
 
@@ -244,11 +234,6 @@ static esp_err_t ws_handler(httpd_req_t *req)
     }
 
     if (frame.type != HTTPD_WS_TYPE_BINARY) {
-        notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
-        return ESP_OK;
-    }
-
-    if (frame.len > sizeof(payload)) {
         notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
         return ESP_OK;
     }

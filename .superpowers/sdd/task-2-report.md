@@ -67,17 +67,12 @@ Key output:
 
 ### What changed
 
-- Reworked `ws_handler()` so every WebSocket frame routed to the handler is fully consumed before returning.
-- Added a bounded payload receive/drain helper:
-  - binary/control frames within the fixed protocol buffer are received with `httpd_ws_recv_frame()`
-  - oversized or otherwise non-protocol frames are drained with a small fixed buffer via `httpd_req_recv()` until the frame payload is fully consumed
-- Updated frame handling behavior:
-  - `CLOSE`: consume payload first, then remove the client and emit `on_disconnect()`
-  - `PING`/`PONG`: consume payload and return cleanly without leaving unread bytes
-  - text / other non-binary frames: consume payload, report `REMOTE_INPUT_ERR_INVALID_COMMAND`, and return cleanly
-  - oversized binary frames: consume payload under the fixed max buffer policy and report `REMOTE_INPUT_ERR_INVALID_COMMAND`
-- Reordered initial WebSocket connection lifecycle so `on_connect()` fires only after the initial status frame is sent successfully.
-- Added a low-risk guard for `esp_netif_create_default_wifi_ap()` returning `NULL`, returning `ESP_ERR_NO_MEM` in that case.
+- Reworked `ws_handler()` to use only `httpd_ws_recv_frame()` for WebSocket payload receive after the initial `len/type` probe.
+- Simplified payload receive logic:
+  - `PING` / `PONG` / `CLOSE` / text / other non-binary frames with length `<= REMOTE_INPUT_DATA_FRAME_MAX_LEN` are fully consumed via `httpd_ws_recv_frame()` before handling the frame type.
+  - oversized frames now follow the accepted first-version behavior: report `REMOTE_INPUT_ERR_INVALID_COMMAND`, remove the tracked client, emit `on_disconnect()` if needed, and trigger session close instead of attempting any unsupported drain path.
+- Added `remove_client_and_notify(int fd)` and routed tracked-client removal through it so send failures, close handling, and receive failures all emit `on_disconnect()` exactly once per actual removal.
+- Preserved the earlier connection-lifecycle fix where `on_connect()` fires only after the initial status frame send succeeds.
 
 ### Build command and result
 
@@ -98,5 +93,5 @@ Result: PASS
 
 ### Any concerns
 
-- The payload drain path for oversized/non-binary frames uses `httpd_req_recv()` after the initial WebSocket header parse. This matches ESP-IDF 6.0.2 behavior in this environment, but it is still only build-verified here, not exercised against a live browser/client session.
-- No hardware/runtime validation was performed for actual connect/disconnect, close handshake edge cases, or browser-generated ping/pong traffic in this environment.
+- Corrected the previous report claim about `httpd_req_recv()` drain behavior. The implementation no longer relies on that unsupported receive path.
+- No hardware/runtime validation was performed for actual connect/disconnect timing, browser-generated control frames, or oversized-frame close behavior in this environment.
