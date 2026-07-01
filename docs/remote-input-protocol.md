@@ -64,7 +64,7 @@ SDK 先把输入文本编码为 UTF-8 字节，再按 12 字节切片发送。ES
 
 ## 4. Control 帧
 
-Control 帧固定为 12 字节，写入 Control 特征值。
+Control 帧固定为 12 字节。在 BLE 传输中，START 和 COMMIT 帧写入 Control 特征值；在 WebSocket 传输中，START 和 COMMIT 帧分别作为独立 binary message 发送。
 
 | 偏移 | 长度 | 类型 | 字段 | 说明 |
 | --- | ---: | --- | --- | --- |
@@ -94,7 +94,7 @@ Control 帧类型：
 
 ## 5. Data 帧
 
-Data 帧写入 Data 特征值。
+在 BLE 传输中，Data 帧写入 Data 特征值；在 WebSocket 传输中，每个 Data 帧作为独立 binary message 发送。
 
 Data 帧长度为 `8 + payload_len`。其中 `payload_len` 范围是 0 到 12 字节。
 
@@ -132,7 +132,7 @@ Data 分片可以乱序到达。ESP32 会按 `chunk_index` 写入缓冲区。但
 
 ## 6. Status 帧
 
-Status 帧固定为 14 字节。SDK 可以主动读取 Status 特征值，也可以订阅 Notify 获取状态变化。
+Status 帧固定为 14 字节。在 BLE 传输中，SDK 可以主动读取 Status 特征值，也可以订阅 Notify 获取状态变化；在 WebSocket 传输中，固件会在连接建立后推送当前 Status 帧，并在状态变化时继续推送 Status 帧。
 
 | 偏移 | 长度 | 类型 | 字段 | 说明 |
 | --- | ---: | --- | --- | --- |
@@ -177,14 +177,14 @@ Status 帧固定为 14 字节。SDK 可以主动读取 Status 特征值，也可
 2. SDK 检查字节数是否超过 16 KB；超过则本地报错，不发送。
 3. SDK 生成 `task_id`。
 4. SDK 计算 `total_chunks = ceil(total_bytes / 12)`。
-5. SDK 向 Control 特征值写入 START 帧。
-6. SDK 向 Data 特征值写入所有 DATA 帧。
-7. SDK 向 Control 特征值写入 COMMIT 帧。
+5. SDK 通过当前传输层发送 START 帧。
+6. SDK 通过当前传输层发送所有 DATA 帧。
+7. SDK 通过当前传输层发送 COMMIT 帧。
 8. ESP32 检查分片是否完整。
 9. ESP32 校验完整 payload 是否为合法 UTF-8。
 10. ESP32 将 UTF-8 解码为 Unicode code point。
 11. ESP32 通过 USB HID 逐个输入 code point。
-12. ESP32 通过 Status Notify 返回 DONE 或 ERROR。
+12. ESP32 通过当前传输层返回 DONE 或 ERROR 状态。
 
 发送空文本时：
 
@@ -200,16 +200,16 @@ SDK 当前从 `1` 开始生成 `task_id`，每次任务递增。
 
 ESP32 把 `task_id` 当作 `uint16` 透明值处理，只检查同一个任务中的 START、DATA、COMMIT 是否一致。
 
-## 9. 和后续 WiFi 支持的关系
+## 9. 后续传输扩展
 
-后续如果增加 WiFi 传输层，建议保持本文定义的二进制帧不变。
+后续如果增加新的传输层，建议保持本文定义的二进制帧不变。
 
 推荐做法：
 
-- START、DATA、COMMIT 仍然作为独立二进制消息发送；或者在外层增加很薄的 WiFi transport envelope，但内部 frame bytes 必须保持不变。
+- START、DATA、COMMIT 仍然作为独立二进制消息发送；或者在外层增加很薄的 transport envelope，但内部 frame bytes 必须保持不变。
 - Status 仍然使用同一个 14 字节二进制结构。
 - 继续使用小端整数。
 - 继续使用相同的任务生命周期、状态码和错误码。
 - 鉴权、配对、加密等传输层能力放在协议外层，不要塞进 v1 帧格式。
 
-如果 WiFi 后续支持更大的单包 payload，也不要在协议版本 `1` 中修改 `DATA_PAYLOAD_BYTES`。可以在协议版本 `2` 中引入协商机制，例如协商 chunk size 或支持新的数据帧类型。
+如果后续传输层支持更大的单包 payload，也不要在协议版本 `1` 中修改 `DATA_PAYLOAD_BYTES`。可以在协议版本 `2` 中引入协商机制，例如协商 chunk size 或支持新的数据帧类型。
