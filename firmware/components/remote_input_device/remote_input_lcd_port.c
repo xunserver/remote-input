@@ -57,6 +57,7 @@ static lv_disp_drv_t s_disp_drv;
 static esp_lcd_panel_handle_t s_panel_handle;
 static TaskHandle_t s_lvgl_task;
 static esp_timer_handle_t s_lvgl_tick_timer;
+static lv_disp_t *s_disp;
 static bool s_initialized;
 static bool s_started;
 
@@ -268,7 +269,8 @@ static esp_err_t lvgl_init(void)
     s_disp_drv.drv_update_cb = lvgl_port_update_cb;
     s_disp_drv.draw_buf = &s_disp_buf;
     s_disp_drv.user_data = s_panel_handle;
-    lv_disp_drv_register(&s_disp_drv);
+    s_disp = lv_disp_drv_register(&s_disp_drv);
+    lv_disp_set_rotation(s_disp, LV_DISP_ROT_180);
 
     const esp_timer_create_args_t lvgl_tick_timer_args = {
         .callback = lvgl_tick_cb,
