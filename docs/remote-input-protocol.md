@@ -2,7 +2,7 @@
 
 本文档描述 Remote Input SDK 与 ESP32-S3 固件之间的通信协议。当前协议版本为 `1`。
 
-当前传输层是 BLE GATT。协议帧本身是二进制格式，和 BLE 的耦合较低；后续如果增加 WiFi 传输，建议继续复用本文定义的帧格式、字节序、状态码和错误码。
+当前传输层包括 BLE GATT 和 WebSocket。协议帧本身是二进制格式，和传输层耦合较低；后续如果增加其他传输方式，建议继续复用本文定义的帧格式、字节序、状态码和错误码。
 
 ## 1. BLE 传输层
 
@@ -28,7 +28,28 @@ Remote-Input-S3
 
 所有多字节整数均使用小端序，也就是低字节在前。
 
-## 2. 基本限制
+## 2. WebSocket 传输层
+
+固件可同时启用 BLE 和 WebSocket。WebSocket 第一版运行在 ESP32 SoftAP 上：
+
+| 项目 | 值 |
+| --- | --- |
+| AP SSID | `Remote-Input-S3` |
+| AP 密码 | `remoteinput` |
+| URL | `ws://192.168.4.1/ws` |
+| 消息类型 | binary |
+
+每条 WebSocket binary message 直接承载一个现有协议帧：
+
+- START 和 COMMIT 使用 12 字节 Control 帧。
+- DATA 使用 8 到 20 字节 Data 帧。
+- 设备状态使用 14 字节 Status 帧从固件推送到浏览器。
+
+WebSocket 不增加外层 envelope，不使用 JSON，不改变协议版本、字节序、chunk 大小、状态码或错误码。客户端连接成功后，固件会立即推送当前 Status 帧，之后每次状态变化都会继续推送。
+
+安全边界：第一版依赖 SoftAP 的 WPA2 密码限制访问，不提供 WebSocket token 或 TLS。任何知道 AP 密码并连接到该热点的客户端都可以向 USB host 注入输入内容。
+
+## 3. 基本限制
 
 | 项目 | 值 |
 | --- | --- |
@@ -41,7 +62,7 @@ Remote-Input-S3
 
 SDK 先把输入文本编码为 UTF-8 字节，再按 12 字节切片发送。ESP32 收完整个任务后会校验 UTF-8，校验通过后才开始通过 USB HID 输入。
 
-## 3. Control 帧
+## 4. Control 帧
 
 Control 帧固定为 12 字节，写入 Control 特征值。
 
@@ -71,7 +92,7 @@ Control 帧类型：
 - START 帧中，`total_chunks` 必须等于 `ceil(total_bytes / 12)`；空文本例外，空文本使用 1 个 chunk。
 - COMMIT 帧中，`task_id`、`total_bytes`、`total_chunks` 必须和当前正在接收的任务一致。
 
-## 4. Data 帧
+## 5. Data 帧
 
 Data 帧写入 Data 特征值。
 
@@ -109,7 +130,7 @@ Data 帧类型：
 
 Data 分片可以乱序到达。ESP32 会按 `chunk_index` 写入缓冲区。但是 COMMIT 只有在所有分片都收到后才会成功。
 
-## 5. Status 帧
+## 6. Status 帧
 
 Status 帧固定为 14 字节。SDK 可以主动读取 Status 特征值，也可以订阅 Notify 获取状态变化。
 
@@ -148,7 +169,7 @@ Status 帧固定为 14 字节。SDK 可以主动读取 Status 特征值，也可
 | 9 | USB_NOT_READY | USB HID 尚未就绪 |
 | 10 | HID_INPUT_FAILED | HID report 发送失败 |
 
-## 6. 正常发送流程
+## 7. 正常发送流程
 
 发送非空文本时，SDK 和 ESP32 的交互流程如下：
 
@@ -171,7 +192,7 @@ Status 帧固定为 14 字节。SDK 可以主动读取 Status 特征值，也可
 - `total_chunks` 为 `1`。
 - SDK 仍然发送一个 DATA 帧，但 payload 长度为 0。
 
-## 7. task_id 规则
+## 8. task_id 规则
 
 SDK 当前从 `1` 开始生成 `task_id`，每次任务递增。
 
@@ -179,7 +200,7 @@ SDK 当前从 `1` 开始生成 `task_id`，每次任务递增。
 
 ESP32 把 `task_id` 当作 `uint16` 透明值处理，只检查同一个任务中的 START、DATA、COMMIT 是否一致。
 
-## 8. 和后续 WiFi 支持的关系
+## 9. 和后续 WiFi 支持的关系
 
 后续如果增加 WiFi 传输层，建议保持本文定义的二进制帧不变。
 
