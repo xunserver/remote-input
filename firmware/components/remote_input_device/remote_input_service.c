@@ -1,5 +1,7 @@
 #include "remote_input_service.h"
 
+#include <limits.h>
+
 #include "remote_input_ble.h"
 #include "remote_input_display.h"
 #include "remote_input_engine.h"
@@ -10,6 +12,7 @@
 #include "remote_input_receiver.h"
 #include "remote_input_status.h"
 #include "remote_input_writer_runner.h"
+#include "remote_input_ws.h"
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -17,7 +20,24 @@
 
 static const char *TAG = "remote_input_service";
 static remote_input_engine_t s_engine;
-static const remote_input_receiver_t *s_receiver = &remote_input_ble_receiver;
+
+#define REMOTE_INPUT_MAX_RECEIVERS 2
+
+typedef struct {
+    const remote_input_receiver_t *receiver;
+    bool initialized;
+} receiver_slot_t;
+
+static receiver_slot_t s_receivers[REMOTE_INPUT_MAX_RECEIVERS] = {
+    { .receiver = &remote_input_ble_receiver, .initialized = false },
+#if CONFIG_REMOTE_INPUT_WS_ENABLED
+    { .receiver = &remote_input_ws_receiver, .initialized = false },
+#else
+    { .receiver = NULL, .initialized = false },
+#endif
+};
+
+static int s_connected_clients;
 
 static void update_status(remote_input_state_t state,
                           uint16_t task_id,
@@ -27,8 +47,12 @@ static void update_status(remote_input_state_t state,
 {
     remote_input_status_set(state, task_id, error, received, total);
     remote_input_display_set_input_state(state);
-    if (s_receiver != NULL && s_receiver->notify_status != NULL) {
-        s_receiver->notify_status();
+    for (size_t i = 0; i < REMOTE_INPUT_MAX_RECEIVERS; i += 1) {
+        if (s_receivers[i].initialized &&
+            s_receivers[i].receiver != NULL &&
+            s_receivers[i].receiver->notify_status != NULL) {
+            s_receivers[i].receiver->notify_status();
+        }
     }
 }
 
@@ -86,22 +110,32 @@ static void on_receiver_error(remote_input_error_t error, void *ctx)
     remote_input_engine_handle_receiver_error(&s_engine, error);
 }
 
+static void set_client_connected(bool connected)
+{
+    remote_input_led_set_connected(connected);
+    remote_input_display_set_client_connected(connected);
+}
+
 static void on_connect(void *ctx)
 {
     (void)ctx;
 
-    remote_input_led_set_connected(true);
-    remote_input_display_set_ble_connected(true);
+    if (s_connected_clients < INT_MAX) {
+        s_connected_clients += 1;
+    }
+    set_client_connected(s_connected_clients > 0);
 }
 
 static void on_disconnect(void *ctx)
 {
     (void)ctx;
 
-    remote_input_led_set_connected(false);
-    remote_input_display_set_ble_connected(false);
+    if (s_connected_clients > 0) {
+        s_connected_clients -= 1;
+    }
+    set_client_connected(s_connected_clients > 0);
 
-    if (!remote_input_writer_runner_busy()) {
+    if (s_connected_clients == 0 && !remote_input_writer_runner_busy()) {
         update_status(REMOTE_INPUT_STATE_IDLE, 0, REMOTE_INPUT_ERR_OK, 0, 0);
         remote_input_engine_reset_receive(&s_engine);
     }
@@ -162,10 +196,26 @@ esp_err_t remote_input_service_init(void)
         .on_disconnect = on_disconnect,
         .ctx = NULL,
     };
-    err = s_receiver->init(&callbacks);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "ble init failed: %s", esp_err_to_name(err));
-        return err;
+
+    size_t initialized_receivers = 0;
+    for (size_t i = 0; i < REMOTE_INPUT_MAX_RECEIVERS; i += 1) {
+        if (s_receivers[i].receiver == NULL || s_receivers[i].receiver->init == NULL) {
+            continue;
+        }
+        err = s_receivers[i].receiver->init(&callbacks);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "%s receiver init failed: %s",
+                     s_receivers[i].receiver->name,
+                     esp_err_to_name(err));
+            continue;
+        }
+        s_receivers[i].initialized = true;
+        initialized_receivers += 1;
+    }
+
+    if (initialized_receivers == 0) {
+        ESP_LOGE(TAG, "no input receiver initialized");
+        return ESP_FAIL;
     }
 
     return ESP_OK;

@@ -17,11 +17,11 @@
 static const char *TAG = "remote_input_display";
 
 static lv_obj_t *s_root;
-static lv_obj_t *s_ble_label;
+static lv_obj_t *s_client_label;
 static lv_obj_t *s_input_label;
 static lv_obj_t *s_version_label;
 static bool s_initialized;
-static bool s_ble_connected;
+static bool s_client_connected;
 static remote_input_state_t s_input_state;
 static bool s_flush_pending;
 static portMUX_TYPE s_state_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -48,11 +48,11 @@ static const char *input_state_text(remote_input_state_t state)
 static void reset_handles(void)
 {
     s_root = NULL;
-    s_ble_label = NULL;
+    s_client_label = NULL;
     s_input_label = NULL;
     s_version_label = NULL;
     s_initialized = false;
-    s_ble_connected = false;
+    s_client_connected = false;
     s_input_state = REMOTE_INPUT_STATE_IDLE;
     s_flush_pending = false;
 }
@@ -85,21 +85,22 @@ static void flush_status_labels(void *user_data)
     (void)user_data;
 
     bool initialized;
-    bool ble_connected;
+    bool client_connected;
     remote_input_state_t input_state;
 
     portENTER_CRITICAL(&s_state_lock);
     initialized = s_initialized;
-    ble_connected = s_ble_connected;
+    client_connected = s_client_connected;
     input_state = s_input_state;
     s_flush_pending = false;
     portEXIT_CRITICAL(&s_state_lock);
 
-    if (!initialized || s_ble_label == NULL || s_input_label == NULL) {
+    if (!initialized || s_client_label == NULL || s_input_label == NULL) {
         return;
     }
 
-    lv_label_set_text(s_ble_label, ble_connected ? "BLE: Connected" : "BLE: Waiting");
+    lv_label_set_text(s_client_label,
+                      client_connected ? "Client: Connected" : "Client: Waiting");
     lv_label_set_text(s_input_label, input_state_text(input_state));
 }
 
@@ -140,7 +141,7 @@ esp_err_t remote_input_display_init(const char *version)
     lv_obj_set_style_pad_all(s_root, 8, 0);
     lv_obj_set_style_pad_row(s_root, REMOTE_INPUT_DISPLAY_LABEL_GAP, 0);
 
-    s_ble_label = create_label(s_root, "BLE: Waiting");
+    s_client_label = create_label(s_root, "Client: Waiting");
     s_input_label = create_label(s_root, "Input: Idle");
 
     const char *display_version = (version != NULL && version[0] != '\0') ? version : "unknown";
@@ -152,34 +153,39 @@ esp_err_t remote_input_display_init(const char *version)
     }
     s_version_label = create_label(s_root, version_text);
 
-    if (s_ble_label == NULL || s_input_label == NULL || s_version_label == NULL) {
+    if (s_client_label == NULL || s_input_label == NULL || s_version_label == NULL) {
         delete_root_if_present();
         return ESP_ERR_NO_MEM;
     }
 
     portENTER_CRITICAL(&s_state_lock);
     s_initialized = true;
-    s_ble_connected = false;
+    s_client_connected = false;
     s_input_state = REMOTE_INPUT_STATE_IDLE;
     s_flush_pending = false;
     portEXIT_CRITICAL(&s_state_lock);
     return ESP_OK;
 }
 
-void remote_input_display_set_ble_connected(bool connected)
+void remote_input_display_set_client_connected(bool connected)
 {
     bool initialized;
 
     portENTER_CRITICAL(&s_state_lock);
     initialized = s_initialized;
     if (initialized) {
-        s_ble_connected = connected;
+        s_client_connected = connected;
     }
     portEXIT_CRITICAL(&s_state_lock);
 
     if (initialized) {
         request_async_flush();
     }
+}
+
+void remote_input_display_set_ble_connected(bool connected)
+{
+    remote_input_display_set_client_connected(connected);
 }
 
 void remote_input_display_set_input_state(remote_input_state_t state)
