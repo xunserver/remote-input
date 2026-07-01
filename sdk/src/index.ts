@@ -2,7 +2,7 @@ export { connect, connectBle } from "./bluetooth";
 export { connectWs } from "./transport/ws";
 export { RemoteInputClient, RemoteInputDevice } from "./device";
 export { RemoteInputError } from "./errors";
-export type { RemoteInputStatus } from "./types";
+export type { RemoteInputConfig, RemoteInputStatus } from "./types";
 export type {
   RemoteInputDisconnectListener,
   RemoteInputStatusListener,
@@ -12,13 +12,15 @@ export type {
 import { connect, connectBle } from "./bluetooth";
 import { RemoteInputClient, RemoteInputDevice } from "./device";
 import { RemoteInputError } from "./errors";
-import { assertTextSize, constants, createDataFrames, decodeStatusFrame, encodeControlFrame } from "./protocol";
+import { assertConfig, assertTextSize, constants, createDataFrames, decodeStatusFrame, encodeConfigFrame, encodeControlFrame } from "./protocol";
 import { connectWs } from "./transport/ws";
 
 export const _internals = {
   encodeControlFrame,
+  encodeConfigFrame,
   createDataFrames,
   decodeStatusFrame,
+  assertConfig,
   assertTextSize,
   constants,
 };

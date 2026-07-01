@@ -1,16 +1,27 @@
-import { CONTROL_COMMIT, CONTROL_START } from "./constants";
+import { CONTROL_COMMIT, CONTROL_START, DEFAULT_KEY_DELAY_MS } from "./constants";
 import { getErrorMessage, RemoteInputError } from "./errors";
-import { assertTextSize, createDataFrames, decodeStatusFrame, encodeControlFrame } from "./protocol";
+import { assertConfig, assertTextSize, createDataFrames, decodeStatusFrame, encodeConfigFrame, encodeControlFrame } from "./protocol";
 import type { RemoteInputTransport } from "./transport/types";
-import type { PendingTask, RemoteInputStatus } from "./types";
+import type { PendingTask, RemoteInputConfig, RemoteInputStatus } from "./types";
+
+function createConfigObject(): RemoteInputConfig {
+  const maybeWindow = (globalThis as unknown as { window?: { constructor?: { new (): object; name?: string } } }).window;
+  if (maybeWindow?.constructor?.name === "Object") {
+    return new maybeWindow.constructor() as RemoteInputConfig;
+  }
+  return {} as RemoteInputConfig;
+}
 
 export class RemoteInputClient {
   readonly transport: RemoteInputTransport;
   taskId = 1;
   pending: PendingTask | null = null;
+  private config: RemoteInputConfig;
 
-  constructor(transport: RemoteInputTransport) {
+  constructor(transport: RemoteInputTransport, initialConfig: RemoteInputConfig = { keyDelayMs: DEFAULT_KEY_DELAY_MS }) {
+    assertConfig(initialConfig);
     this.transport = transport;
+    this.config = { ...initialConfig };
     this.onDisconnected = this.onDisconnected.bind(this);
     this.onStatusChanged = this.onStatusChanged.bind(this);
     this.transport.onDisconnect(this.onDisconnected);
@@ -19,6 +30,25 @@ export class RemoteInputClient {
 
   get connected(): boolean {
     return this.transport.connected;
+  }
+
+  getConfig(): RemoteInputConfig {
+    const config = createConfigObject();
+    config.keyDelayMs = this.config.keyDelayMs;
+    return config;
+  }
+
+  async setConfig(config: RemoteInputConfig): Promise<void> {
+    if (!this.connected) {
+      throw new RemoteInputError("NOT_CONNECTED", "Device is not connected");
+    }
+    assertConfig(config);
+    try {
+      await this.transport.writeControl(encodeConfigFrame(config));
+      this.config = { ...config };
+    } catch (error) {
+      throw new RemoteInputError(this.writeErrorCode(), getErrorMessage(error, "Transport write failed"), error);
+    }
   }
 
   typeText(text: string): Promise<RemoteInputStatus> {
