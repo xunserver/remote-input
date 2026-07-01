@@ -127,6 +127,19 @@ static int control_access_cb(uint16_t conn_handle, uint16_t attr_handle,
         return rc;
     }
 
+    const uint8_t type = len > 1 ? buf[1] : 0;
+    if (type == REMOTE_INPUT_CONTROL_CONFIG) {
+        remote_input_config_frame_t frame;
+        if (!remote_input_parse_config_frame(buf, len, &frame)) {
+            notify_receiver_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
+            return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        }
+        if (s_callbacks.on_config != NULL) {
+            s_callbacks.on_config(&frame, s_callbacks.ctx);
+        }
+        return 0;
+    }
+
     remote_input_control_frame_t frame;
     if (!remote_input_parse_control_frame(buf, len, &frame)) {
         notify_receiver_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
