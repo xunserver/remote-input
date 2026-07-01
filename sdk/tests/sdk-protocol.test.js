@@ -23,6 +23,8 @@ const context = {
   DataView,
   ArrayBuffer,
   Uint8Array,
+  setTimeout,
+  clearTimeout,
   console,
 };
 vm.createContext(context);
@@ -242,8 +244,12 @@ class FakeWebSocket {
   static OPEN = 1;
   static CONNECTING = 0;
   static CLOSED = 3;
+  static throwOnConstruct = null;
 
   constructor(url) {
+    if (FakeWebSocket.throwOnConstruct) {
+      throw FakeWebSocket.throwOnConstruct;
+    }
     this.url = url;
     this.readyState = FakeWebSocket.CONNECTING;
     this.binaryType = "";
@@ -296,6 +302,7 @@ class FakeWebSocket {
 
 async function connectFakeWs(RemoteInput, url) {
   FakeWebSocket.instances = [];
+  FakeWebSocket.throwOnConstruct = null;
   context.WebSocket = FakeWebSocket;
   const promise = url === undefined ? RemoteInput.connectWs() : RemoteInput.connectWs(url);
   await flushMicrotasks();
@@ -405,6 +412,7 @@ async function runSdkFlowTests() {
 
   {
     FakeWebSocket.instances = [];
+    FakeWebSocket.throwOnConstruct = null;
     context.WebSocket = FakeWebSocket;
     const promise = RemoteInput.connectWs();
     await flushMicrotasks();
@@ -418,10 +426,32 @@ async function runSdkFlowTests() {
 
   {
     FakeWebSocket.instances = [];
+    FakeWebSocket.throwOnConstruct = null;
     context.WebSocket = FakeWebSocket;
     const promise = RemoteInput.connectWs();
     await flushMicrotasks();
     FakeWebSocket.instances[0].emitError(new Error("cannot connect"));
+    await assertRejectsWithCode(promise, "WEB_SOCKET_CONNECT_FAILED");
+  }
+
+  {
+    FakeWebSocket.instances = [];
+    FakeWebSocket.throwOnConstruct = new SyntaxError("invalid url");
+    context.WebSocket = FakeWebSocket;
+    await assertRejectsWithCode(() => RemoteInput.connectWs("not a ws url"), "WEB_SOCKET_CONNECT_FAILED");
+    FakeWebSocket.throwOnConstruct = null;
+  }
+
+  {
+    FakeWebSocket.instances = [];
+    FakeWebSocket.throwOnConstruct = null;
+    context.WebSocket = FakeWebSocket;
+    const promise = RemoteInput.connectWs("ws://192.168.4.1/ws", { initialStatusTimeoutMs: 1 });
+    await flushMicrotasks();
+    const socket = FakeWebSocket.instances[0];
+    assert.ok(socket);
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.emit("open", {});
     await assertRejectsWithCode(promise, "WEB_SOCKET_CONNECT_FAILED");
   }
 

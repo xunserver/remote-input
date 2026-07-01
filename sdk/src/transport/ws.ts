@@ -9,6 +9,11 @@ import type {
 } from "./types";
 
 export const DEFAULT_WS_URL = "ws://192.168.4.1/ws";
+const DEFAULT_INITIAL_STATUS_TIMEOUT_MS = 5000;
+
+export interface ConnectWsOptions {
+  initialStatusTimeoutMs?: number;
+}
 
 function toDataView(data: unknown): DataView {
   if (data instanceof DataView) {
@@ -128,18 +133,31 @@ export class WsTransport implements RemoteInputTransport {
   }
 }
 
-export async function connectWs(url = DEFAULT_WS_URL): Promise<RemoteInputClient> {
+export async function connectWs(url = DEFAULT_WS_URL, options: ConnectWsOptions = {}): Promise<RemoteInputClient> {
   const WebSocketCtor = globalThis.WebSocket as RemoteWebSocketConstructor | undefined;
   if (!WebSocketCtor) {
     throw new RemoteInputError("WEB_SOCKET_UNSUPPORTED", "WebSocket is not available");
   }
 
   return new Promise((resolve, reject) => {
-    const socket = new WebSocketCtor(url);
+    let socket: RemoteWebSocket;
+    try {
+      socket = new WebSocketCtor(url);
+    } catch (error) {
+      reject(new RemoteInputError("WEB_SOCKET_CONNECT_FAILED", getErrorMessage(error, "WebSocket connection failed"), error));
+      return;
+    }
+
     socket.binaryType = "arraybuffer";
     let settled = false;
+    let initialStatusTimer: ReturnType<typeof setTimeout> | undefined;
+    const initialStatusTimeoutMs = options.initialStatusTimeoutMs ?? DEFAULT_INITIAL_STATUS_TIMEOUT_MS;
 
     const cleanupBeforeTransport = (): void => {
+      if (initialStatusTimer !== undefined) {
+        clearTimeout(initialStatusTimer);
+        initialStatusTimer = undefined;
+      }
       socket.removeEventListener("open", handleOpen);
       socket.removeEventListener("message", handleInitialMessage);
       socket.removeEventListener("error", handleError);
@@ -160,6 +178,9 @@ export async function connectWs(url = DEFAULT_WS_URL): Promise<RemoteInputClient
 
     const handleOpen = (): void => {
       socket.addEventListener("message", handleInitialMessage);
+      initialStatusTimer = setTimeout(() => {
+        fail("WEB_SOCKET_CONNECT_FAILED", "Timed out waiting for initial WebSocket status");
+      }, initialStatusTimeoutMs);
     };
 
     const handleInitialMessage = (event: MessageEvent): void => {

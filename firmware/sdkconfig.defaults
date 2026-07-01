@@ -11,6 +11,7 @@ CONFIG_REMOTE_INPUT_WIFI_AP_PASSWORD="remoteinput"
 CONFIG_REMOTE_INPUT_WIFI_AP_CHANNEL=6
 CONFIG_REMOTE_INPUT_WS_MAX_CLIENTS=1
 CONFIG_HTTPD_WS_SUPPORT=y
+CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT=y
 CONFIG_REMOTE_INPUT_DISPLAY_ENABLED=y
 # The firmware only uses LVGL core widgets; compiling bundled examples adds
 # hundreds of source files to clean builds.

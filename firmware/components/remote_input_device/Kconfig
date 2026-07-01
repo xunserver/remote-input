@@ -3,6 +3,8 @@ menu "Remote Input Device"
 config REMOTE_INPUT_WS_ENABLED
     bool "Enable WebSocket input receiver"
     default y
+    select HTTPD_WS_SUPPORT
+    select HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT
     help
         Start a WiFi SoftAP and WebSocket endpoint for browser-based
         Remote Input protocol frames.

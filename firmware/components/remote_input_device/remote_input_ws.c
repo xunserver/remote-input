@@ -16,6 +16,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <unistd.h>
 
 #define REMOTE_INPUT_WS_URI "/ws"
 #define REMOTE_INPUT_DATA_FRAME_MAX_LEN (REMOTE_INPUT_DATA_FRAME_HEADER_LEN + REMOTE_INPUT_DATA_PAYLOAD_BYTES)
@@ -104,10 +105,14 @@ static void remove_client_and_notify(int fd)
     notify_disconnect_if_removed(fd);
 }
 
-static esp_err_t send_status_to_fd(int fd)
+static esp_err_t send_status_to_fd(int fd, bool notify_on_failure)
 {
     if (s_server == NULL || httpd_ws_get_fd_info(s_server, fd) != HTTPD_WS_CLIENT_WEBSOCKET) {
-        remove_client_and_notify(fd);
+        if (notify_on_failure) {
+            remove_client_and_notify(fd);
+        } else {
+            (void)remove_client(fd);
+        }
         return ESP_FAIL;
     }
 
@@ -124,7 +129,11 @@ static esp_err_t send_status_to_fd(int fd)
     esp_err_t err = httpd_ws_send_frame_async(s_server, fd, &frame);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "failed to send status fd=%d: %s", fd, esp_err_to_name(err));
-        remove_client_and_notify(fd);
+        if (notify_on_failure) {
+            remove_client_and_notify(fd);
+        } else {
+            (void)remove_client(fd);
+        }
     }
     return err;
 }
@@ -178,25 +187,30 @@ static void handle_binary_frame(const uint8_t *payload, size_t len)
     notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
 }
 
-static esp_err_t ws_handler(httpd_req_t *req)
+static esp_err_t ws_post_handshake_cb(httpd_req_t *req)
 {
     const int fd = httpd_req_to_sockfd(req);
 
-    if (req->method == HTTP_GET) {
-        if (!add_client(fd)) {
-            ESP_LOGW(TAG, "rejecting extra websocket client fd=%d", fd);
-            return ESP_FAIL;
-        }
-        esp_err_t status_err = send_status_to_fd(fd);
-        if (status_err != ESP_OK) {
-            return status_err;
-        }
-        ESP_LOGI(TAG, "websocket connected fd=%d", fd);
-        if (s_callbacks.on_connect != NULL) {
-            s_callbacks.on_connect(s_callbacks.ctx);
-        }
-        return ESP_OK;
+    if (!add_client(fd)) {
+        ESP_LOGW(TAG, "rejecting extra websocket client fd=%d", fd);
+        return ESP_FAIL;
     }
+
+    esp_err_t status_err = send_status_to_fd(fd, false);
+    if (status_err != ESP_OK) {
+        return status_err;
+    }
+
+    ESP_LOGI(TAG, "websocket connected fd=%d", fd);
+    if (s_callbacks.on_connect != NULL) {
+        s_callbacks.on_connect(s_callbacks.ctx);
+    }
+    return ESP_OK;
+}
+
+static esp_err_t ws_handler(httpd_req_t *req)
+{
+    const int fd = httpd_req_to_sockfd(req);
 
     httpd_ws_frame_t frame = { 0 };
     esp_err_t err = httpd_ws_recv_frame(req, &frame, 0);
@@ -251,6 +265,14 @@ static esp_err_t ws_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static void http_close_fn(httpd_handle_t hd, int sockfd)
+{
+    (void)hd;
+
+    remove_client_and_notify(sockfd);
+    close(sockfd);
+}
+
 static esp_err_t init_wifi_ap(void)
 {
     if (strlen(CONFIG_REMOTE_INPUT_WIFI_AP_PASSWORD) < 8) {
@@ -301,6 +323,7 @@ static esp_err_t init_http_server(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_open_sockets = CONFIG_REMOTE_INPUT_WS_MAX_CLIENTS + 2;
+    config.close_fn = http_close_fn;
 
     ESP_RETURN_ON_ERROR(httpd_start(&s_server, &config), TAG, "httpd_start failed");
 
@@ -311,6 +334,7 @@ static esp_err_t init_http_server(void)
         .user_ctx = NULL,
         .is_websocket = true,
         .handle_ws_control_frames = true,
+        .ws_post_handshake_cb = ws_post_handshake_cb,
     };
     ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_server, &ws_uri), TAG, "register ws uri failed");
     ESP_LOGI(TAG, "websocket endpoint ready at ws://192.168.4.1%s", REMOTE_INPUT_WS_URI);
@@ -324,7 +348,7 @@ void remote_input_ws_notify_status(void)
 
     for (size_t i = 0; i < CONFIG_REMOTE_INPUT_WS_MAX_CLIENTS; i += 1) {
         if (fds[i] >= 0) {
-            (void)send_status_to_fd(fds[i]);
+            (void)send_status_to_fd(fds[i], true);
         }
     }
 }
