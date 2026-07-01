@@ -40,6 +40,10 @@ typedef struct {
     uint16_t key_delay_ms;
 } remote_input_config_frame_t;
 
+typedef struct {
+    uint16_t key_delay_ms;
+} remote_input_config_t;
+
 bool remote_input_parse_control_frame(const uint8_t *data, size_t len, remote_input_control_frame_t *out);
 bool remote_input_parse_data_frame(const uint8_t *data, size_t len, remote_input_data_frame_t *out);
 bool remote_input_parse_config_frame(const uint8_t *data, size_t len, remote_input_config_frame_t *out);

@@ -66,11 +66,26 @@ static bool writer_busy_cb(void *ctx)
     return remote_input_writer_runner_busy();
 }
 
-static remote_input_error_t submit_text_cb(uint16_t task_id, const uint8_t *bytes, size_t len, void *ctx)
+static remote_input_error_t capture_config_cb(remote_input_config_t *config, void *ctx)
 {
     (void)ctx;
 
-    remote_input_config_t config = remote_input_config_get();
+    if (config == NULL) {
+        return REMOTE_INPUT_ERR_INVALID_COMMAND;
+    }
+
+    *config = remote_input_config_get();
+    return REMOTE_INPUT_ERR_OK;
+}
+
+static remote_input_error_t submit_text_cb(uint16_t task_id,
+                                           const uint8_t *bytes,
+                                           size_t len,
+                                           remote_input_config_t config,
+                                           void *ctx)
+{
+    (void)ctx;
+
     return remote_input_writer_runner_submit(task_id, bytes, len, config);
 }
 
@@ -213,6 +228,7 @@ esp_err_t remote_input_service_init(void)
 
     const remote_input_engine_callbacks_t engine_callbacks = {
         .output_busy = writer_busy_cb,
+        .capture_config = capture_config_cb,
         .submit_text = submit_text_cb,
         .apply_config = apply_config_cb,
         .on_status = status_cb,

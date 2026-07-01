@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
-#include "remote_input_config.h"
+#include "remote_input_protocol.h"
 #include "remote_input_status.h"
 
 typedef struct {

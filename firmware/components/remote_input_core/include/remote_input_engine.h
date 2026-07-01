@@ -9,9 +9,11 @@
 #include "remote_input_task.h"
 
 typedef bool (*remote_input_engine_busy_cb_t)(void *ctx);
+typedef remote_input_error_t (*remote_input_engine_capture_config_cb_t)(remote_input_config_t *config, void *ctx);
 typedef remote_input_error_t (*remote_input_engine_submit_text_cb_t)(uint16_t task_id,
                                                                      const uint8_t *bytes,
                                                                      size_t len,
+                                                                     remote_input_config_t config,
                                                                      void *ctx);
 typedef remote_input_error_t (*remote_input_engine_config_cb_t)(const remote_input_config_frame_t *frame,
                                                                 void *ctx);
@@ -24,6 +26,7 @@ typedef void (*remote_input_engine_status_cb_t)(remote_input_state_t state,
 
 typedef struct {
     remote_input_engine_busy_cb_t output_busy;
+    remote_input_engine_capture_config_cb_t capture_config;
     remote_input_engine_submit_text_cb_t submit_text;
     remote_input_engine_config_cb_t apply_config;
     remote_input_engine_status_cb_t on_status;

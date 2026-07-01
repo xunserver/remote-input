@@ -190,6 +190,7 @@ remote_input_error_t remote_input_writer_runner_submit(uint16_t task_id,
     s_pending_job.task_id = task_id;
     s_pending_job.len = len;
     s_pending_job.config = config;
+    memset(s_pending_job.bytes, 0, sizeof(s_pending_job.bytes));
     if (len > 0) {
         memcpy(s_pending_job.bytes, bytes, len);
     }

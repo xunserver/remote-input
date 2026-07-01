@@ -13,6 +13,7 @@ typedef struct {
     uint16_t total_chunks;
     uint32_t received_bytes;
     uint16_t received_chunks;
+    remote_input_config_t config;
     uint8_t buffer[REMOTE_INPUT_MAX_TEXT_BYTES];
     uint8_t chunk_seen[(REMOTE_INPUT_MAX_TEXT_BYTES / REMOTE_INPUT_DATA_PAYLOAD_BYTES) + 2];
     bool active;
