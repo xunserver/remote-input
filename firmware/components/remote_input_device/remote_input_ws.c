@@ -19,6 +19,7 @@
 
 #define REMOTE_INPUT_WS_URI "/ws"
 #define REMOTE_INPUT_DATA_FRAME_MAX_LEN (REMOTE_INPUT_DATA_FRAME_HEADER_LEN + REMOTE_INPUT_DATA_PAYLOAD_BYTES)
+#define REMOTE_INPUT_WS_DRAIN_CHUNK_LEN 32
 
 static const char *TAG = "remote_input_ws";
 
@@ -92,6 +93,13 @@ static void notify_error(remote_input_error_t error)
     }
 }
 
+static void notify_disconnect_if_removed(int fd)
+{
+    if (remove_client(fd) && s_callbacks.on_disconnect != NULL) {
+        s_callbacks.on_disconnect(s_callbacks.ctx);
+    }
+}
+
 static esp_err_t send_status_to_fd(int fd)
 {
     if (s_server == NULL || httpd_ws_get_fd_info(s_server, fd) != HTTPD_WS_CLIENT_WEBSOCKET) {
@@ -115,6 +123,35 @@ static esp_err_t send_status_to_fd(int fd)
         remove_client(fd);
     }
     return err;
+}
+
+static esp_err_t recv_frame_payload(httpd_req_t *req,
+                                    httpd_ws_frame_t *frame,
+                                    uint8_t *payload,
+                                    size_t payload_capacity)
+{
+    if (frame->len == 0) {
+        frame->payload = NULL;
+        return ESP_OK;
+    }
+
+    if (frame->len <= payload_capacity) {
+        frame->payload = payload;
+        return httpd_ws_recv_frame(req, frame, payload_capacity);
+    }
+
+    size_t remaining = frame->len;
+    while (remaining > 0) {
+        const size_t chunk_len = remaining > payload_capacity ? payload_capacity : remaining;
+        const int received = httpd_req_recv(req, (char *)payload, chunk_len);
+        if (received <= 0) {
+            return ESP_FAIL;
+        }
+        remaining -= (size_t)received;
+    }
+
+    frame->payload = NULL;
+    return ESP_OK;
 }
 
 static void handle_binary_frame(const uint8_t *payload, size_t len)
@@ -164,43 +201,54 @@ static esp_err_t ws_handler(httpd_req_t *req)
             ESP_LOGW(TAG, "rejecting extra websocket client fd=%d", fd);
             return ESP_FAIL;
         }
+        esp_err_t status_err = send_status_to_fd(fd);
+        if (status_err != ESP_OK) {
+            remove_client(fd);
+            return status_err;
+        }
         ESP_LOGI(TAG, "websocket connected fd=%d", fd);
         if (s_callbacks.on_connect != NULL) {
             s_callbacks.on_connect(s_callbacks.ctx);
         }
-        return send_status_to_fd(fd);
+        return ESP_OK;
     }
 
     httpd_ws_frame_t frame = { 0 };
     esp_err_t err = httpd_ws_recv_frame(req, &frame, 0);
     if (err != ESP_OK) {
-        if (remove_client(fd) && s_callbacks.on_disconnect != NULL) {
-            s_callbacks.on_disconnect(s_callbacks.ctx);
+        notify_disconnect_if_removed(fd);
+        return err;
+    }
+
+    uint8_t payload[REMOTE_INPUT_DATA_FRAME_MAX_LEN];
+    uint8_t drain[REMOTE_INPUT_WS_DRAIN_CHUNK_LEN];
+    uint8_t *buffer = frame.len <= sizeof(payload) ? payload : drain;
+    const size_t buffer_len = frame.len <= sizeof(payload) ? sizeof(payload) : sizeof(drain);
+    err = recv_frame_payload(req, &frame, buffer, buffer_len);
+    if (err != ESP_OK) {
+        if (frame.type == HTTPD_WS_TYPE_CLOSE) {
+            notify_disconnect_if_removed(fd);
+        } else {
+            notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
         }
         return err;
     }
 
     if (frame.type == HTTPD_WS_TYPE_CLOSE) {
-        if (remove_client(fd) && s_callbacks.on_disconnect != NULL) {
-            s_callbacks.on_disconnect(s_callbacks.ctx);
-        }
+        notify_disconnect_if_removed(fd);
         return ESP_OK;
     }
 
-    if (frame.type != HTTPD_WS_TYPE_BINARY || frame.len > REMOTE_INPUT_DATA_FRAME_MAX_LEN) {
-        notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
+    if (frame.type == HTTPD_WS_TYPE_PING || frame.type == HTTPD_WS_TYPE_PONG) {
         return ESP_OK;
-    }
-
-    uint8_t payload[REMOTE_INPUT_DATA_FRAME_MAX_LEN];
-    frame.payload = payload;
-    err = httpd_ws_recv_frame(req, &frame, sizeof(payload));
-    if (err != ESP_OK) {
-        notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
-        return err;
     }
 
     if (frame.type != HTTPD_WS_TYPE_BINARY) {
+        notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
+        return ESP_OK;
+    }
+
+    if (frame.len > sizeof(payload)) {
         notify_error(REMOTE_INPUT_ERR_INVALID_COMMAND);
         return ESP_OK;
     }
@@ -230,7 +278,11 @@ static esp_err_t init_wifi_ap(void)
         s_event_loop_initialized = true;
     }
 
-    esp_netif_create_default_wifi_ap();
+    esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
+    if (ap_netif == NULL) {
+        ESP_LOGE(TAG, "esp_netif_create_default_wifi_ap failed");
+        return ESP_ERR_NO_MEM;
+    }
 
     wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
     ESP_RETURN_ON_ERROR(esp_wifi_init(&init_config), TAG, "esp_wifi_init failed");
