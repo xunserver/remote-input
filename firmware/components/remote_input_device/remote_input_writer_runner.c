@@ -6,6 +6,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define REMOTE_INPUT_WRITER_QUEUE_LEN 1
@@ -16,13 +17,12 @@ typedef struct {
     uint16_t task_id;
     size_t len;
     remote_input_config_t config;
-    uint8_t bytes[REMOTE_INPUT_MAX_TEXT_BYTES];
+    uint8_t *bytes;
 } writer_job_t;
 
 static const remote_input_writer_t *s_writer;
 static remote_input_writer_runner_callbacks_t s_callbacks;
 static QueueHandle_t s_queue;
-static writer_job_t s_pending_job;
 static volatile bool s_active;
 static bool s_initialized;
 static portMUX_TYPE s_active_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -64,6 +64,16 @@ static void notify_typing(bool typing)
     if (s_callbacks.on_typing != NULL) {
         s_callbacks.on_typing(typing, s_callbacks.ctx);
     }
+}
+
+static void free_job(writer_job_t *job)
+{
+    if (job == NULL) {
+        return;
+    }
+
+    free(job->bytes);
+    free(job);
 }
 
 static remote_input_error_t write_job(const writer_job_t *job)
@@ -108,6 +118,7 @@ static void writer_worker_task(void *ctx)
         }
 
         notify_typing(false);
+        free_job(job);
         set_active(false);
     }
 }
@@ -187,16 +198,28 @@ remote_input_error_t remote_input_writer_runner_submit(uint16_t task_id,
         return REMOTE_INPUT_ERR_DEVICE_BUSY;
     }
 
-    s_pending_job.task_id = task_id;
-    s_pending_job.len = len;
-    s_pending_job.config = config;
-    memset(s_pending_job.bytes, 0, sizeof(s_pending_job.bytes));
-    if (len > 0) {
-        memcpy(s_pending_job.bytes, bytes, len);
+    writer_job_t *job = (writer_job_t *)calloc(1, sizeof(writer_job_t));
+    if (job == NULL) {
+        set_active(false);
+        return REMOTE_INPUT_ERR_TASK_TOO_LARGE;
     }
 
-    writer_job_t *job = &s_pending_job;
+    job->task_id = task_id;
+    job->len = len;
+    job->config = config;
+
+    if (len > 0) {
+        job->bytes = (uint8_t *)malloc(len);
+        if (job->bytes == NULL) {
+            free_job(job);
+            set_active(false);
+            return REMOTE_INPUT_ERR_TASK_TOO_LARGE;
+        }
+        memcpy(job->bytes, bytes, len);
+    }
+
     if (xQueueSend(s_queue, &job, 0) != pdTRUE) {
+        free_job(job);
         set_active(false);
         return REMOTE_INPUT_ERR_DEVICE_BUSY;
     }
