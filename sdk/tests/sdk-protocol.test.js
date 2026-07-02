@@ -19,9 +19,15 @@ assert.match(demoHtml, /decode\.html/);
 
 const decodeHtml = fs.readFileSync("decode.html", "utf8");
 assert.match(decodeHtml, /<title>Remote Input Decoder<\/title>/);
-assert.match(decodeHtml, /import .*base32Frame.* from "\.\/src\/base32Frame\.ts"|from "\.\/src\/base32Frame\.ts"/);
+assert.match(
+  decodeHtml,
+  /import \{\s*createRib32DecoderState,\s*getRib32Tasks,\s*ingestRib32Text\s*\} from "\.\/src\/base32Frame\.ts";/
+);
 assert.match(decodeHtml, /id="rib32Input"/);
 assert.match(decodeHtml, /id="taskList"/);
+assert.match(decodeHtml, /let processedLength = 0;/);
+assert.match(decodeHtml, /slice\(processedLength\)/);
+assert.match(decodeHtml, /processedLength = 0;/);
 
 const source = fs.readFileSync("dist/remote-input-sdk.js", "utf8");
 const context = {

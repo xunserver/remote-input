@@ -25,6 +25,7 @@
     const taskList = document.querySelector("#taskList");
     const clearButton = document.querySelector("#clearButton");
     let state = createRib32DecoderState();
+    let processedLength = 0;
 
     function render() {
       const tasks = getRib32Tasks(state);
@@ -88,14 +89,17 @@
     }
 
     input.addEventListener("input", () => {
-      ingestRib32Text(state, input.value);
+      const newText = input.value.slice(processedLength);
+      ingestRib32Text(state, newText);
       input.value = state.buffer;
+      processedLength = input.value.length;
       render();
     });
 
     clearButton.addEventListener("click", () => {
       state = createRib32DecoderState();
       input.value = "";
+      processedLength = 0;
       render();
       input.focus();
     });
