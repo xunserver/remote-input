@@ -1,8 +1,7 @@
 #include "remote_input_task.h"
 
+#include <stdlib.h>
 #include <string.h>
-
-#define REMOTE_INPUT_CHUNK_SEEN_LEN ((uint16_t)(sizeof(((remote_input_task_buffer_t *)0)->chunk_seen) / sizeof(uint8_t)))
 
 static uint16_t expected_chunks_for_total(uint32_t total_bytes)
 {
@@ -26,6 +25,18 @@ static size_t expected_payload_len_for_chunk(const remote_input_task_buffer_t *t
     }
 
     return REMOTE_INPUT_DATA_PAYLOAD_BYTES;
+}
+
+static void release_task_memory(remote_input_task_buffer_t *task)
+{
+    if (task == NULL) {
+        return;
+    }
+
+    free(task->buffer);
+    free(task->chunk_seen);
+    task->buffer = NULL;
+    task->chunk_seen = NULL;
 }
 
 void remote_input_task_init(remote_input_task_buffer_t *task)
@@ -54,7 +65,18 @@ remote_input_error_t remote_input_task_start(remote_input_task_buffer_t *task, c
     if (frame->total_chunks != expected_chunks_for_total(frame->total_bytes)) {
         return REMOTE_INPUT_ERR_INVALID_COMMAND;
     }
-    if (frame->total_chunks > REMOTE_INPUT_CHUNK_SEEN_LEN) {
+
+    uint8_t *buffer = NULL;
+    if (frame->total_bytes > 0) {
+        buffer = (uint8_t *)calloc(1, frame->total_bytes);
+        if (buffer == NULL) {
+            return REMOTE_INPUT_ERR_TASK_TOO_LARGE;
+        }
+    }
+
+    uint8_t *chunk_seen = (uint8_t *)calloc(frame->total_chunks, sizeof(uint8_t));
+    if (chunk_seen == NULL) {
+        free(buffer);
         return REMOTE_INPUT_ERR_TASK_TOO_LARGE;
     }
 
@@ -64,8 +86,8 @@ remote_input_error_t remote_input_task_start(remote_input_task_buffer_t *task, c
     task->received_bytes = 0;
     task->received_chunks = 0;
     task->config = (remote_input_config_t) {0};
-    memset(task->buffer, 0, sizeof(task->buffer));
-    memset(task->chunk_seen, 0, sizeof(task->chunk_seen));
+    task->buffer = buffer;
+    task->chunk_seen = chunk_seen;
     task->active = true;
     return REMOTE_INPUT_ERR_OK;
 }
@@ -96,7 +118,7 @@ remote_input_error_t remote_input_task_add_chunk(remote_input_task_buffer_t *tas
     }
 
     if (frame->payload_len > 0) {
-        if (frame->payload == NULL) {
+        if (frame->payload == NULL || task->buffer == NULL) {
             return REMOTE_INPUT_ERR_INVALID_CHUNK;
         }
         memcpy(&task->buffer[offset], frame->payload, frame->payload_len);
@@ -131,5 +153,6 @@ void remote_input_task_reset(remote_input_task_buffer_t *task)
         return;
     }
 
+    release_task_memory(task);
     memset(task, 0, sizeof(*task));
 }
