@@ -209,9 +209,10 @@ SDK 可以在连接后发送 CONFIG 帧更新运行时参数，例如 `key_delay
 7. SDK 通过当前传输层发送 COMMIT 帧。
 8. ESP32 检查分片是否完整。
 9. ESP32 校验完整 payload 是否为合法 UTF-8。
-10. ESP32 将 UTF-8 解码为 Unicode code point。
-11. ESP32 通过 USB HID 逐个输入 code point。
-12. ESP32 通过当前传输层返回 DONE 或 ERROR 状态。
+10. ESP32 将原始 UTF-8 字节编码为 RIB32 ASCII 文本帧。
+11. ESP32 通过 USB HID 把 RIB32 帧逐行输入到目标设备的 `decode.html`。
+12. `decode.html` 校验分块和整篇 CRC32，通过后显示可复制的原始文本。
+13. ESP32 通过当前传输层返回 DONE 或 ERROR 状态。
 
 发送空文本时：
 
@@ -227,7 +228,38 @@ SDK 当前从 `1` 开始生成 `task_id`，每次任务递增。
 
 ESP32 把 `task_id` 当作 `uint16` 透明值处理，只检查同一个任务中的 START、DATA、COMMIT 是否一致。
 
-## 9. 后续传输扩展
+## 9. USB HID RIB32 输出格式
+
+RIB32 是 ESP32-S3 到目标浏览器页面的 ASCII 输出格式，独立于 BLE/WebSocket 二进制协议版本。当前 RIB32 格式版本为 `1`。
+
+目标设备应打开 `sdk/decode.html`，并把光标放在 RIB32 输入框内。ESP32-S3 不再依赖 Windows `EnableHexNumpad`，也不再使用 `Alt` + Unicode 码点输入。
+
+每个数据分块一行：
+
+```text
+<RIB32:1:taskId:chunkIndex:chunkTotal:payloadCrc:payload>
+```
+
+每个任务以结束行收尾：
+
+```text
+</RIB32:1:taskId:messageCrc>
+```
+
+字段说明：
+
+| 字段 | 说明 |
+| --- | --- |
+| `taskId` | 原输入任务 ID，十进制 |
+| `chunkIndex` | 从 0 开始的分块序号 |
+| `chunkTotal` | 分块总数 |
+| `payloadCrc` | 当前分块原始字节的 CRC32，8 位大写十六进制 |
+| `payload` | RFC 4648 Base32，无 `=` padding |
+| `messageCrc` | 完整 UTF-8 原始字节的 CRC32，8 位大写十六进制 |
+
+当前每个 RIB32 分块承载 32 字节原始 UTF-8 数据。网页只在所有分块存在、每块 CRC32 正确、整篇 CRC32 正确且 UTF-8 解码成功后显示最终文本。单个字符错误只会让对应分块或整篇校验失败，不会输出乱码文本。
+
+## 10. 后续传输扩展
 
 后续如果增加新的传输层，建议保持本文定义的二进制帧不变。
 
