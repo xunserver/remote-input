@@ -68,7 +68,7 @@ static const struct ble_gatt_svc_def gatt_svcs[] = {
             {
                 .uuid = &data_uuid.u,
                 .access_cb = data_access_cb,
-                .flags = BLE_GATT_CHR_F_WRITE,
+                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
             },
             {
                 .uuid = &status_uuid.u,
