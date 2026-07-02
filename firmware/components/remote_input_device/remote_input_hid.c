@@ -1,11 +1,11 @@
 #include "remote_input_hid.h"
 
 #include <stddef.h>
-#include <stdio.h>
 
 #include "class/hid/hid_device.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "remote_input_rib32.h"
 #include "remote_input_utf8.h"
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
@@ -71,30 +71,6 @@ bool remote_input_hid_ready(void)
     return tud_mounted();
 }
 
-static uint8_t hex_keycode(char c)
-{
-    static const uint8_t digit_keycodes[] = {
-        HID_KEY_KEYPAD_0,
-        HID_KEY_KEYPAD_1,
-        HID_KEY_KEYPAD_2,
-        HID_KEY_KEYPAD_3,
-        HID_KEY_KEYPAD_4,
-        HID_KEY_KEYPAD_5,
-        HID_KEY_KEYPAD_6,
-        HID_KEY_KEYPAD_7,
-        HID_KEY_KEYPAD_8,
-        HID_KEY_KEYPAD_9,
-    };
-
-    if (c >= '0' && c <= '9') {
-        return digit_keycodes[(uint8_t)(c - '0')];
-    }
-    if (c >= 'A' && c <= 'F') {
-        return HID_KEY_A + (uint8_t)(c - 'A');
-    }
-    return 0;
-}
-
 static esp_err_t send_report(uint8_t modifier, uint8_t const keycode[6], uint16_t key_delay_ms)
 {
     if (!tud_hid_ready()) {
@@ -128,79 +104,108 @@ static esp_err_t release_all_keys(uint16_t key_delay_ms)
     return ESP_ERR_TIMEOUT;
 }
 
-static esp_err_t send_alt_modified_key(uint8_t keycode, uint16_t key_delay_ms)
+typedef struct {
+    uint8_t modifier;
+    uint8_t keycode;
+} ascii_key_t;
+
+static bool ascii_key_for_char(char ch, ascii_key_t *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+
+    if (ch >= 'A' && ch <= 'Z') {
+        out->modifier = KEYBOARD_MODIFIER_LEFTSHIFT;
+        out->keycode = HID_KEY_A + (uint8_t)(ch - 'A');
+        return true;
+    }
+    if (ch >= 'a' && ch <= 'z') {
+        out->modifier = 0;
+        out->keycode = HID_KEY_A + (uint8_t)(ch - 'a');
+        return true;
+    }
+    if (ch >= '1' && ch <= '9') {
+        out->modifier = 0;
+        out->keycode = HID_KEY_1 + (uint8_t)(ch - '1');
+        return true;
+    }
+    if (ch == '0') {
+        out->modifier = 0;
+        out->keycode = HID_KEY_0;
+        return true;
+    }
+
+    switch (ch) {
+    case '<':
+        out->modifier = KEYBOARD_MODIFIER_LEFTSHIFT;
+        out->keycode = HID_KEY_COMMA;
+        return true;
+    case '>':
+        out->modifier = KEYBOARD_MODIFIER_LEFTSHIFT;
+        out->keycode = HID_KEY_PERIOD;
+        return true;
+    case '/':
+        out->modifier = 0;
+        out->keycode = HID_KEY_SLASH;
+        return true;
+    case ':':
+        out->modifier = KEYBOARD_MODIFIER_LEFTSHIFT;
+        out->keycode = HID_KEY_SEMICOLON;
+        return true;
+    default:
+        return false;
+    }
+}
+
+static esp_err_t send_key(uint8_t modifier, uint8_t keycode, uint16_t key_delay_ms)
 {
     const uint8_t keys[6] = {keycode, 0, 0, 0, 0, 0};
     const uint8_t no_keys[6] = {0};
 
-    ESP_RETURN_ON_ERROR(send_report(KEYBOARD_MODIFIER_LEFTALT, keys, key_delay_ms), TAG, "hid key press failed");
-    ESP_RETURN_ON_ERROR(send_report(KEYBOARD_MODIFIER_LEFTALT, no_keys, key_delay_ms), TAG, "hid key release failed");
+    ESP_RETURN_ON_ERROR(send_report(modifier, keys, key_delay_ms), TAG, "hid key press failed");
+    ESP_RETURN_ON_ERROR(send_report(0, no_keys, key_delay_ms), TAG, "hid key release failed");
     return ESP_OK;
 }
 
-esp_err_t remote_input_hid_type_codepoint(uint32_t codepoint, uint16_t key_delay_ms)
+static esp_err_t type_ascii_char(char ch, uint16_t key_delay_ms)
 {
-    if (!remote_input_hid_ready()) {
-        return ESP_ERR_INVALID_STATE;
+    ascii_key_t key = {0};
+    if (!ascii_key_for_char(ch, &key)) {
+        return ESP_ERR_INVALID_ARG;
     }
-    if (codepoint > 0x10FFFFu || (codepoint >= 0xD800u && codepoint <= 0xDFFFu)) {
+    return send_key(key.modifier, key.keycode, key_delay_ms);
+}
+
+static esp_err_t type_enter(uint16_t key_delay_ms)
+{
+    return send_key(0, HID_KEY_ENTER, key_delay_ms);
+}
+
+static esp_err_t type_rib32_line_cb(const char *line, void *ctx)
+{
+    hid_write_context_t *write_ctx = (hid_write_context_t *)ctx;
+    if (line == NULL || write_ctx == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    char hex[9] = {0};
-    int written = snprintf(hex, sizeof(hex), "%lX", (unsigned long)codepoint);
-    if (written <= 0 || written >= (int)sizeof(hex)) {
-        return ESP_ERR_INVALID_RESPONSE;
-    }
-
-    const uint8_t no_keys[6] = {0};
-    esp_err_t ret = send_report(KEYBOARD_MODIFIER_LEFTALT, no_keys, key_delay_ms);
-    if (ret != ESP_OK) {
-        (void)release_all_keys(key_delay_ms);
-        return ret;
-    }
-
-    ret = send_alt_modified_key(HID_KEY_KEYPAD_ADD, key_delay_ms);
-    if (ret != ESP_OK) {
-        (void)release_all_keys(key_delay_ms);
-        return ret;
-    }
-
-    for (const char *p = hex; *p != '\0'; ++p) {
-        uint8_t keycode = hex_keycode(*p);
-        if (keycode == 0) {
-            (void)release_all_keys(key_delay_ms);
-            return ESP_ERR_INVALID_ARG;
-        }
-
-        ret = send_alt_modified_key(keycode, key_delay_ms);
-        if (ret != ESP_OK) {
-            (void)release_all_keys(key_delay_ms);
-            return ret;
+    for (const char *p = line; *p != '\0'; ++p) {
+        esp_err_t err = type_ascii_char(*p, write_ctx->key_delay_ms);
+        if (err != ESP_OK) {
+            (void)release_all_keys(write_ctx->key_delay_ms);
+            write_ctx->error = REMOTE_INPUT_ERR_HID_INPUT_FAILED;
+            return err;
         }
     }
 
-    return release_all_keys(key_delay_ms);
-}
-
-static bool type_codepoint_cb(uint32_t codepoint, void *ctx)
-{
-    hid_write_context_t *write_ctx = (hid_write_context_t *)ctx;
-    esp_err_t err = remote_input_hid_type_codepoint(codepoint, write_ctx->key_delay_ms);
+    esp_err_t err = type_enter(write_ctx->key_delay_ms);
     if (err != ESP_OK) {
-        if (write_ctx != NULL) {
-            if (err == ESP_ERR_INVALID_STATE) {
-                write_ctx->error = REMOTE_INPUT_ERR_USB_NOT_READY;
-            } else if (err == ESP_ERR_INVALID_ARG) {
-                write_ctx->error = REMOTE_INPUT_ERR_INVALID_CODEPOINT;
-            } else {
-                write_ctx->error = REMOTE_INPUT_ERR_HID_INPUT_FAILED;
-            }
-        }
-        return false;
+        (void)release_all_keys(write_ctx->key_delay_ms);
+        write_ctx->error = REMOTE_INPUT_ERR_HID_INPUT_FAILED;
+        return err;
     }
 
-    return true;
+    return ESP_OK;
 }
 
 static esp_err_t hid_writer_init(void *ctx)
@@ -215,7 +220,8 @@ static bool hid_writer_ready(void *ctx)
     return remote_input_hid_ready();
 }
 
-remote_input_error_t remote_input_hid_write_text(const uint8_t *bytes,
+remote_input_error_t remote_input_hid_write_text(uint16_t task_id,
+                                                 const uint8_t *bytes,
                                                  size_t len,
                                                  const remote_input_config_t *config,
                                                  void *ctx)
@@ -242,11 +248,16 @@ remote_input_error_t remote_input_hid_write_text(const uint8_t *bytes,
         .error = REMOTE_INPUT_ERR_OK,
         .key_delay_ms = key_delay_ms,
     };
-    if (!remote_input_utf8_decode_each(bytes, len, type_codepoint_cb, &write_ctx)) {
-        if (write_ctx.error == REMOTE_INPUT_ERR_OK) {
-            return REMOTE_INPUT_ERR_INVALID_UTF8;
+
+    esp_err_t err = remote_input_rib32_emit(task_id, bytes, len, type_rib32_line_cb, &write_ctx);
+    if (err != ESP_OK) {
+        if (write_ctx.error != REMOTE_INPUT_ERR_OK) {
+            return write_ctx.error;
         }
-        return write_ctx.error;
+        if (err == ESP_ERR_INVALID_ARG) {
+            return REMOTE_INPUT_ERR_INVALID_COMMAND;
+        }
+        return REMOTE_INPUT_ERR_HID_INPUT_FAILED;
     }
 
     return REMOTE_INPUT_ERR_OK;

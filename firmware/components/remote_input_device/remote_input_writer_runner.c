@@ -82,7 +82,7 @@ static remote_input_error_t write_job(const writer_job_t *job)
         return REMOTE_INPUT_ERR_HID_INPUT_FAILED;
     }
 
-    return s_writer->write_text(job->bytes, job->len, &job->config, s_writer->ctx);
+    return s_writer->write_text(job->task_id, job->bytes, job->len, &job->config, s_writer->ctx);
 }
 
 static void writer_worker_task(void *ctx)
