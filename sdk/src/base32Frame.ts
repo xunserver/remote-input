@@ -31,6 +31,7 @@ export type Rib32DecoderState = {
   scannedLineCount: number;
   buffer: string;
   tasks: Map<number, Rib32TaskState>;
+  lineErrors: string[];
 };
 
 export type Rib32TaskView = {
@@ -125,7 +126,7 @@ export function formatRib32Frames(taskId: number, bytes: Uint8Array): string[] {
 }
 
 export function createRib32DecoderState(): Rib32DecoderState {
-  return { nextOrder: 0, scannedLineCount: 0, buffer: "", tasks: new Map() };
+  return { nextOrder: 0, scannedLineCount: 0, buffer: "", tasks: new Map(), lineErrors: [] };
 }
 
 function taskFor(state: Rib32DecoderState, taskId: number): Rib32TaskState {
@@ -228,8 +229,7 @@ function ingestLine(state: Rib32DecoderState, rawLine: string): void {
     return;
   }
 
-  const synthetic = taskFor(state, 0);
-  synthetic.lineErrors.push(`unrecognized line ${state.scannedLineCount + 1}`);
+  state.lineErrors.push(`unrecognized line ${state.scannedLineCount + 1}`);
 }
 
 export function ingestRib32Text(state: Rib32DecoderState, text: string): Rib32DecoderState {
@@ -248,6 +248,10 @@ export function getRib32Tasks(state: Rib32DecoderState): Rib32TaskView[] {
     .filter((task) => task.taskId !== 0)
     .sort((a, b) => a.order - b.order)
     .map(viewTask);
+}
+
+export function getRib32LineErrors(state: Rib32DecoderState): string[] {
+  return [...state.lineErrors];
 }
 
 function viewTask(task: Rib32TaskState): Rib32TaskView {

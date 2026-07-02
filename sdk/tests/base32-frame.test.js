@@ -7,6 +7,7 @@ const {
   crc32,
   createRib32DecoderState,
   formatRib32Frames,
+  getRib32LineErrors,
   getRib32Tasks,
   ingestRib32Text,
 } = require("../src/base32Frame.ts");
@@ -152,4 +153,11 @@ function makeEndLine(taskId, bytes) {
   assert.equal(tasks.length, 2);
   assert.equal(tasks[0].decodedText, "第一段");
   assert.equal(tasks[1].decodedText, "第二段");
+}
+
+{
+  const state = createRib32DecoderState();
+  ingestRib32Text(state, "<RIB32:1:18:0:oops>\n");
+  assert.deepEqual(getRib32LineErrors(state), ["unrecognized line 1"]);
+  assert.deepEqual(getRib32Tasks(state), []);
 }

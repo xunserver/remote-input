@@ -16,18 +16,31 @@ assert.match(demoHtml, /<script type="module">/);
 assert.match(demoHtml, /import \* as RemoteInput from "\.\/src\/index\.ts";/);
 assert.doesNotMatch(demoHtml, /EnableHexNumpad/);
 assert.match(demoHtml, /decode\.html/);
+assert.match(demoHtml, /Vite dev server/i);
+assert.match(demoHtml, /US\/English/i);
+assert.match(demoHtml, /输入法组合状态|输入法/i);
 
 const decodeHtml = fs.readFileSync("decode.html", "utf8");
 assert.match(decodeHtml, /<title>Remote Input Decoder<\/title>/);
 assert.match(
   decodeHtml,
-  /import \{\s*createRib32DecoderState,\s*getRib32Tasks,\s*ingestRib32Text\s*\} from "\.\/src\/base32Frame\.ts";/
+  /import \{\s*createRib32DecoderState,\s*getRib32LineErrors,\s*getRib32Tasks,\s*ingestRib32Text\s*\} from "\.\/src\/base32Frame\.ts";/
 );
 assert.match(decodeHtml, /id="rib32Input"/);
 assert.match(decodeHtml, /id="taskList"/);
+assert.match(decodeHtml, /id="lineErrorList"/);
 assert.match(decodeHtml, /let processedLength = 0;/);
 assert.match(decodeHtml, /slice\(processedLength\)/);
 assert.match(decodeHtml, /processedLength = 0;/);
+assert.match(decodeHtml, /Vite dev server/i);
+assert.match(decodeHtml, /US\/English/i);
+assert.match(decodeHtml, /输入法组合状态|输入法/i);
+
+const protocolDoc = fs.readFileSync("../docs/remote-input-protocol.md", "utf8");
+assert.match(protocolDoc, /Vite dev server|Vite 页面/);
+assert.match(protocolDoc, /US\/English/i);
+assert.match(protocolDoc, /输入法组合状态|输入法/i);
+assert.match(protocolDoc, /人工验证|手工验证/);
 
 const source = fs.readFileSync("dist/remote-input-sdk.js", "utf8");
 const context = {
@@ -60,6 +73,7 @@ assert.equal(typeof remoteInputGlobal.formatRib32Frames, "function");
 assert.equal(typeof remoteInputGlobal.createRib32DecoderState, "function");
 assert.equal(typeof remoteInputGlobal.ingestRib32Text, "function");
 assert.equal(typeof remoteInputGlobal.getRib32Tasks, "function");
+assert.equal(typeof remoteInputGlobal.getRib32LineErrors, "function");
 assert.equal(remoteInputGlobal.RIB32_VERSION, 1);
 assert.equal(remoteInputGlobal.RIB32_CHUNK_BYTES, 32);
 

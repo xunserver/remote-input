@@ -11,6 +11,7 @@ export {
   crc32,
   createRib32DecoderState,
   formatRib32Frames,
+  getRib32LineErrors,
   getRib32Tasks,
   ingestRib32Text,
 } from "./base32Frame";
@@ -38,6 +39,7 @@ import {
   crc32,
   createRib32DecoderState,
   formatRib32Frames,
+  getRib32LineErrors,
   getRib32Tasks,
   ingestRib32Text,
 } from "./base32Frame";
@@ -58,6 +60,7 @@ export const _internals = {
   formatRib32Frames,
   createRib32DecoderState,
   ingestRib32Text,
+  getRib32LineErrors,
   getRib32Tasks,
 };
 

@@ -1,7 +1,6 @@
 #include "remote_input_rib32.h"
 
 #include <stdio.h>
-#include <string.h>
 
 #define RIB32_MAX_BASE32_CHARS (((REMOTE_INPUT_RIB32_CHUNK_BYTES * 8) + 4) / 5)
 #define RIB32_MAX_LINE_CHARS 128

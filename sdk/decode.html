@@ -13,15 +13,17 @@
         <h1>Remote Input Decoder</h1>
         <button id="clearButton" type="button">清空</button>
       </header>
-      <p class="hint">把光标保持在输入框内，等待 ESP32-S3 输入 RIB32 文本帧。完整校验通过后再复制中文结果。</p>
+      <p class="hint">请通过 Vite dev server 或部署后的 Vite 页面访问此页；不要直接以 file:// 或原始静态源文件方式打开当前 HTML。目标设备切换到 US/English 键盘布局，并关闭会拦截 ASCII 标点的输入法组合状态。把光标保持在输入框内，等待 ESP32-S3 输入 RIB32 文本帧。完整校验通过后再复制中文结果。</p>
       <textarea id="rib32Input" rows="10" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="<RIB32:1:...>"></textarea>
+      <section id="lineErrorList" class="task-list" aria-live="polite"></section>
       <section id="taskList" class="task-list" aria-live="polite"></section>
     </section>
   </main>
   <script type="module">
-    import { createRib32DecoderState, getRib32Tasks, ingestRib32Text } from "./src/base32Frame.ts";
+    import { createRib32DecoderState, getRib32LineErrors, getRib32Tasks, ingestRib32Text } from "./src/base32Frame.ts";
 
     const input = document.querySelector("#rib32Input");
+    const lineErrorList = document.querySelector("#lineErrorList");
     const taskList = document.querySelector("#taskList");
     const clearButton = document.querySelector("#clearButton");
     let state = createRib32DecoderState();
@@ -29,11 +31,28 @@
 
     function render() {
       const tasks = getRib32Tasks(state);
+      const lineErrors = getRib32LineErrors(state);
+      lineErrorList.replaceChildren();
       taskList.replaceChildren();
+
+      if (lineErrors.length > 0) {
+        const article = document.createElement("article");
+        article.className = "task-card task-card--error";
+
+        const title = document.createElement("h2");
+        title.textContent = "全局解析错误";
+        article.append(title);
+
+        const errors = document.createElement("pre");
+        errors.textContent = lineErrors.join("\n");
+        article.append(errors);
+        lineErrorList.append(article);
+      }
+
       if (tasks.length === 0) {
         const empty = document.createElement("p");
         empty.className = "hint";
-        empty.textContent = "等待输入";
+        empty.textContent = lineErrors.length > 0 ? "存在未归属到 task 的输入错误" : "等待输入";
         taskList.append(empty);
         return;
       }
