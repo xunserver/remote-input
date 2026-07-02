@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "host/ble_att.h"
 #include "host/ble_gap.h"
 #include "host/ble_hs.h"
 #include "host/ble_uuid.h"
@@ -240,6 +241,23 @@ static void start_advertising(void)
     }
 }
 
+static void request_fast_connection(uint16_t conn_handle)
+{
+    struct ble_gap_upd_params params = {
+        .itvl_min = 6,
+        .itvl_max = 12,
+        .latency = 0,
+        .supervision_timeout = 400,
+        .min_ce_len = BLE_GAP_INITIAL_CONN_MIN_CE_LEN,
+        .max_ce_len = BLE_GAP_INITIAL_CONN_MAX_CE_LEN,
+    };
+
+    int rc = ble_gap_update_params(conn_handle, &params);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "failed to request fast connection params rc=%d", rc);
+    }
+}
+
 static int gap_event_cb(struct ble_gap_event *event, void *arg)
 {
     (void)arg;
@@ -248,6 +266,7 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_CONNECT:
         if (event->connect.status == 0) {
             s_conn_handle = event->connect.conn_handle;
+            request_fast_connection(s_conn_handle);
             ESP_LOGI(TAG, "connected handle=%u", s_conn_handle);
             if (s_callbacks.on_connect != NULL) {
                 s_callbacks.on_connect(s_callbacks.ctx);
@@ -267,6 +286,30 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
             s_callbacks.on_disconnect(s_callbacks.ctx);
         }
         start_advertising();
+        return 0;
+
+    case BLE_GAP_EVENT_CONN_UPDATE: {
+        ESP_LOGI(TAG, "connection updated status=%d", event->conn_update.status);
+        struct ble_gap_conn_desc desc;
+        int rc = ble_gap_conn_find(event->conn_update.conn_handle, &desc);
+        if (rc == 0) {
+            ESP_LOGI(TAG,
+                     "conn params interval=%u latency=%u supervision_timeout=%u",
+                     desc.conn_itvl,
+                     desc.conn_latency,
+                     desc.supervision_timeout);
+        } else {
+            ESP_LOGW(TAG, "failed to read conn desc rc=%d", rc);
+        }
+        return 0;
+    }
+
+    case BLE_GAP_EVENT_MTU:
+        ESP_LOGI(TAG,
+                 "mtu updated conn_handle=%u channel_id=%u mtu=%u",
+                 event->mtu.conn_handle,
+                 event->mtu.channel_id,
+                 event->mtu.value);
         return 0;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -347,7 +390,12 @@ esp_err_t remote_input_ble_init(const remote_input_receiver_callbacks_t *callbac
         return ret;
     }
 
-    int rc = ble_svc_gap_device_name_set(REMOTE_INPUT_BLE_DEVICE_NAME);
+    int rc = ble_att_set_preferred_mtu(256);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "failed to set preferred mtu rc=%d", rc);
+    }
+
+    rc = ble_svc_gap_device_name_set(REMOTE_INPUT_BLE_DEVICE_NAME);
     if (rc != 0) {
         ESP_LOGE(TAG, "failed to set device name rc=%d", rc);
         return ESP_FAIL;
