@@ -309,6 +309,9 @@ function createFakeBluetooth() {
   const server = {
     getPrimaryService: async (uuid) => {
       assert.equal(uuid, SERVICE_UUID);
+      if (!device.gatt.connected) {
+        throw new Error("GATT Server is disconnected. Cannot retrieve services. (Re)connect first with `device.gatt.connect`.");
+      }
       return service;
     },
   };
@@ -644,8 +647,24 @@ async function runSdkFlowTests() {
   {
     const fake = createFakeBluetooth();
     fake.statusChar.startNotificationsError = new Error("notify failed");
-    await assert.rejects(RemoteInput.connect());
+    await assertRejectsWithCode(RemoteInput.connect(), "BLE_CONNECT_FAILED");
     assert.equal(fake.device.disconnectCalls, 1);
+    assert.equal(fake.device.gatt.connected, false);
+  }
+
+  {
+    const fake = createFakeBluetooth();
+    fake.device.gatt.connect = async () => {
+      fake.device.gatt.connected = true;
+      fake.device.gatt.connected = false;
+      return {
+        getPrimaryService: async () => {
+          throw new Error("GATT Server is disconnected. Cannot retrieve services. (Re)connect first with `device.gatt.connect`.");
+        },
+      };
+    };
+    await assertRejectsWithCode(RemoteInput.connect(), "BLE_CONNECT_FAILED");
+    assert.equal(fake.device.disconnectCalls, 0);
     assert.equal(fake.device.gatt.connected, false);
   }
 

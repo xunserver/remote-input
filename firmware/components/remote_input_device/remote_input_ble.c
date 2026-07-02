@@ -241,23 +241,6 @@ static void start_advertising(void)
     }
 }
 
-static void request_fast_connection(uint16_t conn_handle)
-{
-    struct ble_gap_upd_params params = {
-        .itvl_min = 6,
-        .itvl_max = 12,
-        .latency = 0,
-        .supervision_timeout = 400,
-        .min_ce_len = BLE_GAP_INITIAL_CONN_MIN_CE_LEN,
-        .max_ce_len = BLE_GAP_INITIAL_CONN_MAX_CE_LEN,
-    };
-
-    int rc = ble_gap_update_params(conn_handle, &params);
-    if (rc != 0) {
-        ESP_LOGW(TAG, "failed to request fast connection params rc=%d", rc);
-    }
-}
-
 static int gap_event_cb(struct ble_gap_event *event, void *arg)
 {
     (void)arg;
@@ -266,7 +249,6 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_CONNECT:
         if (event->connect.status == 0) {
             s_conn_handle = event->connect.conn_handle;
-            request_fast_connection(s_conn_handle);
             ESP_LOGI(TAG, "connected handle=%u", s_conn_handle);
             if (s_callbacks.on_connect != NULL) {
                 s_callbacks.on_connect(s_callbacks.ctx);

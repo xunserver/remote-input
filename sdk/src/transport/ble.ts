@@ -168,6 +168,6 @@ export async function connectBle(options: ConnectBleOptions = {}): Promise<Remot
     } else if (device.gatt?.connected) {
       device.gatt.disconnect();
     }
-    throw error;
+    throw new RemoteInputError("BLE_CONNECT_FAILED", getErrorMessage(error, "Bluetooth connection failed"), error);
   }
 }
