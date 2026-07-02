@@ -161,3 +161,17 @@ function makeEndLine(taskId, bytes) {
   assert.deepEqual(getRib32LineErrors(state), ["unrecognized line 1"]);
   assert.deepEqual(getRib32Tasks(state), []);
 }
+
+{
+  const state = createRib32DecoderState();
+  ingestRib32Text(state, "<RIB32:1:0:0:1:00000000:>\n");
+  assert.deepEqual(getRib32LineErrors(state), ["line 1 invalid task id 0"]);
+  assert.deepEqual(getRib32Tasks(state), []);
+}
+
+{
+  const state = createRib32DecoderState();
+  ingestRib32Text(state, "</RIB32:1:0:00000000>\n");
+  assert.deepEqual(getRib32LineErrors(state), ["line 1 invalid task id 0"]);
+  assert.deepEqual(getRib32Tasks(state), []);
+}

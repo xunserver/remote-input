@@ -181,6 +181,10 @@ function ingestLine(state: Rib32DecoderState, rawLine: string): void {
   const chunkMatch = CHUNK_RE.exec(line);
   if (chunkMatch) {
     const taskId = Number(chunkMatch[1]);
+    if (taskId < 1 || taskId > 65535) {
+      state.lineErrors.push(`line ${state.scannedLineCount + 1} invalid task id ${taskId}`);
+      return;
+    }
     const index = Number(chunkMatch[2]);
     const total = Number(chunkMatch[3]);
     const expectedCrc = parseHex(chunkMatch[4]);
@@ -219,6 +223,10 @@ function ingestLine(state: Rib32DecoderState, rawLine: string): void {
   const endMatch = END_RE.exec(line);
   if (endMatch) {
     const taskId = Number(endMatch[1]);
+    if (taskId < 1 || taskId > 65535) {
+      state.lineErrors.push(`line ${state.scannedLineCount + 1} invalid task id ${taskId}`);
+      return;
+    }
     const task = taskFor(state, taskId);
     const messageCrc = parseHex(endMatch[2]);
     if (task.messageCrc === undefined) {

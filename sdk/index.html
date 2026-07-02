@@ -17,7 +17,7 @@
         <button id="disconnectButton" type="button" disabled>断开</button>
         <button id="statusButton" type="button" disabled>状态</button>
       </div>
-      <p class="hint">目标设备应通过 Vite dev server 或部署后的 Vite 页面打开 <a href="./decode.html" target="_blank" rel="noreferrer">decode.html</a>；不要直接以 file:// 或原始静态源文件方式打开当前 HTML。发送前请切换目标设备到 US/English 键盘布局，并关闭会拦截 ASCII 标点的输入法组合状态，然后把光标放在 RIB32 输入框中。</p>
+      <p class="hint">目标设备应通过 Vite dev server 或部署后的 Vite 页面打开 <a href="./decode.html" target="_blank" rel="noreferrer">decode.html</a>；不要直接以 file:// 或原始静态源文件方式打开当前 HTML。发送前请切换目标设备到 US/English 键盘布局，关闭 Caps Lock，并关闭会拦截 ASCII 标点的输入法组合状态，然后把光标放在 RIB32 输入框中。</p>
       <textarea id="textInput" rows="8" maxlength="131072" placeholder="输入要发送到目标设备的文本"></textarea>
       <button id="typeButton" type="button" disabled>发送并等待输入完成</button>
       <pre id="statusOutput">未连接</pre>
