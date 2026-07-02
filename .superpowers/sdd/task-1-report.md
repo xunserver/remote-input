@@ -1,41 +1,90 @@
-# Task 1 Report: SDK v2 Protocol Tests
+# Task 1 Report: SDK WebSocket Transport
 
-## Status
+## Result
 
-DONE_WITH_CONCERNS
+Task 1 completed: SDK-only WebSocket transport added alongside the existing BLE transport.
 
-## Changed Files
+## TDD Evidence
 
-- `sdk/tests/sdk-protocol.test.js`
+### RED
 
-## Commit
-
-`aaa27fd`
-
-## Run Commands
+Ran:
 
 ```bash
 npm --prefix sdk run test:sdk
 ```
 
-## Test Result Summary
+Initial failure was expected and confirmed the missing export path:
 
-The SDK test run failed as expected.
+- `assert.equal(typeof remoteInputGlobal.connectWs, "function");`
+- actual value was `undefined`
 
-Observed failure:
+This showed the SDK build did not yet expose `connectWs`.
 
-- `AssertionError [ERR_ASSERTION]: 1 !== 2`
+### GREEN
 
-This confirms the new v2 expectations are stricter than the current implementation.
+After implementing the WebSocket transport, exports, and types, ran:
 
-## Concerns
+```bash
+npm --prefix sdk run test:sdk
+```
 
-- This task intentionally leaves the SDK implementation unchanged, so the test suite is expected to fail until the v2 protocol work lands in later tasks.
-- No firmware or hardware validation was performed.
+Result:
 
-## Fix Report
+- `sdk protocol tests passed`
 
-- Command: `npm --prefix sdk run test:sdk`
-- Result: expected to fail; will verify the first failing assertion after the fixture fix.
-- Commit: `d1b4bea`
-- Concerns: implementation may still fail on the current protocol constant/version mismatch; no hardware validation in this environment.
+## Files Changed
+
+- `sdk/src/types.ts`
+- `sdk/src/index.ts`
+- `sdk/src/transport/ws.ts`
+- `sdk/tests/sdk-protocol.test.js`
+
+## What Changed
+
+- Added WebSocket type definitions to support a browser transport abstraction.
+- Implemented `WsTransport` and `connectWs(url?)` with default URL `ws://192.168.4.1/ws`.
+- Exported `connectWs` from the SDK entrypoint and attached it to `RemoteInput`.
+- Extended SDK protocol tests with a `FakeWebSocket` harness and coverage for:
+  - missing WebSocket support
+  - default URL
+  - explicit URL
+  - successful typing flow
+  - disconnect handling
+  - invalid status frames
+  - connection failure handling
+
+## Verification
+
+- `npm --prefix sdk run test:sdk`
+
+## Concerns / Notes
+
+- `sdk/package-lock.json` exists as an untracked dependency-install artifact and was intentionally not included in the commit.
+- No firmware, docs, or demo UI files were modified.
+- Hardware/BLE device validation was not part of this task and was not run.
+
+## Follow-up Fix
+
+### What Changed
+
+- Tightened `connectWs()` so the first WebSocket message must decode as a valid v1 14-byte status frame before the promise resolves.
+- Added a regression test that proves an invalid first WebSocket message rejects `connectWs()` with `INVALID_STATUS_FRAME`.
+
+### Test Command and Result
+
+```bash
+npm --prefix sdk run test:sdk
+```
+
+Result: `sdk protocol tests passed`
+
+### Files Changed
+
+- `sdk/src/transport/ws.ts`
+- `sdk/tests/sdk-protocol.test.js`
+
+### Concerns
+
+- `sdk/package-lock.json` is still present as an untracked local install artifact and was intentionally excluded from the commit.
+- No hardware or browser-runtime verification was performed beyond the automated SDK test suite.
