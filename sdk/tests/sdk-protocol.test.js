@@ -42,9 +42,10 @@ assert.equal(remoteInputGlobal.RemoteInput.connectWs, remoteInputGlobal.connectW
 
 {
   const { constants } = internals;
-  assert.equal(constants.VERSION, 1);
+  assert.equal(constants.VERSION, 2);
   assert.equal(constants.DATA_FRAME, 16);
-  assert.equal(constants.DATA_PAYLOAD_BYTES, 12);
+  assert.equal(constants.DATA_PAYLOAD_BYTES, 180);
+  assert.equal(constants.MAX_TEXT_BYTES, 128 * 1024);
 }
 
 {
@@ -58,29 +59,35 @@ assert.equal(remoteInputGlobal.RemoteInput.connectWs, remoteInputGlobal.connectW
 {
   const frame = internals.encodeControlFrame(1, 7, 16, 2);
   assert.equal(frame.byteLength, 12);
-  assert.deepEqual(Array.from(frame), [1, 1, 7, 0, 16, 0, 0, 0, 2, 0, 0, 0]);
+  assert.deepEqual(Array.from(frame), [2, 1, 7, 0, 16, 0, 0, 0, 2, 0, 0, 0]);
 }
 
 {
   const frame = internals.encodeConfigFrame({ keyDelayMs: 10 });
   assert.equal(frame.byteLength, 12);
-  assert.deepEqual(Array.from(frame), [1, 3, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(Array.from(frame), [2, 3, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0]);
 }
 
 {
   const bytes = new Uint8Array([1, 2, 3, 4, 5]);
   const chunks = internals.createDataFrames(9, bytes);
   assert.equal(chunks.length, 1);
-  assert.deepEqual(Array.from(chunks[0]), [1, 16, 9, 0, 0, 0, 1, 0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(Array.from(chunks[0]), [2, 16, 9, 0, 0, 0, 1, 0, 1, 2, 3, 4, 5]);
 }
 
 {
-  const bytes = new Uint8Array(25);
+  const bytes = new Uint8Array(361);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = index & 0xff;
+  }
   const chunks = internals.createDataFrames(3, bytes);
   assert.equal(chunks.length, 3);
-  assert.equal(chunks[0].byteLength, 20);
-  assert.equal(chunks[1].byteLength, 20);
+  assert.equal(chunks[0].byteLength, 188);
+  assert.equal(chunks[1].byteLength, 188);
   assert.equal(chunks[2].byteLength, 9);
+  assert.deepEqual(Array.from(chunks[0].slice(0, 8)), [2, 16, 3, 0, 0, 0, 3, 0]);
+  assert.deepEqual(Array.from(chunks[1].slice(0, 8)), [2, 16, 3, 0, 1, 0, 3, 0]);
+  assert.deepEqual(Array.from(chunks[2]), [2, 16, 3, 0, 2, 0, 3, 0, 104]);
 }
 
 {
@@ -96,6 +103,14 @@ assert.equal(remoteInputGlobal.RemoteInput.connectWs, remoteInputGlobal.connectW
 }
 
 {
+  const frame = new Uint8Array([1, 2, 12, 0, 0, 0, 0, 4, 0, 0, 0, 16, 0, 0]);
+  assert.throws(
+    () => internals.decodeStatusFrame(frame.buffer),
+    /INVALID_STATUS_FRAME/
+  );
+}
+
+{
   assert.throws(
     () => internals.decodeStatusFrame(createStatusFrame(99, 1)),
     /INVALID_STATUS_FRAME/
@@ -103,7 +118,7 @@ assert.equal(remoteInputGlobal.RemoteInput.connectWs, remoteInputGlobal.connectW
 }
 
 {
-  const oversized = new Uint8Array((16 * 1024) + 1);
+  const oversized = new Uint8Array((128 * 1024) + 1);
   assert.throws(
     () => internals.assertTextSize(oversized),
     /TEXT_TOO_LARGE/
@@ -111,7 +126,7 @@ assert.equal(remoteInputGlobal.RemoteInput.connectWs, remoteInputGlobal.connectW
 }
 
 {
-  const valid = new Uint8Array(16 * 1024);
+  const valid = new Uint8Array(128 * 1024);
   assert.equal(internals.assertTextSize(valid), undefined);
 }
 

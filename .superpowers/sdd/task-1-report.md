@@ -1,90 +1,34 @@
-# Task 1 Report: SDK WebSocket Transport
+# Task 1 Report: SDK v2 Protocol Tests
 
-## Result
+## Status
 
-Task 1 completed: SDK-only WebSocket transport added alongside the existing BLE transport.
+DONE
 
-## TDD Evidence
+## Changed Files
 
-### RED
-
-Ran:
-
-```bash
-npm --prefix sdk run test:sdk
-```
-
-Initial failure was expected and confirmed the missing export path:
-
-- `assert.equal(typeof remoteInputGlobal.connectWs, "function");`
-- actual value was `undefined`
-
-This showed the SDK build did not yet expose `connectWs`.
-
-### GREEN
-
-After implementing the WebSocket transport, exports, and types, ran:
-
-```bash
-npm --prefix sdk run test:sdk
-```
-
-Result:
-
-- `sdk protocol tests passed`
-
-## Files Changed
-
-- `sdk/src/types.ts`
-- `sdk/src/index.ts`
-- `sdk/src/transport/ws.ts`
 - `sdk/tests/sdk-protocol.test.js`
 
-## What Changed
+## Commit
 
-- Added WebSocket type definitions to support a browser transport abstraction.
-- Implemented `WsTransport` and `connectWs(url?)` with default URL `ws://192.168.4.1/ws`.
-- Exported `connectWs` from the SDK entrypoint and attached it to `RemoteInput`.
-- Extended SDK protocol tests with a `FakeWebSocket` harness and coverage for:
-  - missing WebSocket support
-  - default URL
-  - explicit URL
-  - successful typing flow
-  - disconnect handling
-  - invalid status frames
-  - connection failure handling
+TBD
 
-## Verification
-
-- `npm --prefix sdk run test:sdk`
-
-## Concerns / Notes
-
-- `sdk/package-lock.json` exists as an untracked dependency-install artifact and was intentionally not included in the commit.
-- No firmware, docs, or demo UI files were modified.
-- Hardware/BLE device validation was not part of this task and was not run.
-
-## Follow-up Fix
-
-### What Changed
-
-- Tightened `connectWs()` so the first WebSocket message must decode as a valid v1 14-byte status frame before the promise resolves.
-- Added a regression test that proves an invalid first WebSocket message rejects `connectWs()` with `INVALID_STATUS_FRAME`.
-
-### Test Command and Result
+## Run Commands
 
 ```bash
 npm --prefix sdk run test:sdk
 ```
 
-Result: `sdk protocol tests passed`
+## Test Result Summary
 
-### Files Changed
+The SDK test run failed as expected.
 
-- `sdk/src/transport/ws.ts`
-- `sdk/tests/sdk-protocol.test.js`
+Observed failure:
 
-### Concerns
+- `AssertionError [ERR_ASSERTION]: 1 !== 2`
 
-- `sdk/package-lock.json` is still present as an untracked local install artifact and was intentionally excluded from the commit.
-- No hardware or browser-runtime verification was performed beyond the automated SDK test suite.
+This confirms the new v2 expectations are stricter than the current implementation.
+
+## Concerns
+
+- This task intentionally leaves the SDK implementation unchanged, so the test suite is expected to fail until the v2 protocol work lands in later tasks.
+- No firmware or hardware validation was performed.
