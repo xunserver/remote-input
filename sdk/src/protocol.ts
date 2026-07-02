@@ -108,7 +108,7 @@ export function decodeStatusFrame(buffer: ArrayBuffer | DataView): RemoteInputSt
 
 export function assertTextSize(bytes: Uint8Array): void {
   if (bytes.byteLength > MAX_TEXT_BYTES) {
-    throw new RemoteInputError("TEXT_TOO_LARGE", "Text exceeds 16 KB UTF-8 limit");
+    throw new RemoteInputError("TEXT_TOO_LARGE", `Text exceeds ${MAX_TEXT_BYTES} byte UTF-8 limit`);
   }
 }
 
