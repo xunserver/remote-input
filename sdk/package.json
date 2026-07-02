@@ -5,11 +5,12 @@
   "scripts": {
     "dev": "vite",
     "build:sdk": "vite build",
-    "test:sdk": "npm run build:sdk && node tests/sdk-protocol.test.js"
+    "test:sdk": "npm run build:sdk && node tests/sdk-protocol.test.js && npx tsx tests/base32-frame.test.js"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
     "tslib": "^2.8.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.2.7"
   }

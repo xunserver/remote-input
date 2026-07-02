@@ -14,6 +14,17 @@ import { RemoteInputClient, RemoteInputDevice } from "./device";
 import { RemoteInputError } from "./errors";
 import { assertConfig, assertTextSize, constants, createDataFrames, decodeStatusFrame, encodeConfigFrame, encodeControlFrame } from "./protocol";
 import { connectWs } from "./transport/ws";
+import {
+  RIB32_CHUNK_BYTES,
+  RIB32_VERSION,
+  base32Decode,
+  base32Encode,
+  crc32,
+  createRib32DecoderState,
+  formatRib32Frames,
+  getRib32Tasks,
+  ingestRib32Text,
+} from "./base32Frame";
 
 export const _internals = {
   encodeControlFrame,
@@ -23,6 +34,15 @@ export const _internals = {
   assertConfig,
   assertTextSize,
   constants,
+  RIB32_VERSION,
+  RIB32_CHUNK_BYTES,
+  base32Encode,
+  base32Decode,
+  crc32,
+  formatRib32Frames,
+  createRib32DecoderState,
+  ingestRib32Text,
+  getRib32Tasks,
 };
 
 export const RemoteInput = {
