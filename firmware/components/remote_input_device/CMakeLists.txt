@@ -17,6 +17,7 @@ idf_component_register(
         "remote_input_config.c"
         "remote_input_display.c"
         "remote_input_hid.c"
+        "remote_input_rib32.c"
         "remote_input_lcd_port.c"
         "remote_input_led.c"
         "remote_input_service.c"
