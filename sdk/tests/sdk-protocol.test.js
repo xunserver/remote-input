@@ -91,7 +91,7 @@ assert.equal(remoteInputGlobal.RemoteInput.connectWs, remoteInputGlobal.connectW
 }
 
 {
-  const frame = new Uint8Array([1, 2, 12, 0, 0, 0, 0, 4, 0, 0, 0, 16, 0, 0]);
+  const frame = new Uint8Array([2, 2, 12, 0, 0, 0, 0, 4, 0, 0, 0, 16, 0, 0]);
   const status = internals.decodeStatusFrame(frame.buffer);
   assert.deepEqual(status, {
     state: "typing",
