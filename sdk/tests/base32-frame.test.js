@@ -22,7 +22,7 @@ function decodeTask(lines) {
 {
   const bytes = Uint8Array.from([0, 1, 2, 3, 4, 5, 250, 255]);
   const encoded = base32Encode(bytes);
-  assert.equal(encoded, "AAAQEAYEAUC7V7Y");
+  assert.equal(encoded, "AAAQEAYEAX5P6");
   assert.deepEqual(Array.from(base32Decode(encoded)), Array.from(bytes));
   assert.deepEqual(Array.from(base32Decode(encoded.toLowerCase())), Array.from(bytes));
 }

@@ -4,8 +4,6 @@ export const RIB32_CHUNK_BYTES = 32;
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const CHUNK_RE = /^<RIB32:1:(\d+):(\d+):(\d+):([0-9A-Fa-f]{8}):([A-Za-z2-7]*)>$/;
 const END_RE = /^<\/RIB32:1:(\d+):([0-9A-Fa-f]{8})>$/;
-const RIB32_SAMPLE_BYTES = Uint8Array.from([0, 1, 2, 3, 4, 5, 250, 255]);
-const RIB32_SAMPLE_BASE32 = "AAAQEAYEAUC7V7Y";
 
 export type Rib32TaskStatus = "receiving" | "complete" | "error";
 
@@ -45,9 +43,6 @@ export type Rib32TaskView = {
 };
 
 export function base32Encode(bytes: Uint8Array): string {
-  if (equalBytes(bytes, RIB32_SAMPLE_BYTES)) {
-    return RIB32_SAMPLE_BASE32;
-  }
   let output = "";
   let buffer = 0n;
   let bits = 0n;
@@ -67,9 +62,6 @@ export function base32Encode(bytes: Uint8Array): string {
 
 export function base32Decode(text: string): Uint8Array {
   const clean = text.replace(/\s+/g, "").toUpperCase();
-  if (clean === RIB32_SAMPLE_BASE32) {
-    return RIB32_SAMPLE_BYTES.slice();
-  }
   let buffer = 0n;
   let bits = 0n;
   const out: number[] = [];
