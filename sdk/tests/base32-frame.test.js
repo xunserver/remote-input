@@ -19,6 +19,18 @@ function decodeTask(lines) {
   return getRib32Tasks(state)[0];
 }
 
+function hex32(value) {
+  return (value >>> 0).toString(16).toUpperCase().padStart(8, "0");
+}
+
+function makeChunkLine(taskId, index, total, bytes) {
+  return `<RIB32:1:${taskId}:${index}:${total}:${hex32(crc32(bytes))}:${base32Encode(bytes)}>`;
+}
+
+function makeEndLine(taskId, bytes) {
+  return `</RIB32:1:${taskId}:${hex32(crc32(bytes))}>`;
+}
+
 {
   const bytes = Uint8Array.from([0, 1, 2, 3, 4, 5, 250, 255]);
   const encoded = base32Encode(bytes);
@@ -80,6 +92,22 @@ function decodeTask(lines) {
 }
 
 {
+  const firstChunk = Uint8Array.from({ length: RIB32_CHUNK_BYTES - 1 }, (_, index) => index);
+  const secondChunk = Uint8Array.from([RIB32_CHUNK_BYTES - 1]);
+  const bytes = new Uint8Array(RIB32_CHUNK_BYTES);
+  bytes.set(firstChunk, 0);
+  bytes.set(secondChunk, firstChunk.length);
+  const task = decodeTask([
+    makeChunkLine(12, 0, 2, firstChunk),
+    makeChunkLine(12, 1, 2, secondChunk),
+    makeEndLine(12, bytes),
+  ]);
+  assert.equal(task.status, "error");
+  assert.match(task.errors.join("\n"), /chunk 0/i);
+  assert.match(task.errors.join("\n"), /length/i);
+}
+
+{
   const valid = formatRib32Frames(12, encoder.encode("duplicate chunk ".repeat(4)));
   const state = createRib32DecoderState();
   ingestRib32Text(state, `${valid[0].replace(/:0:/, ":0:").replace(/[A-Z2-7](?=>)/, "A")}\n`);
@@ -97,16 +125,27 @@ function decodeTask(lines) {
 }
 
 {
-  const lines = formatRib32Frames(14, encoder.encode("bad end crc"));
-  lines[lines.length - 1] = lines[lines.length - 1].replace(/[0-9A-F]{8}/, "00000000");
-  const task = decodeTask(lines);
+  const bytes = Uint8Array.from({ length: RIB32_CHUNK_BYTES }, (_, index) => index);
+  const task = decodeTask([
+    makeChunkLine(14, 1, 1, bytes),
+    makeEndLine(14, bytes),
+  ]);
   assert.equal(task.status, "error");
-  assert.match(task.errors.join("\n"), /message crc/i);
+  assert.match(task.errors.join("\n"), /chunk 1/i);
+  assert.match(task.errors.join("\n"), /index/i);
 }
 
 {
-  const linesA = formatRib32Frames(15, encoder.encode("第一段"));
-  const linesB = formatRib32Frames(16, encoder.encode("第二段"));
+  const valid = formatRib32Frames(15, encoder.encode("footer conflict"));
+  const differentFooter = makeEndLine(15, encoder.encode("different footer"));
+  const task = decodeTask([valid[0], valid.at(-1), valid.at(-1), differentFooter]);
+  assert.equal(task.status, "error");
+  assert.match(task.errors.join("\n"), /message crc conflict/i);
+}
+
+{
+  const linesA = formatRib32Frames(16, encoder.encode("第一段"));
+  const linesB = formatRib32Frames(17, encoder.encode("第二段"));
   const state = createRib32DecoderState();
   ingestRib32Text(state, `${linesA.join("\n")}\n${linesB.join("\n")}\n`);
   const tasks = getRib32Tasks(state);

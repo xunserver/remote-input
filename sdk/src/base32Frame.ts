@@ -21,6 +21,7 @@ type Rib32TaskState = {
   order: number;
   chunkTotal?: number;
   messageCrc?: number;
+  messageCrcConflict: boolean;
   chunks: Map<number, StoredChunk>;
   lineErrors: string[];
 };
@@ -130,7 +131,13 @@ export function createRib32DecoderState(): Rib32DecoderState {
 function taskFor(state: Rib32DecoderState, taskId: number): Rib32TaskState {
   let task = state.tasks.get(taskId);
   if (!task) {
-    task = { taskId, order: state.nextOrder, chunks: new Map(), lineErrors: [] };
+    task = {
+      taskId,
+      order: state.nextOrder,
+      messageCrcConflict: false,
+      chunks: new Map(),
+      lineErrors: [],
+    };
     state.nextOrder += 1;
     state.tasks.set(taskId, task);
   }
@@ -147,6 +154,23 @@ function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
     if (a[i] !== b[i]) return false;
   }
   return true;
+}
+
+function validateChunkPayload(index: number, total: number, bytes: Uint8Array): string[] {
+  const errors: string[] = [];
+  if (total < 1) {
+    errors.push(`chunk ${index} invalid total`);
+  }
+  if (index < 0 || index >= total) {
+    errors.push(`chunk ${index} index out of bounds`);
+  }
+  if (total >= 1 && index < total - 1 && bytes.byteLength !== RIB32_CHUNK_BYTES) {
+    errors.push(`chunk ${index} length must be ${RIB32_CHUNK_BYTES}`);
+  }
+  if (total >= 1 && index === total - 1 && bytes.byteLength > RIB32_CHUNK_BYTES) {
+    errors.push(`chunk ${index} length must be <= ${RIB32_CHUNK_BYTES}`);
+  }
+  return errors;
 }
 
 function ingestLine(state: Rib32DecoderState, rawLine: string): void {
@@ -170,6 +194,9 @@ function ingestLine(state: Rib32DecoderState, rawLine: string): void {
     try {
       bytes = base32Decode(payload);
       if (crc32(bytes) !== expectedCrc) errors.push(`chunk ${index} crc mismatch`);
+      if (errors.length === 0) {
+        errors.push(...validateChunkPayload(index, total, bytes));
+      }
     } catch (error) {
       errors.push(`chunk ${index} ${(error as Error).message}`);
     }
@@ -192,7 +219,12 @@ function ingestLine(state: Rib32DecoderState, rawLine: string): void {
   if (endMatch) {
     const taskId = Number(endMatch[1]);
     const task = taskFor(state, taskId);
-    task.messageCrc = parseHex(endMatch[2]);
+    const messageCrc = parseHex(endMatch[2]);
+    if (task.messageCrc === undefined) {
+      task.messageCrc = messageCrc;
+    } else if (task.messageCrc !== messageCrc) {
+      task.messageCrcConflict = true;
+    }
     return;
   }
 
@@ -220,6 +252,9 @@ export function getRib32Tasks(state: Rib32DecoderState): Rib32TaskView[] {
 
 function viewTask(task: Rib32TaskState): Rib32TaskView {
   const errors = [...task.lineErrors];
+  if (task.messageCrcConflict) {
+    errors.push("message crc conflict");
+  }
   const total = task.chunkTotal;
   const validChunks: Uint8Array[] = [];
   if (total !== undefined) {
@@ -231,6 +266,11 @@ function viewTask(task: Rib32TaskState): Rib32TaskView {
         errors.push(...chunk.errors);
       } else if (chunk.bytes) {
         validChunks[index] = chunk.bytes;
+      }
+    }
+    for (const [index, chunk] of task.chunks) {
+      if (index >= total && (chunk.errors.length > 0 || chunk.conflict)) {
+        errors.push(...chunk.errors);
       }
     }
   }
