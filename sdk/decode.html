@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Remote Input Decoder</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app app--decoder">
+    <section class="panel decoder-panel">
+      <header class="decoder-header">
+        <h1>Remote Input Decoder</h1>
+        <button id="clearButton" type="button">清空</button>
+      </header>
+      <p class="hint">把光标保持在输入框内，等待 ESP32-S3 输入 RIB32 文本帧。完整校验通过后再复制中文结果。</p>
+      <textarea id="rib32Input" rows="10" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="<RIB32:1:...>"></textarea>
+      <section id="taskList" class="task-list" aria-live="polite"></section>
+    </section>
+  </main>
+  <script type="module">
+    import { createRib32DecoderState, getRib32Tasks, ingestRib32Text } from "./src/base32Frame.ts";
+
+    const input = document.querySelector("#rib32Input");
+    const taskList = document.querySelector("#taskList");
+    const clearButton = document.querySelector("#clearButton");
+    let state = createRib32DecoderState();
+
+    function render() {
+      const tasks = getRib32Tasks(state);
+      taskList.replaceChildren();
+      if (tasks.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "等待输入";
+        taskList.append(empty);
+        return;
+      }
+
+      for (const task of tasks) {
+        const article = document.createElement("article");
+        article.className = `task-card task-card--${task.status}`;
+
+        const title = document.createElement("h2");
+        title.textContent = `Task ${task.taskId} - ${task.status}`;
+        article.append(title);
+
+        const progress = document.createElement("p");
+        progress.className = "hint";
+        progress.textContent = `Chunks ${task.receivedValidChunks}/${task.chunkTotal ?? "?"}`;
+        article.append(progress);
+
+        if (task.errors.length > 0) {
+          const errors = document.createElement("pre");
+          errors.textContent = task.errors.join("\n");
+          article.append(errors);
+        }
+
+        if (task.status === "complete" && task.decodedText !== undefined) {
+          const output = document.createElement("textarea");
+          output.rows = 6;
+          output.readOnly = true;
+          output.value = task.decodedText;
+          article.append(output);
+
+          const copy = document.createElement("button");
+          copy.type = "button";
+          copy.textContent = "复制";
+          copy.addEventListener("click", async () => {
+            try {
+              await navigator.clipboard.writeText(task.decodedText ?? "");
+              copy.textContent = "已复制";
+              setTimeout(() => {
+                copy.textContent = "复制";
+              }, 1200);
+            } catch {
+              copy.textContent = "复制失败";
+              setTimeout(() => {
+                copy.textContent = "复制";
+              }, 1200);
+            }
+          });
+          article.append(copy);
+        }
+
+        taskList.append(article);
+      }
+    }
+
+    input.addEventListener("input", () => {
+      ingestRib32Text(state, input.value);
+      input.value = state.buffer;
+      render();
+    });
+
+    clearButton.addEventListener("click", () => {
+      state = createRib32DecoderState();
+      input.value = "";
+      render();
+      input.focus();
+    });
+
+    render();
+    input.focus();
+  </script>
+</body>
+</html>

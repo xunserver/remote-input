@@ -65,3 +65,53 @@ pre {
   padding: 12px;
   overflow: auto;
 }
+
+a {
+  color: #1d4ed8;
+}
+
+.app--decoder {
+  place-items: start center;
+}
+
+.decoder-panel {
+  width: min(960px, 100%);
+}
+
+.decoder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.decoder-header h1 {
+  margin: 0;
+}
+
+.task-list {
+  display: grid;
+  gap: 12px;
+}
+
+.task-card {
+  border: 1px solid #cbd2d9;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.task-card h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.task-card--complete {
+  border-color: #2f855a;
+}
+
+.task-card--error {
+  border-color: #c2410c;
+}

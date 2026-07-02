@@ -14,6 +14,14 @@ assert.doesNotMatch(viteConfig, /emptyOutDir:\s*false/);
 const demoHtml = fs.readFileSync("index.html", "utf8");
 assert.match(demoHtml, /<script type="module">/);
 assert.match(demoHtml, /import \* as RemoteInput from "\.\/src\/index\.ts";/);
+assert.doesNotMatch(demoHtml, /EnableHexNumpad/);
+assert.match(demoHtml, /decode\.html/);
+
+const decodeHtml = fs.readFileSync("decode.html", "utf8");
+assert.match(decodeHtml, /<title>Remote Input Decoder<\/title>/);
+assert.match(decodeHtml, /import .*base32Frame.* from "\.\/src\/base32Frame\.ts"|from "\.\/src\/base32Frame\.ts"/);
+assert.match(decodeHtml, /id="rib32Input"/);
+assert.match(decodeHtml, /id="taskList"/);
 
 const source = fs.readFileSync("dist/remote-input-sdk.js", "utf8");
 const context = {
