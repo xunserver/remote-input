@@ -193,7 +193,8 @@ static esp_err_t type_rib32_line_cb(const char *line, void *ctx)
         esp_err_t err = type_ascii_char(*p, write_ctx->key_delay_ms);
         if (err != ESP_OK) {
             (void)release_all_keys(write_ctx->key_delay_ms);
-            write_ctx->error = REMOTE_INPUT_ERR_HID_INPUT_FAILED;
+            write_ctx->error = (err == ESP_ERR_INVALID_STATE) ? REMOTE_INPUT_ERR_USB_NOT_READY
+                                                              : REMOTE_INPUT_ERR_HID_INPUT_FAILED;
             return err;
         }
     }
@@ -201,7 +202,8 @@ static esp_err_t type_rib32_line_cb(const char *line, void *ctx)
     esp_err_t err = type_enter(write_ctx->key_delay_ms);
     if (err != ESP_OK) {
         (void)release_all_keys(write_ctx->key_delay_ms);
-        write_ctx->error = REMOTE_INPUT_ERR_HID_INPUT_FAILED;
+        write_ctx->error = (err == ESP_ERR_INVALID_STATE) ? REMOTE_INPUT_ERR_USB_NOT_READY
+                                                          : REMOTE_INPUT_ERR_HID_INPUT_FAILED;
         return err;
     }
 
@@ -238,6 +240,10 @@ remote_input_error_t remote_input_hid_write_text(uint16_t task_id,
 
     if (!remote_input_utf8_decode_each(bytes, len, validate_codepoint_cb, NULL)) {
         return REMOTE_INPUT_ERR_INVALID_UTF8;
+    }
+    if (task_id == 0) {
+        // RIB32 输出帧不接受 task id 0。
+        return REMOTE_INPUT_ERR_INVALID_COMMAND;
     }
 
     if (!remote_input_hid_ready()) {
