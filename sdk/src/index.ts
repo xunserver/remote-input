@@ -3,6 +3,22 @@ export { connectWs } from "./transport/ws";
 export { RemoteInputClient, RemoteInputDevice } from "./device";
 export { RemoteInputError } from "./errors";
 export type { RemoteInputConfig, RemoteInputStatus } from "./types";
+export {
+  RIB32_CHUNK_BYTES,
+  RIB32_VERSION,
+  base32Decode,
+  base32Encode,
+  crc32,
+  createRib32DecoderState,
+  formatRib32Frames,
+  getRib32Tasks,
+  ingestRib32Text,
+} from "./base32Frame";
+export type {
+  Rib32DecoderState,
+  Rib32TaskStatus,
+  Rib32TaskView,
+} from "./base32Frame";
 export type {
   RemoteInputDisconnectListener,
   RemoteInputStatusListener,

@@ -39,6 +39,15 @@ assert.equal(typeof remoteInputGlobal.RemoteInputClient, "function");
 assert.equal(remoteInputGlobal.RemoteInputDevice, remoteInputGlobal.RemoteInputClient);
 assert.equal(typeof remoteInputGlobal.connectWs, "function");
 assert.equal(remoteInputGlobal.RemoteInput.connectWs, remoteInputGlobal.connectWs);
+assert.equal(typeof remoteInputGlobal.base32Encode, "function");
+assert.equal(typeof remoteInputGlobal.base32Decode, "function");
+assert.equal(typeof remoteInputGlobal.crc32, "function");
+assert.equal(typeof remoteInputGlobal.formatRib32Frames, "function");
+assert.equal(typeof remoteInputGlobal.createRib32DecoderState, "function");
+assert.equal(typeof remoteInputGlobal.ingestRib32Text, "function");
+assert.equal(typeof remoteInputGlobal.getRib32Tasks, "function");
+assert.equal(remoteInputGlobal.RIB32_VERSION, 1);
+assert.equal(remoteInputGlobal.RIB32_CHUNK_BYTES, 32);
 
 {
   const { constants } = internals;
