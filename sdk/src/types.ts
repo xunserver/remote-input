@@ -18,6 +18,7 @@ export interface PendingTask {
 
 export interface RemoteBluetoothCharacteristic extends EventTarget {
   writeValueWithResponse(value: Uint8Array): Promise<void>;
+  writeValueWithoutResponse?: (value: Uint8Array) => Promise<void>;
   readValue(): Promise<DataView>;
   startNotifications(): Promise<RemoteBluetoothCharacteristic>;
   stopNotifications?: () => Promise<RemoteBluetoothCharacteristic>;

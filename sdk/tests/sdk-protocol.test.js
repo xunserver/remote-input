@@ -154,20 +154,36 @@ function createStatusFrame(stateCode, taskId, errorCode = 0, receivedBytes = 0, 
 class FakeCharacteristic {
   constructor() {
     this.writes = [];
+    this.writeWithoutResponseCalls = [];
     this.listeners = new Map();
     this.notificationsStarted = false;
     this.notificationsStopped = false;
     this.readValueResult = createStatusFrame(0, 0);
     this.afterWrite = null;
     this.writeError = null;
+    this.writeWithoutResponseError = null;
+    this.supportsWriteWithoutResponse = false;
     this.writeNeverResolves = false;
     this.startNotificationsError = null;
+    this.writeValueWithoutResponse = undefined;
   }
 
   async writeValueWithResponse(value) {
     if (this.writeError) throw this.writeError;
     this.writes.push(Array.from(value));
     if (this.afterWrite) await this.afterWrite(value, this.writes.length);
+    if (this.writeNeverResolves) {
+      return new Promise(() => {});
+    }
+  }
+
+  async performWriteValueWithoutResponse(value) {
+    if (!this.supportsWriteWithoutResponse) {
+      throw new Error("write without response not supported");
+    }
+    if (this.writeWithoutResponseError) throw this.writeWithoutResponseError;
+    this.writeWithoutResponseCalls.push(Array.from(value));
+    if (this.afterWrite) await this.afterWrite(value, this.writes.length + this.writeWithoutResponseCalls.length);
     if (this.writeNeverResolves) {
       return new Promise(() => {});
     }
@@ -430,7 +446,7 @@ async function runSdkFlowTests() {
     const { device, socket } = await connectFakeWs(RemoteInput);
     assert.deepEqual(device.getConfig(), { keyDelayMs: 20 });
     await device.setConfig({ keyDelayMs: 10 });
-    assert.deepEqual(socket.sent[0], [1, 3, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0]);
+    assert.deepEqual(socket.sent[0], [2, 3, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0]);
     assert.deepEqual(device.getConfig(), { keyDelayMs: 10 });
   }
 
@@ -458,7 +474,7 @@ async function runSdkFlowTests() {
       "ws://192.168.4.1/ws",
       { config: { keyDelayMs: 15 } }
     );
-    assert.deepEqual(socket.sent[0], [1, 3, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0]);
+    assert.deepEqual(socket.sent[0], [2, 3, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0]);
     assert.deepEqual(device.getConfig(), { keyDelayMs: 15 });
   }
 
@@ -473,9 +489,9 @@ async function runSdkFlowTests() {
     const { device, socket } = await connectFakeWs(RemoteInput);
     const completion = device.typeText("ws");
     await flushMicrotasks();
-    assert.deepEqual(socket.sent[0], [1, 1, 1, 0, 2, 0, 0, 0, 1, 0, 0, 0]);
-    assert.deepEqual(socket.sent[1], [1, 16, 1, 0, 0, 0, 1, 0, 119, 115]);
-    assert.deepEqual(socket.sent[2], [1, 2, 1, 0, 2, 0, 0, 0, 1, 0, 0, 0]);
+    assert.deepEqual(socket.sent[0], [2, 1, 1, 0, 2, 0, 0, 0, 1, 0, 0, 0]);
+    assert.deepEqual(socket.sent[1], [2, 16, 1, 0, 0, 0, 1, 0, 119, 115]);
+    assert.deepEqual(socket.sent[2], [2, 2, 1, 0, 2, 0, 0, 0, 1, 0, 0, 0]);
     socket.emitMessage(createStatusFrame(3, 1, 0, 2, 2));
     const status = await completion;
     assert.equal(status.state, "done");
@@ -584,7 +600,7 @@ async function runSdkFlowTests() {
   {
     const fake = createFakeBluetooth();
     const aiDevice = await RemoteInput.connect({ config: { keyDelayMs: 12 } });
-    assert.deepEqual(fake.controlChar.writes[0], [1, 3, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0]);
+    assert.deepEqual(fake.controlChar.writes[0], [2, 3, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0]);
     assert.deepEqual(aiDevice.getConfig(), { keyDelayMs: 12 });
   }
 
@@ -602,14 +618,31 @@ async function runSdkFlowTests() {
     const completion = aiDevice.typeText("hello");
     await flushMicrotasks();
 
-    assert.deepEqual(fake.controlChar.writes[0], [1, 1, 1, 0, 5, 0, 0, 0, 1, 0, 0, 0]);
-    assert.deepEqual(fake.dataChar.writes[0], [1, 16, 1, 0, 0, 0, 1, 0, 104, 101, 108, 108, 111]);
-    assert.deepEqual(fake.controlChar.writes[1], [1, 2, 1, 0, 5, 0, 0, 0, 1, 0, 0, 0]);
+    assert.deepEqual(fake.controlChar.writes[0], [2, 1, 1, 0, 5, 0, 0, 0, 1, 0, 0, 0]);
+    assert.deepEqual(fake.dataChar.writes[0], [2, 16, 1, 0, 0, 0, 1, 0, 104, 101, 108, 108, 111]);
+    assert.deepEqual(fake.controlChar.writes[1], [2, 2, 1, 0, 5, 0, 0, 0, 1, 0, 0, 0]);
 
     fake.statusChar.emitStatus(createStatusFrame(3, 1, 0, 5, 5));
     const status = await completion;
     assert.equal(status.state, "done");
     assert.equal(status.lastTaskId, 1);
+  }
+
+  {
+    const fake = createFakeBluetooth();
+    fake.dataChar.supportsWriteWithoutResponse = true;
+    fake.dataChar.writeValueWithoutResponse = fake.dataChar.performWriteValueWithoutResponse.bind(fake.dataChar);
+    const aiDevice = await RemoteInput.connect();
+    const completion = aiDevice.typeText("fast");
+    await flushMicrotasks();
+
+    assert.deepEqual(fake.controlChar.writes[0], [2, 1, 1, 0, 4, 0, 0, 0, 1, 0, 0, 0]);
+    assert.deepEqual(fake.dataChar.writeWithoutResponseCalls[0], [2, 16, 1, 0, 0, 0, 1, 0, 102, 97, 115, 116]);
+    assert.equal(fake.dataChar.writes.length, 0);
+    assert.deepEqual(fake.controlChar.writes[1], [2, 2, 1, 0, 4, 0, 0, 0, 1, 0, 0, 0]);
+
+    fake.statusChar.emitStatus(createStatusFrame(3, 1, 0, 4, 4));
+    await completion;
   }
 
   {
@@ -736,7 +769,7 @@ async function runSdkFlowTests() {
     aiDevice.taskId = 65535;
     const completion = aiDevice.typeText("wrap");
     await flushMicrotasks();
-    assert.deepEqual(fake.controlChar.writes[0].slice(0, 4), [1, 1, 255, 255]);
+    assert.deepEqual(fake.controlChar.writes[0].slice(0, 4), [2, 1, 255, 255]);
     fake.statusChar.emitStatus(createStatusFrame(3, 65535, 0, 4, 4));
     await completion;
     assert.equal(aiDevice.taskId, 1);

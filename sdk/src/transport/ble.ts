@@ -58,6 +58,9 @@ export class BleTransport implements RemoteInputTransport {
   }
 
   writeData(frame: Uint8Array): Promise<void> {
+    if (this.dataChar.writeValueWithoutResponse) {
+      return this.dataChar.writeValueWithoutResponse(frame);
+    }
     return this.dataChar.writeValueWithResponse(frame);
   }
 
