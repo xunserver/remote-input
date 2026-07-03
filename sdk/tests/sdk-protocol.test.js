@@ -34,17 +34,15 @@ assert.match(demoHtml, /输入法组合状态|输入法/i);
 
 const decodeHtml = fs.readFileSync("decode.html", "utf8");
 assert.match(decodeHtml, /<title>Remote Input Decoder<\/title>/);
-assert.match(
-  decodeHtml,
-  /import \{\s*createRib32DecoderState,\s*getRib32LineErrors,\s*getRib32Tasks,\s*ingestRib32Text\s*\} from "\.\/src\/base32Frame\.ts";/
-);
+assert.match(decodeHtml, /src="\.\/dist\/remote-input-decoder\.js"/);
+assert.doesNotMatch(decodeHtml, /\.\/src\/base32Frame\.ts/);
+assert.doesNotMatch(decodeHtml, /let processedLength = 0;/);
+assert.doesNotMatch(decodeHtml, /slice\(processedLength\)/);
+assert.match(decodeHtml, /createRib32InputDecoder/);
 assert.match(decodeHtml, /id="rib32Input"/);
 assert.match(decodeHtml, /id="taskList"/);
 assert.match(decodeHtml, /id="lineErrorList"/);
-assert.match(decodeHtml, /let processedLength = 0;/);
-assert.match(decodeHtml, /slice\(processedLength\)/);
-assert.match(decodeHtml, /processedLength = 0;/);
-assert.match(decodeHtml, /Vite dev server/i);
+assert.match(decodeHtml, /Vite dev server|部署后的静态文件/i);
 assert.match(decodeHtml, /US\/English/i);
 assert.match(decodeHtml, /输入法组合状态|输入法/i);
 
