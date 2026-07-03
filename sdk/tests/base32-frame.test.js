@@ -175,3 +175,93 @@ function makeEndLine(taskId, bytes) {
   assert.deepEqual(getRib32LineErrors(state), ["line 1 invalid task id 0"]);
   assert.deepEqual(getRib32Tasks(state), []);
 }
+
+const {
+  RemoteInputDecoder,
+  createRib32InputDecoder,
+} = require("../src/decoder.ts");
+
+class FakeTextInput {
+  constructor() {
+    this.value = "";
+    this.listeners = new Map();
+  }
+
+  addEventListener(type, listener) {
+    this.listeners.set(type, listener);
+  }
+
+  removeEventListener(type, listener) {
+    if (this.listeners.get(type) === listener) {
+      this.listeners.delete(type);
+    }
+  }
+
+  emit(type) {
+    const listener = this.listeners.get(type);
+    if (listener) listener({ target: this });
+  }
+}
+
+{
+  const completed = [];
+  const updates = [];
+  const decoder = createRib32InputDecoder({
+    onUpdate: (update) => updates.push(update),
+    onComplete: (task) => completed.push(task),
+  });
+  const lines = formatRib32Frames(21, encoder.encode("decoder sdk"));
+
+  const partial = decoder.ingest(`${lines[0].slice(0, 8)}`);
+  assert.equal(partial.snapshot.buffer, lines[0].slice(0, 8));
+  assert.equal(partial.snapshot.tasks.length, 0);
+
+  const update = decoder.ingest(`${lines[0].slice(8)}\n${lines[1]}\n`);
+  assert.equal(update.snapshot.tasks.length, 1);
+  assert.equal(update.snapshot.tasks[0].status, "complete");
+  assert.equal(update.snapshot.tasks[0].decodedText, "decoder sdk");
+  assert.equal(update.completedTasks.length, 1);
+  assert.equal(completed.length, 1);
+  assert.equal(completed[0].taskId, 21);
+  assert.equal(updates.at(-1).snapshot.tasks[0].decodedText, "decoder sdk");
+
+  const repeated = decoder.ingest("");
+  assert.equal(repeated.completedTasks.length, 0);
+
+  decoder.reset();
+  assert.deepEqual(decoder.snapshot(), { tasks: [], lineErrors: [], buffer: "" });
+}
+
+{
+  const decoder = new RemoteInputDecoder();
+  const input = new FakeTextInput();
+  const unbind = decoder.bindTextInput(input);
+  const lines = formatRib32Frames(22, encoder.encode("bound input"));
+
+  input.value = `${lines[0]}\n${lines[1]}\n`;
+  input.emit("input");
+
+  assert.equal(input.value, "");
+  assert.equal(decoder.snapshot().tasks[0].decodedText, "bound input");
+
+  input.value = "<RIB32";
+  input.emit("input");
+  assert.equal(input.value, "<RIB32");
+  assert.equal(decoder.snapshot().buffer, "<RIB32");
+
+  unbind();
+  input.value = `${input.value}:ignored`;
+  input.emit("input");
+  assert.equal(decoder.snapshot().buffer, "<RIB32");
+}
+
+{
+  const decoder = new RemoteInputDecoder();
+  const input = new FakeTextInput();
+  decoder.bindTextInput(input);
+  decoder.destroy();
+
+  input.value = "<RIB32";
+  input.emit("input");
+  assert.equal(decoder.snapshot().buffer, "");
+}
