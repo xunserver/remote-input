@@ -48,6 +48,9 @@ assert.match(decodeHtml, /输入法组合状态|输入法/i);
 
 const protocolDoc = fs.readFileSync("../docs/remote-input-protocol.md", "utf8");
 assert.match(protocolDoc, /Vite dev server|Vite 页面/);
+assert.match(protocolDoc, /dist\/remote-input-decoder\.js/);
+assert.match(protocolDoc, /decode\.html.*styles\.css|styles\.css.*decode\.html/s);
+assert.doesNotMatch(protocolDoc, /直接引用了开发源码模块/);
 assert.match(protocolDoc, /US\/English/i);
 assert.match(protocolDoc, /输入法组合状态|输入法/i);
 assert.match(protocolDoc, /人工验证|手工验证/);
