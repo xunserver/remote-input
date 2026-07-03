@@ -1,5 +1,5 @@
 idf_component_register(
     SRCS
         "app_main.c"
-    REQUIRES device
+    REQUIRES remote_input_device
 )
