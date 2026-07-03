@@ -129,6 +129,10 @@ export interface ConnectBleOptions {
   config?: RemoteInputConfig;
 }
 
+function isGattDisconnectedError(error: unknown): boolean {
+  return /GATT Server is disconnected/i.test(getErrorMessage(error, ""));
+}
+
 export async function connectBle(options: ConnectBleOptions = {}): Promise<RemoteInputClient> {
   const remoteNavigator = navigator as RemoteNavigator;
   if (!remoteNavigator.bluetooth) {
@@ -150,8 +154,17 @@ export async function connectBle(options: ConnectBleOptions = {}): Promise<Remot
 
   let transport: BleTransport | null = null;
   try {
-    const server = await device.gatt!.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
+    let server = await device.gatt!.connect();
+    let service;
+    try {
+      service = await server.getPrimaryService(SERVICE_UUID);
+    } catch (error) {
+      if (!isGattDisconnectedError(error)) {
+        throw error;
+      }
+      server = await device.gatt!.connect();
+      service = await server.getPrimaryService(SERVICE_UUID);
+    }
     const controlChar = await service.getCharacteristic(CONTROL_UUID);
     const dataChar = await service.getCharacteristic(DATA_UUID);
     const statusChar = await service.getCharacteristic(STATUS_UUID);

@@ -265,6 +265,7 @@ class FakeDevice {
     this.gatt = {
       connected: false,
       connect: async () => {
+        this.connectCalls += 1;
         this.gatt.connected = true;
         return server;
       },
@@ -273,6 +274,7 @@ class FakeDevice {
         this.gatt.connected = false;
       },
     };
+    this.connectCalls = 0;
     this.disconnectCalls = 0;
   }
 
@@ -635,6 +637,32 @@ async function runSdkFlowTests() {
     assert.equal(typeof aiDevice.typeText, "function");
     assert.equal(typeof aiDevice.getStatus, "function");
     assert.equal(typeof aiDevice.disconnect, "function");
+  }
+
+  {
+    const fake = createFakeBluetooth();
+    const originalConnect = fake.device.gatt.connect;
+    let serviceAttempts = 0;
+    fake.device.gatt.connect = async () => {
+      const server = await originalConnect();
+      return {
+        getPrimaryService: async (uuid) => {
+          serviceAttempts += 1;
+          if (serviceAttempts === 1) {
+            fake.device.gatt.connected = false;
+            throw new Error("GATT Server is disconnected. Cannot retrieve services. (Re)connect first with `device.gatt.connect`.");
+          }
+          return server.getPrimaryService(uuid);
+        },
+      };
+    };
+
+    const aiDevice = await RemoteInput.connect();
+    assert.equal(fake.device.connectCalls, 2);
+    assert.equal(serviceAttempts, 2);
+    assert.equal(fake.device.gatt.connected, true);
+    assert.equal(fake.statusChar.notificationsStarted, true);
+    assert.equal(typeof aiDevice.typeText, "function");
   }
 
   {
