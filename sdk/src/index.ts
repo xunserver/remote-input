@@ -15,6 +15,15 @@ export {
   getRib32Tasks,
   ingestRib32Text,
 } from "./base32Frame";
+export {
+  RemoteInputDecoder,
+  createRib32InputDecoder,
+} from "./decoder";
+export type {
+  Rib32DecoderSnapshot,
+  Rib32DecoderUpdate,
+  Rib32InputDecoderOptions,
+} from "./decoder";
 export type {
   Rib32DecoderState,
   Rib32TaskStatus,
@@ -31,6 +40,7 @@ import { RemoteInputClient, RemoteInputDevice } from "./device";
 import { RemoteInputError } from "./errors";
 import { assertConfig, assertTextSize, constants, createDataFrames, decodeStatusFrame, encodeConfigFrame, encodeControlFrame } from "./protocol";
 import { connectWs } from "./transport/ws";
+import { RemoteInputDecoder, createRib32InputDecoder } from "./decoder";
 import {
   RIB32_CHUNK_BYTES,
   RIB32_VERSION,
@@ -71,5 +81,7 @@ export const RemoteInput = {
   RemoteInputError,
   RemoteInputClient,
   RemoteInputDevice,
+  RemoteInputDecoder,
+  createRib32InputDecoder,
   _internals,
 };

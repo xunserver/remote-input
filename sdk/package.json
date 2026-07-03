@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build:sdk": "vite build",
+    "build:sdk": "vite build && vite build --config vite.decoder.config.ts",
     "test:sdk": "npm run build:sdk && node tests/sdk-protocol.test.js && npx tsx tests/base32-frame.test.js"
   },
   "devDependencies": {

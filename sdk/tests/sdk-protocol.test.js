@@ -2,6 +2,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
+const packageJson = fs.readFileSync("package.json", "utf8");
+assert.match(packageJson, /"build:sdk":\s*"vite build && vite build --config vite\.decoder\.config\.ts"/);
+
 const viteConfig = fs.readFileSync("vite.config.ts", "utf8");
 assert.match(viteConfig, /defineConfig/);
 assert.match(viteConfig, /entry:\s*resolve\(__dirname,\s*"src\/index\.ts"\)/);
@@ -10,6 +13,15 @@ assert.match(viteConfig, /formats:\s*\["iife"\]/);
 assert.match(viteConfig, /outDir:\s*"dist"/);
 assert.match(viteConfig, /fileName:\s*\(\)\s*=>\s*"remote-input-sdk\.js"/);
 assert.doesNotMatch(viteConfig, /emptyOutDir:\s*false/);
+
+const decoderViteConfig = fs.readFileSync("vite.decoder.config.ts", "utf8");
+assert.match(decoderViteConfig, /defineConfig/);
+assert.match(decoderViteConfig, /entry:\s*resolve\(__dirname,\s*"src\/decoderBundle\.ts"\)/);
+assert.match(decoderViteConfig, /name:\s*"RemoteInputDecoder"/);
+assert.match(decoderViteConfig, /formats:\s*\["iife"\]/);
+assert.match(decoderViteConfig, /fileName:\s*\(\)\s*=>\s*"remote-input-decoder\.js"/);
+assert.match(decoderViteConfig, /outDir:\s*"dist"/);
+assert.match(decoderViteConfig, /emptyOutDir:\s*false/);
 
 const demoHtml = fs.readFileSync("index.html", "utf8");
 assert.match(demoHtml, /<script type="module">/);
@@ -74,8 +86,29 @@ assert.equal(typeof remoteInputGlobal.createRib32DecoderState, "function");
 assert.equal(typeof remoteInputGlobal.ingestRib32Text, "function");
 assert.equal(typeof remoteInputGlobal.getRib32Tasks, "function");
 assert.equal(typeof remoteInputGlobal.getRib32LineErrors, "function");
+assert.equal(typeof remoteInputGlobal.RemoteInputDecoder, "function");
+assert.equal(typeof remoteInputGlobal.createRib32InputDecoder, "function");
+assert.equal(remoteInputGlobal.RemoteInput.RemoteInputDecoder, remoteInputGlobal.RemoteInputDecoder);
+assert.equal(remoteInputGlobal.RemoteInput.createRib32InputDecoder, remoteInputGlobal.createRib32InputDecoder);
 assert.equal(remoteInputGlobal.RIB32_VERSION, 1);
 assert.equal(remoteInputGlobal.RIB32_CHUNK_BYTES, 32);
+
+const decoderSource = fs.readFileSync("dist/remote-input-decoder.js", "utf8");
+const decoderContext = {
+  window: {},
+  TextDecoder,
+  Uint8Array,
+};
+vm.createContext(decoderContext);
+vm.runInContext(decoderSource, decoderContext);
+
+const decoderGlobal = decoderContext.window.RemoteInputDecoder || decoderContext.RemoteInputDecoder;
+assert.equal(typeof decoderGlobal.RemoteInputDecoder, "function");
+assert.equal(typeof decoderGlobal.createRib32InputDecoder, "function");
+assert.equal(typeof decoderGlobal.formatRib32Frames, "function");
+assert.equal(typeof decoderGlobal.ingestRib32Text, "function");
+assert.equal(decoderGlobal.RIB32_VERSION, 1);
+assert.equal(decoderGlobal.RIB32_CHUNK_BYTES, 32);
 
 {
   const { constants } = internals;
