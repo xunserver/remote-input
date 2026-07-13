@@ -13,9 +13,11 @@
     "build:client": "pnpm --filter @remote-copy/client build",
     "build:server": "pnpm --filter @remote-copy/server build",
     "build:shared": "pnpm --filter @remote-copy/shared build",
+    "build:sdk": "pnpm --filter @remote-copy/sdk build",
     "check:client": "pnpm --filter @remote-copy/client check",
     "check:server": "pnpm --filter @remote-copy/server check",
-    "check:shared": "pnpm --filter @remote-copy/shared check"
+    "check:shared": "pnpm --filter @remote-copy/shared check",
+    "check:sdk": "pnpm --filter @remote-copy/sdk check"
   },
   "packageManager": "pnpm@10.0.0",
   "devDependencies": {
