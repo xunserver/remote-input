@@ -1,0 +1,25 @@
+{
+  "name": "remote-copy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "",
+  "scripts": {
+    "build": "turbo run build",
+    "check": "turbo run check",
+    "dev": "turbo run dev --parallel",
+    "dev:client": "pnpm --filter @remote-copy/client dev",
+    "dev:server": "pnpm --filter @remote-copy/server dev",
+    "start": "pnpm --filter @remote-copy/server start",
+    "build:client": "pnpm --filter @remote-copy/client build",
+    "build:server": "pnpm --filter @remote-copy/server build",
+    "build:shared": "pnpm --filter @remote-copy/shared build",
+    "check:client": "pnpm --filter @remote-copy/client check",
+    "check:server": "pnpm --filter @remote-copy/server check",
+    "check:shared": "pnpm --filter @remote-copy/shared check"
+  },
+  "packageManager": "pnpm@10.0.0",
+  "devDependencies": {
+    "turbo": "^2.6.3",
+    "typescript": "^7.0.2"
+  }
+}

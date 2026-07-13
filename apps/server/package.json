@@ -1,0 +1,21 @@
+{
+  "name": "@remote-copy/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "start": "node dist/main.js",
+    "dev": "pnpm run build && node dist/main.js"
+  },
+  "dependencies": {
+    "@remote-copy/shared": "workspace:*",
+    "clipboardy": "^5.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2"
+  }
+}
