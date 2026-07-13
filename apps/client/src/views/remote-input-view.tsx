@@ -15,7 +15,7 @@ export function RemoteInputView() {
           connectionUrl={remoteInput.connectionUrl}
           serverInfo={remoteInput.serverInfo}
           clientCount={remoteInput.clientCount}
-          currentStatus={remoteInput.currentStatus}
+          currentOperation={remoteInput.currentOperation}
           deviceName={remoteInput.deviceName}
           error={remoteInput.lastError}
           onReconnect={remoteInput.reconnect}

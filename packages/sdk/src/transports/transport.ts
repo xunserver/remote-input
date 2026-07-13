@@ -1,15 +1,18 @@
+export type TransportState = "idle" | "connecting" | "connected" | "disconnected" | "error";
+
 export type TransportEvent =
-  | { type: "open" }
-  | { type: "message"; data: string }
-  | { type: "close" }
-  | { type: "error"; error?: unknown };
+  | { type: "state"; state: TransportState }
+  | { type: "message"; message: Uint8Array }
+  | { type: "error"; error: unknown };
 
 export type TransportListener = (event: TransportEvent) => void;
 
-export interface InputTransport {
-  readonly isOpen: boolean;
-  connect(): void;
-  disconnect(): void;
-  send(data: string): void;
+export interface DuplexTransport {
+  readonly kind: string;
+  readonly state: TransportState;
+
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  send(message: Uint8Array): Promise<void>;
   subscribe(listener: TransportListener): () => void;
 }

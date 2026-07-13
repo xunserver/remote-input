@@ -12,7 +12,7 @@ type InputMode = "single" | "multi";
 type InputComposerProps = {
   connectionState: ConnectionState;
   isBusy: boolean;
-  onSend: (text: string) => boolean;
+  onSend: (text: string) => Promise<boolean>;
 };
 
 export function InputComposer({ connectionState, isBusy, onSend }: InputComposerProps) {
@@ -21,8 +21,8 @@ export function InputComposer({ connectionState, isBusy, onSend }: InputComposer
   const isReady = connectionState === "ready";
   const canSend = isReady && text.trim().length > 0 && !isBusy;
 
-  const send = useCallback(() => {
-    if (onSend(text)) {
+  const send = useCallback(async () => {
+    if (await onSend(text)) {
       setText("");
     }
   }, [onSend, text]);
@@ -58,7 +58,7 @@ export function InputComposer({ connectionState, isBusy, onSend }: InputComposer
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.nativeEvent.isComposing) {
                 event.preventDefault();
-                send();
+                void send();
               }
             }}
           />
@@ -72,7 +72,7 @@ export function InputComposer({ connectionState, isBusy, onSend }: InputComposer
           />
         )}
 
-        <Button size="lg" className="h-12 w-full" disabled={!canSend} onClick={send}>
+        <Button size="lg" className="h-12 w-full" disabled={!canSend} onClick={() => void send()}>
           {isBusy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <SendHorizonal data-icon="inline-start" />}
           {isBusy ? "发送中" : "发送"}
         </Button>

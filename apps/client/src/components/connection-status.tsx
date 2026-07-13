@@ -6,14 +6,14 @@ import { Button } from "@shadcn/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@shadcn/card";
 import { Progress } from "@shadcn/progress";
 import { cn } from "@shadcn/utils";
-import { connectionLabel, statusLabel, type ConnectionState, type InputStatus } from "@/types/remote-input";
+import { connectionLabel, statusLabel, type ConnectionState, type OperationStatus } from "@/types/remote-input";
 
 type ConnectionStatusProps = {
   connectionState: ConnectionState;
   connectionUrl: string;
   serverInfo: ServerInfo | null;
   clientCount: number;
-  currentStatus: InputStatus | null;
+  currentOperation: OperationStatus | null;
   deviceName: string;
   error: string;
   onReconnect: () => void;
@@ -25,7 +25,7 @@ export function ConnectionStatus({
   connectionUrl,
   serverInfo,
   clientCount,
-  currentStatus,
+  currentOperation,
   deviceName,
   error,
   onReconnect,
@@ -47,16 +47,24 @@ export function ConnectionStatus({
         <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
           <StatusTile icon={Server} label="服务器" value={serverInfo ? `:${serverInfo.port}` : "未知"} />
           <StatusTile icon={LinkIcon} label="客户端" value={`${clientCount} 个`} muted={clientCount === 0} />
-          <StatusTile icon={Clock3} label="输入进度" value={`${currentStatus?.progress ?? 0}%`} />
-          <StatusTile icon={CheckCircle2} label="当前状态" value={statusLabel(currentStatus?.status)} />
+          <StatusTile icon={Clock3} label="输入进度" value={`${currentOperation?.progress ?? 0}%`} />
+          <StatusTile
+            icon={CheckCircle2}
+            label="当前状态"
+            value={statusLabel(currentOperation?.state, currentOperation?.stage)}
+          />
         </div>
 
-        <Progress value={currentStatus?.progress ?? 0} />
+        <Progress value={currentOperation?.progress ?? 0} />
         <div className="flex items-center justify-between gap-2">
           <p className={cn("min-h-5 min-w-0 flex-1 text-sm text-muted-foreground", error && "text-destructive")}>
             {error ||
-              currentStatus?.message ||
-              (currentStatus ? statusLabel(currentStatus.status) : deviceName ? `${deviceName} 已准备输入` : "等待连接服务器")}
+              currentOperation?.message ||
+              (currentOperation
+                ? statusLabel(currentOperation.state, currentOperation.stage)
+                : deviceName
+                  ? `${deviceName} 已准备输入`
+                  : "等待连接服务器")}
           </p>
           <div className="flex shrink-0 items-center gap-1">
             <Button

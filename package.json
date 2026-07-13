@@ -17,7 +17,8 @@
     "check:client": "pnpm --filter @remote-copy/client check",
     "check:server": "pnpm --filter @remote-copy/server check",
     "check:shared": "pnpm --filter @remote-copy/shared check",
-    "check:sdk": "pnpm --filter @remote-copy/sdk check"
+    "check:sdk": "pnpm --filter @remote-copy/sdk check",
+    "test:sdk": "pnpm --filter @remote-copy/sdk test"
   },
   "packageManager": "pnpm@10.0.0",
   "devDependencies": {

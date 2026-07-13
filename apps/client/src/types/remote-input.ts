@@ -1,6 +1,6 @@
-import type { ConnectionState, InputStatus } from "@remote-copy/sdk";
+import type { ConnectionState, OperationState, OperationStatus } from "@remote-copy/sdk";
 
-export type { ConnectionState, InputStatus } from "@remote-copy/sdk";
+export type { ConnectionState, OperationStatus } from "@remote-copy/sdk";
 
 export type ConnectionConfig = {
   host: string;
@@ -12,7 +12,8 @@ export type HistoryItem = {
   id: string;
   text: string;
   sentAt: string;
-  status: InputStatus["status"];
+  status: OperationState;
+  stage: string;
   message: string;
   progress: number;
 };
@@ -34,15 +35,23 @@ export function connectionLabel(state: ConnectionState): string {
   }
 }
 
-export function statusLabel(status?: InputStatus["status"]): string {
+export function statusLabel(status?: OperationState, stage?: string): string {
+  if (status === "accepted" && stage === "queued") {
+    return "排队中";
+  }
+  if (status === "processing" && stage === "copying") {
+    return "写入中";
+  }
+  if (status === "processing" && stage === "pasting") {
+    return "粘贴中";
+  }
+
   switch (status) {
-    case "queued":
-      return "排队中";
-    case "copying":
-      return "写入中";
-    case "pasting":
-      return "粘贴中";
-    case "done":
+    case "accepted":
+      return "已接受";
+    case "processing":
+      return "处理中";
+    case "succeeded":
       return "完成";
     case "failed":
       return "失败";
@@ -51,6 +60,6 @@ export function statusLabel(status?: InputStatus["status"]): string {
   }
 }
 
-export function isInputBusy(status: InputStatus | null): boolean {
-  return status?.status === "queued" || status?.status === "copying" || status?.status === "pasting";
+export function isInputBusy(status: OperationStatus | null): boolean {
+  return status?.state === "accepted" || status?.state === "processing";
 }

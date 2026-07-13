@@ -1,6 +1,11 @@
-import type { ClientMessage, ServerMessage } from "@remote-copy/shared";
-import type { InputTransport, TransportEvent } from "./transports/transport.js";
+import { ProtocolValidationError, type OperationStatus } from "@remote-copy/shared";
+import { ProtocolResponseError, ProtocolSession, type ProtocolSessionEvent } from "./protocol/protocol-session.js";
+import { createDefaultRequestId } from "./protocol/request-id.js";
+import { SendInputError } from "./send-input-error.js";
+import type { DuplexTransport } from "./transports/transport.js";
 import type {
+  InputSubmission,
+  OperationStatusListener,
   RemoteInputClientOptions,
   RemoteInputError,
   RemoteInputState,
@@ -9,30 +14,40 @@ import type {
 
 const initialState: RemoteInputState = {
   connectionState: "idle",
-  clientId: "",
-  deviceName: "",
-  serverInfo: null,
-  clientCount: 0,
-  devices: [],
-  currentStatus: null,
+  transportKind: null,
+  peer: null,
+  capabilities: null,
+  peers: [],
+  currentOperation: null,
+  isSubmitting: false,
   error: null,
 };
 
 export class RemoteInputClient {
   private readonly listeners = new Set<RemoteInputStateListener>();
-  private readonly deviceName: string;
+  private readonly operationListeners = new Map<string, Set<OperationStatusListener>>();
+  private readonly operations = new Map<string, OperationStatus>();
+  private readonly syntheticOperations = new Set<string>();
+  private readonly clientName: string;
   private readonly createRequestId: () => string;
-  private state: RemoteInputState = initialState;
-  private transport: InputTransport | null = null;
-  private unsubscribeTransport: (() => void) | null = null;
+  private readonly requestTimeoutMs: number;
+  private state = initialState;
+  private session: ProtocolSession | null = null;
+  private unsubscribeSession: (() => void) | null = null;
+  private connectionGeneration = 0;
 
   constructor(options: RemoteInputClientOptions = {}) {
-    this.deviceName = options.deviceName ?? "Client";
-    this.createRequestId = options.createRequestId ?? (() => globalThis.crypto.randomUUID());
+    this.clientName = options.clientName ?? "Client";
+    this.createRequestId = options.createRequestId ?? createDefaultRequestId;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 10_000;
   }
 
   getState(): RemoteInputState {
     return this.state;
+  }
+
+  getOperationStatus(operationId: string): OperationStatus | null {
+    return this.operations.get(operationId) ?? null;
   }
 
   subscribe(listener: RemoteInputStateListener): () => void {
@@ -40,202 +55,254 @@ export class RemoteInputClient {
     return () => this.listeners.delete(listener);
   }
 
-  connect(transport: InputTransport): void {
-    this.releaseTransport();
-    this.transport = transport;
-    this.unsubscribeTransport = transport.subscribe((event) => this.handleTransportEvent(event));
-    this.updateState({
-      ...initialState,
-      connectionState: "connecting",
-    });
+  subscribeOperation(operationId: string, listener: OperationStatusListener): () => void {
+    const listeners = this.operationListeners.get(operationId) ?? new Set<OperationStatusListener>();
+    listeners.add(listener);
+    this.operationListeners.set(operationId, listeners);
 
-    try {
-      transport.connect();
-    } catch (error) {
-      this.setConnectionError("transport-connect-failed", error);
-    }
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) {
+        this.operationListeners.delete(operationId);
+      }
+    };
   }
 
-  disconnect(): void {
-    this.releaseTransport();
-    this.updateState({
-      ...this.state,
-      connectionState: "disconnected",
-    });
-  }
+  async connect(transport: DuplexTransport): Promise<void> {
+    const generation = ++this.connectionGeneration;
+    await this.releaseSession();
 
-  sendInput(text: string): string | null {
-    const transport = this.transport;
-
-    if (
-      !text.trim() ||
-      this.state.connectionState !== "ready" ||
-      !transport?.isOpen ||
-      isInputBusy(this.state.currentStatus?.status)
-    ) {
-      return null;
-    }
-
-    const requestId = this.createRequestId();
-    const message: ClientMessage = { type: "input", requestId, text };
-
-    try {
-      transport.send(JSON.stringify(message));
-      this.updateState({
-        ...this.state,
-        currentStatus: {
-          type: "input-status",
-          requestId,
-          status: "queued",
-          progress: 5,
-          message: "",
-        },
-        error: null,
-      });
-      return requestId;
-    } catch (error) {
-      this.updateState({
-        ...this.state,
-        error: createError("transport-send-failed", error),
-      });
-      return null;
-    }
-  }
-
-  private releaseTransport(): void {
-    this.unsubscribeTransport?.();
-    this.unsubscribeTransport = null;
-    this.transport?.disconnect();
-    this.transport = null;
-  }
-
-  private handleTransportEvent(event: TransportEvent): void {
-    if (event.type === "open") {
-      this.handleOpen();
+    if (generation !== this.connectionGeneration) {
       return;
     }
 
-    if (event.type === "message") {
-      this.handleMessage(event.data);
+    const session = new ProtocolSession(transport, {
+      createRequestId: this.createRequestId,
+      requestTimeoutMs: this.requestTimeoutMs,
+    });
+    this.session = session;
+    this.unsubscribeSession = session.subscribe((event) => this.handleSessionEvent(session, event));
+    this.operations.clear();
+    this.syntheticOperations.clear();
+    this.updateState({
+      ...initialState,
+      connectionState: "connecting",
+      transportKind: transport.kind,
+    });
+
+    try {
+      const info = await session.connect(this.clientName);
+      if (this.session !== session) {
+        return;
+      }
+
+      this.updateState({
+        ...this.state,
+        connectionState: "ready",
+        peer: info.peer,
+        capabilities: info.capabilities,
+        error: null,
+      });
+    } catch (error) {
+      if (this.session === session) {
+        this.setConnectionError("transport-connect-failed", error);
+      }
+      throw error;
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    ++this.connectionGeneration;
+    await this.releaseSession();
+    this.updateState({
+      ...this.state,
+      connectionState: "disconnected",
+      peer: null,
+      capabilities: null,
+      peers: [],
+      isSubmitting: false,
+      error: null,
+    });
+  }
+
+  async sendInput(text: string): Promise<InputSubmission> {
+    const session = this.session;
+
+    if (!text.trim()) {
+      throw new SendInputError("input-empty", "Input text cannot be empty.");
+    }
+
+    if (this.state.connectionState !== "ready" || !session) {
+      throw new SendInputError("transport-not-ready", "The protocol session is not ready.");
+    }
+
+    if (!this.state.capabilities?.methods.includes("input.submit")) {
+      throw new SendInputError("input-unsupported", "The downstream peer does not support input.submit.");
+    }
+
+    if (this.state.isSubmitting || isOperationActive(this.state.currentOperation)) {
+      throw new SendInputError("input-busy", "Another input operation is still active.");
+    }
+
+    this.updateState({
+      ...this.state,
+      isSubmitting: true,
+      error: null,
+    });
+
+    try {
+      const result = await session.request("input.submit", { text });
+      const existing = this.operations.get(result.operationId);
+
+      if (!existing) {
+        this.applyOperationStatus({
+          operationId: result.operationId,
+          revision: 0,
+          state: "accepted",
+          stage: "accepted",
+          progress: 0,
+          message: "下游已接受输入请求。",
+        }, true);
+      }
+
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Input request failed.";
+      if (this.session === session) {
+        this.updateState({
+          ...this.state,
+          error: {
+            code: error instanceof ProtocolResponseError ? "peer-error" : "transport-error",
+            message,
+          },
+        });
+      }
+
+      throw new SendInputError("request-failed", message, { cause: error });
+    } finally {
+      if (this.session === session) {
+        this.updateState({
+          ...this.state,
+          isSubmitting: false,
+        });
+      }
+    }
+  }
+
+  async refreshOperationStatus(operationId: string): Promise<OperationStatus> {
+    const session = this.session;
+    if (this.state.connectionState !== "ready" || !session) {
+      throw new Error("The protocol session is not ready.");
+    }
+
+    if (!this.state.capabilities?.methods.includes("operation.get")) {
+      throw new Error("The downstream peer does not support operation.get.");
+    }
+
+    const status = await session.request("operation.get", { operationId });
+    return this.applyOperationStatus(status);
+  }
+
+  private async releaseSession(): Promise<void> {
+    const session = this.session;
+    this.unsubscribeSession?.();
+    this.unsubscribeSession = null;
+    this.session = null;
+
+    if (session) {
+      await session.disconnect();
+    }
+  }
+
+  private handleSessionEvent(session: ProtocolSession, event: ProtocolSessionEvent): void {
+    if (this.session !== session) {
+      return;
+    }
+
+    if (event.type === "transport-state") {
+      if (event.state === "connected" && this.state.connectionState === "connecting") {
+        this.updateState({ ...this.state, connectionState: "connected" });
+      } else if (event.state === "disconnected") {
+        this.updateState({
+          ...this.state,
+          connectionState: "disconnected",
+          peer: null,
+          capabilities: null,
+          peers: [],
+          isSubmitting: false,
+        });
+      } else if (event.state === "error") {
+        this.updateState({
+          ...this.state,
+          connectionState: "error",
+          peer: null,
+          capabilities: null,
+          peers: [],
+          isSubmitting: false,
+        });
+      }
       return;
     }
 
     if (event.type === "error") {
-      this.setConnectionError("transport-error", event.error);
-      return;
-    }
-
-    this.updateState({
-      ...this.state,
-      connectionState: this.state.connectionState === "error" ? "error" : "disconnected",
-    });
-  }
-
-  private handleOpen(): void {
-    const transport = this.transport;
-    if (!transport) {
-      return;
-    }
-
-    this.updateState({
-      ...this.state,
-      connectionState: "connected",
-      error: null,
-    });
-
-    const hello: ClientMessage = {
-      type: "hello",
-      deviceName: this.deviceName,
-    };
-
-    try {
-      transport.send(JSON.stringify(hello));
-    } catch (error) {
-      this.setConnectionError("transport-send-failed", error);
-    }
-  }
-
-  private handleMessage(data: string): void {
-    let parsed: unknown;
-
-    try {
-      parsed = JSON.parse(data) as unknown;
-    } catch (error) {
-      this.setProtocolError(error);
-      return;
-    }
-
-    if (!parsed || typeof parsed !== "object" || !("type" in parsed)) {
-      this.setProtocolError();
-      return;
-    }
-
-    const message = parsed as ServerMessage;
-
-    if (message.type === "connected") {
-      this.updateState({
-        ...this.state,
-        connectionState: "connected",
-        clientId: message.clientId,
-        serverInfo: message.server,
-      });
-      return;
-    }
-
-    if (message.type === "ready") {
-      this.updateState({
-        ...this.state,
-        connectionState: "ready",
-        clientId: message.clientId,
-        deviceName: message.deviceName,
-        serverInfo: message.server,
-      });
-      return;
-    }
-
-    if (message.type === "clients") {
-      this.updateState({
-        ...this.state,
-        clientCount: message.count,
-        devices: message.devices,
-      });
-      return;
-    }
-
-    if (message.type === "input-status") {
-      this.updateState({
-        ...this.state,
-        currentStatus: message,
-      });
-      return;
-    }
-
-    if (message.type === "error") {
       this.updateState({
         ...this.state,
         error: {
-          code: "server-error",
-          message: message.message,
+          code: event.error instanceof ProtocolValidationError ? "invalid-message" : "transport-error",
+          message: event.error instanceof Error ? event.error.message : undefined,
         },
       });
       return;
     }
 
-    this.setProtocolError();
-  }
+    if (event.event.name === "operation.status") {
+      this.applyOperationStatus(event.event.body);
+      return;
+    }
 
-  private setProtocolError(error?: unknown): void {
     this.updateState({
       ...this.state,
-      error: createError("invalid-message", error),
+      peers: event.event.body.peers,
     });
+  }
+
+  private applyOperationStatus(status: OperationStatus, synthetic = false): OperationStatus {
+    const existing = this.operations.get(status.operationId);
+    const replacesSynthetic = existing
+      && existing.revision === status.revision
+      && this.syntheticOperations.has(status.operationId)
+      && !synthetic;
+    if (existing && existing.revision >= status.revision && !replacesSynthetic) {
+      return existing;
+    }
+
+    this.operations.set(status.operationId, status);
+    if (synthetic) {
+      this.syntheticOperations.add(status.operationId);
+    } else {
+      this.syntheticOperations.delete(status.operationId);
+    }
+    this.updateState({
+      ...this.state,
+      currentOperation: status,
+    });
+
+    for (const listener of this.operationListeners.get(status.operationId) ?? []) {
+      listener(status);
+    }
+
+    return status;
   }
 
   private setConnectionError(code: RemoteInputError["code"], error: unknown): void {
     this.updateState({
       ...this.state,
       connectionState: "error",
-      error: createError(code, error),
+      isSubmitting: false,
+      error: {
+        code,
+        message: error instanceof Error ? error.message : undefined,
+      },
     });
   }
 
@@ -247,13 +314,6 @@ export class RemoteInputClient {
   }
 }
 
-function isInputBusy(status: string | undefined): boolean {
-  return status === "queued" || status === "copying" || status === "pasting";
-}
-
-function createError(code: RemoteInputError["code"], error: unknown): RemoteInputError {
-  return {
-    code,
-    message: error instanceof Error ? error.message : undefined,
-  };
+function isOperationActive(status: OperationStatus | null): boolean {
+  return status?.state === "accepted" || status?.state === "processing";
 }

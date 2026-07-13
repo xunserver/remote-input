@@ -28,7 +28,7 @@ export function InputHistory({ history, onClear }: InputHistoryProps) {
             <CardContent className="flex flex-col gap-2 p-3">
               <div className="flex items-center justify-between gap-2">
                 <Badge variant={item.status === "failed" ? "destructive" : "secondary"}>
-                  {statusLabel(item.status)}
+                  {statusLabel(item.status, item.stage)}
                 </Badge>
                 <span className="text-xs text-muted-foreground">{new Date(item.sentAt).toLocaleString()}</span>
               </div>

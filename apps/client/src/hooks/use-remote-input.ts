@@ -2,8 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   RemoteInputClient,
   WebSocketTransport,
+  type OperationStatus,
+  type PeerInfo,
   type RemoteInputError,
   type RemoteInputState,
+  type ServerInfo,
 } from "@remote-copy/sdk";
 import { isInputBusy, type HistoryItem } from "@/types/remote-input";
 import { buildWsUrl, connectionStorageKey, getConfigFromUrl, getDefaultConnectionConfig } from "@/utils/connection";
@@ -31,7 +34,7 @@ function getDeviceName(): string {
 
 export function useRemoteInput() {
   const [initialConnection] = useState(getInitialConnection);
-  const [client] = useState(() => new RemoteInputClient({ deviceName: getDeviceName() }));
+  const [client] = useState(() => new RemoteInputClient({ clientName: getDeviceName() }));
   const [sdkState, setSdkState] = useState<RemoteInputState>(() => client.getState());
   const activeUrlRef = useRef(initialConnection.url);
   const [connectionUrl, setConnectionUrl] = useState(initialConnection.url);
@@ -39,7 +42,7 @@ export function useRemoteInput() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>(loadHistory);
 
-  const isBusy = isInputBusy(sdkState.currentStatus);
+  const isBusy = sdkState.isSubmitting || isInputBusy(sdkState.currentOperation);
 
   useEffect(() => client.subscribe(setSdkState), [client]);
 
@@ -48,24 +51,25 @@ export function useRemoteInput() {
   }, [history]);
 
   useEffect(() => {
-    const status = sdkState.currentStatus;
+    const status = sdkState.currentOperation;
     if (!status) {
       return;
     }
 
     setHistory((items) =>
       items.map((item) =>
-        item.id === status.requestId
+        item.id === status.operationId
           ? {
               ...item,
-              status: status.status,
+              status: status.state,
+              stage: status.stage,
               message: status.message || item.message,
               progress: status.progress,
             }
           : item,
       ),
     );
-  }, [sdkState.currentStatus]);
+  }, [sdkState.currentOperation]);
 
   useEffect(() => {
     if (sdkState.connectionState === "connected" || sdkState.connectionState === "ready") {
@@ -79,7 +83,7 @@ export function useRemoteInput() {
     (url: string) => {
       activeUrlRef.current = url;
       setConnectionUrl(url);
-      client.connect(new WebSocketTransport(url));
+      void client.connect(new WebSocketTransport(url)).catch(() => undefined);
     },
     [client],
   );
@@ -89,30 +93,47 @@ export function useRemoteInput() {
       connect(initialConnection.savedUrl);
     }
 
-    return () => client.disconnect();
+    return () => {
+      void client.disconnect();
+    };
   }, [client, connect, initialConnection.savedUrl]);
 
   const sendInput = useCallback(
-    (text: string): boolean => {
+    async (text: string): Promise<boolean> => {
       if (!text.trim() || isBusy) {
         return false;
       }
 
-      const requestId = client.sendInput(text);
-      if (!requestId) {
+      let operationId: string;
+
+      try {
+        ({ operationId } = await client.sendInput(text));
+      } catch {
         return false;
       }
 
-      const queuedMessage = "已发送到服务器，等待处理。";
+      const sdkStatus = client.getOperationStatus(operationId);
+      const operationStatus: OperationStatus = sdkStatus?.operationId === operationId
+        ? sdkStatus
+        : {
+            operationId,
+            revision: 0,
+            state: "accepted",
+            stage: "accepted",
+            progress: 0,
+            message: "下游已接受输入请求。",
+          };
+      const pendingMessage = operationStatus.message || "下游已接受输入请求。";
       setHistory((items) =>
         [
           {
-            id: requestId,
+            id: operationId,
             text,
             sentAt: new Date().toISOString(),
-            status: "queued" as const,
-            message: queuedMessage,
-            progress: 5,
+            status: operationStatus.state,
+            stage: operationStatus.stage,
+            message: pendingMessage,
+            progress: operationStatus.progress,
           },
           ...items,
         ].slice(0, maxHistoryItems),
@@ -127,11 +148,11 @@ export function useRemoteInput() {
     connectionUrl,
     hasConnectionConfig,
     showConnectionDialog: !hasConnectionConfig || settingsOpen,
-    deviceName: sdkState.deviceName,
-    serverInfo: sdkState.serverInfo,
-    clientCount: sdkState.clientCount,
+    deviceName: sdkState.peer?.name || "",
+    serverInfo: getServerInfo(sdkState.peer),
+    clientCount: sdkState.peers.length,
     lastError: getErrorMessage(sdkState.error),
-    currentStatus: sdkState.currentStatus,
+    currentOperation: sdkState.currentOperation,
     history,
     isBusy,
     connect,
@@ -148,16 +169,12 @@ function getErrorMessage(error: RemoteInputError | null): string {
     return "";
   }
 
-  if (error.code === "server-error") {
-    return error.message || "服务器处理请求失败。";
+  if (error.code === "peer-error") {
+    return error.message || "下游拒绝了请求。";
   }
 
   if (error.code === "invalid-message") {
     return "服务器返回了无法识别的消息。";
-  }
-
-  if (error.code === "transport-send-failed") {
-    return "发送失败，请检查连接状态。";
   }
 
   if (error.code === "transport-connect-failed") {
@@ -165,4 +182,25 @@ function getErrorMessage(error: RemoteInputError | null): string {
   }
 
   return "无法连接到服务器，请检查 IP、端口和服务状态。";
+}
+
+function getServerInfo(peer: PeerInfo | null): ServerInfo | null {
+  const value = peer?.metadata?.serverInfo;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const server = value as Record<string, unknown>;
+  if (
+    typeof server.port !== "number" ||
+    !Array.isArray(server.lanAddresses) ||
+    !server.lanAddresses.every((address) => typeof address === "string")
+  ) {
+    return null;
+  }
+
+  return {
+    port: server.port,
+    lanAddresses: server.lanAddresses,
+  };
 }

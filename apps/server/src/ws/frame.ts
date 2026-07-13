@@ -2,36 +2,36 @@ import type { Socket } from "node:net";
 
 export type ParsedFrame =
   | {
-      opcode: 0x1;
-      text: string;
+      opcode: 0x1 | 0x2;
+      data: Buffer;
     }
   | {
       opcode: 0x8 | 0x9;
     };
 
-export function sendJsonFrame(socket: Socket, payload: unknown): void {
+export function sendBinaryFrame(socket: Socket, data: Uint8Array): void {
   if (socket.destroyed) {
     return;
   }
 
-  const data = Buffer.from(JSON.stringify(payload));
+  const payload = Buffer.from(data);
   let header: Buffer;
 
-  if (data.length < 126) {
-    header = Buffer.from([0x81, data.length]);
-  } else if (data.length < 65536) {
+  if (payload.length < 126) {
+    header = Buffer.from([0x82, payload.length]);
+  } else if (payload.length < 65536) {
     header = Buffer.alloc(4);
-    header[0] = 0x81;
+    header[0] = 0x82;
     header[1] = 126;
-    header.writeUInt16BE(data.length, 2);
+    header.writeUInt16BE(payload.length, 2);
   } else {
     header = Buffer.alloc(10);
-    header[0] = 0x81;
+    header[0] = 0x82;
     header[1] = 127;
-    header.writeBigUInt64BE(BigInt(data.length), 2);
+    header.writeBigUInt64BE(BigInt(payload.length), 2);
   }
 
-  socket.write(Buffer.concat([header, data]));
+  socket.write(Buffer.concat([header, payload]));
 }
 
 export function parseFrames(buffer: Buffer): { frames: ParsedFrame[]; rest: Buffer } {
@@ -87,8 +87,8 @@ export function parseFrames(buffer: Buffer): { frames: ParsedFrame[]; rest: Buff
       }
     }
 
-    if (opcode === 0x1) {
-      frames.push({ opcode: 0x1, text: payload.toString("utf8") });
+    if (opcode === 0x1 || opcode === 0x2) {
+      frames.push({ opcode, data: payload });
     } else if (opcode === 0x8 || opcode === 0x9) {
       frames.push({ opcode });
     }

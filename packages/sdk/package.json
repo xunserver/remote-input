@@ -14,7 +14,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc --noEmit -p tsconfig.json"
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "pnpm run build && node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@remote-copy/shared": "workspace:*"

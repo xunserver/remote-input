@@ -1,17 +1,28 @@
-import type { ServerInfo, ServerMessage } from "@remote-copy/shared";
+import type {
+  OperationStatus,
+  PeerInfo,
+  PeerSummary,
+  ProtocolCapabilities,
+} from "@remote-copy/shared";
 
 export type ConnectionState = "idle" | "connecting" | "connected" | "ready" | "disconnected" | "error";
 
-export type InputStatus = Extract<ServerMessage, { type: "input-status" }>;
+export type InputSubmission = {
+  operationId: string;
+};
 
-export type ConnectedDevice = Extract<ServerMessage, { type: "clients" }>["devices"][number];
+export type SendInputErrorCode =
+  | "input-empty"
+  | "transport-not-ready"
+  | "input-unsupported"
+  | "input-busy"
+  | "request-failed";
 
 export type RemoteInputErrorCode =
   | "transport-connect-failed"
   | "transport-error"
-  | "transport-send-failed"
   | "invalid-message"
-  | "server-error";
+  | "peer-error";
 
 export type RemoteInputError = {
   code: RemoteInputErrorCode;
@@ -20,18 +31,21 @@ export type RemoteInputError = {
 
 export type RemoteInputState = {
   connectionState: ConnectionState;
-  clientId: string;
-  deviceName: string;
-  serverInfo: ServerInfo | null;
-  clientCount: number;
-  devices: ConnectedDevice[];
-  currentStatus: InputStatus | null;
+  transportKind: string | null;
+  peer: PeerInfo | null;
+  capabilities: ProtocolCapabilities | null;
+  peers: PeerSummary[];
+  currentOperation: OperationStatus | null;
+  isSubmitting: boolean;
   error: RemoteInputError | null;
 };
 
 export type RemoteInputStateListener = (state: RemoteInputState) => void;
 
+export type OperationStatusListener = (status: OperationStatus) => void;
+
 export type RemoteInputClientOptions = {
-  deviceName?: string;
+  clientName?: string;
   createRequestId?: () => string;
+  requestTimeoutMs?: number;
 };

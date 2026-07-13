@@ -2,28 +2,37 @@ import crypto from "node:crypto";
 import http from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
-import type { ClientMessage, ServerMessage } from "@remote-copy/shared";
+import {
+  parseProtocolMessage,
+  protocolVersion,
+  type OperationStatus,
+  type ProtocolMessage,
+  type RequestMessage,
+} from "@remote-copy/shared";
 import type { AppConfig } from "../config";
 import { getLanAddresses } from "../network";
-import { parseFrames, sendJsonFrame } from "./frame";
+import { parseFrames, sendBinaryFrame } from "./frame";
 
 export type RemoteClient = {
   id: string;
   socket: Socket;
   buffer: Buffer;
-  deviceName: string;
+  clientName: string;
+  sessionOpen: boolean;
   remoteAddress?: string;
-  send: (message: ServerMessage) => void;
+  send: (message: ProtocolMessage) => void;
 };
 
 export type WebSocketServerOptions = {
   server: http.Server;
   config: AppConfig;
-  onInput: (client: RemoteClient, requestId: string, text: string) => void;
+  onInput: (client: RemoteClient, operationId: string, text: string) => void;
+  getOperationStatus: (client: RemoteClient, operationId: string) => OperationStatus | null;
 };
 
 export class RemoteWebSocketServer {
   private readonly clients = new Map<string, RemoteClient>();
+  private readonly serverId = crypto.randomUUID();
   private nextClientNumber = 1;
 
   constructor(private readonly options: WebSocketServerOptions) {
@@ -67,13 +76,6 @@ export class RemoteWebSocketServer {
     const client = this.createClient(netSocket);
     this.clients.set(client.id, client);
 
-    client.send({
-      type: "connected",
-      clientId: client.id,
-      server: this.getServerInfo(),
-    });
-    this.broadcastClientCount();
-
     netSocket.on("data", (chunk) => this.handleSocketData(client, chunk));
     netSocket.on("close", () => this.removeClient(client.id));
     netSocket.on("error", () => this.removeClient(client.id));
@@ -84,9 +86,10 @@ export class RemoteWebSocketServer {
       id: crypto.randomUUID(),
       socket,
       buffer: Buffer.alloc(0),
-      deviceName: `设备 ${this.nextClientNumber++}`,
+      clientName: `设备 ${this.nextClientNumber++}`,
+      sessionOpen: false,
       remoteAddress: socket.remoteAddress,
-      send: (message) => sendJsonFrame(socket, message),
+      send: (message) => sendBinaryFrame(socket, Buffer.from(JSON.stringify(message))),
     };
   }
 
@@ -100,83 +103,139 @@ export class RemoteWebSocketServer {
         if (frame.opcode === 0x8) {
           client.socket.end();
           return;
-        } else if (frame.opcode === 0x9) {
+        }
+
+        if (frame.opcode === 0x9) {
           client.socket.write(Buffer.from([0x8a, 0x00]));
-        } else if ("text" in frame) {
-          this.handleMessage(client, frame.text);
+          continue;
+        }
+
+        if ("data" in frame) {
+          this.handleMessage(client, frame.data);
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "WebSocket 数据解析失败。";
-      client.send({ type: "error", message });
+      console.error("WebSocket protocol error:", error);
+      client.socket.end();
     }
   }
 
-  private handleMessage(client: RemoteClient, raw: string): void {
-    let message: ClientMessage;
+  private handleMessage(client: RemoteClient, data: Uint8Array): void {
+    let message: ProtocolMessage;
 
     try {
-      message = JSON.parse(raw) as ClientMessage;
-    } catch {
-      client.send({
-        type: "error",
-        message: "消息格式不是有效 JSON。",
-      });
+      message = parseProtocolMessage(JSON.parse(Buffer.from(data).toString("utf8")) as unknown);
+    } catch (error) {
+      console.error("Invalid protocol message:", error);
+      client.socket.end();
       return;
     }
 
-    if (message.type === "hello") {
-      client.deviceName = String(message.deviceName || client.deviceName).slice(0, 80);
-      client.send({
-        type: "ready",
-        clientId: client.id,
-        deviceName: client.deviceName,
-        server: this.getServerInfo(),
-      });
-      this.broadcastClientCount();
+    if (message.kind !== "request") {
+      client.socket.end();
       return;
     }
 
-    if (message.type === "input") {
-      const text = String(message.text || "");
-      const requestId = String(message.requestId || crypto.randomUUID());
+    this.handleRequest(client, message);
+  }
 
-      if (!text.trim()) {
-        client.send({
-          type: "input-status",
-          requestId,
-          status: "failed",
-          progress: 100,
-          message: "输入内容为空。",
-        });
+  private handleRequest(client: RemoteClient, request: RequestMessage): void {
+    if (request.method === "session.open") {
+      client.clientName = request.body.clientName.slice(0, 80);
+      client.sessionOpen = true;
+      this.sendSuccess(client, request.id, {
+        protocolVersion,
+        peer: {
+          id: this.serverId,
+          type: "server",
+          name: "Remote Copy Server",
+          metadata: {
+            serverInfo: this.getServerInfo(),
+          },
+        },
+        capabilities: {
+          methods: ["input.submit", "operation.get"],
+          events: ["operation.status", "session.peers"],
+        },
+      });
+      this.broadcastPeers();
+      return;
+    }
+
+    if (!client.sessionOpen) {
+      this.sendError(client, request.id, "session.required", "Open the protocol session first.", false);
+      return;
+    }
+
+    if (request.method === "input.submit") {
+      if (!request.body.text.trim()) {
+        this.sendError(client, request.id, "input.empty", "输入内容为空。", false);
         return;
       }
 
-      this.options.onInput(client, requestId, text);
+      const operationId = crypto.randomUUID();
+      this.sendSuccess(client, request.id, { operationId });
+      this.options.onInput(client, operationId, request.body.text);
+      return;
     }
+
+    const status = this.options.getOperationStatus(client, request.body.operationId);
+    if (!status) {
+      this.sendError(client, request.id, "operation.not-found", "找不到对应的输入操作。", false);
+      return;
+    }
+
+    this.sendSuccess(client, request.id, status);
   }
 
-  private broadcastClientCount(): void {
-    this.broadcast({
-      type: "clients",
-      count: this.clients.size,
-      devices: [...this.clients.values()].map((client) => ({
-        id: client.id,
-        deviceName: client.deviceName,
-        remoteAddress: client.remoteAddress,
-      })),
+  private sendSuccess(client: RemoteClient, id: string, body: unknown): void {
+    client.send({
+      v: protocolVersion,
+      kind: "response",
+      id,
+      ok: true,
+      body,
     });
   }
 
-  private broadcast(message: ServerMessage): void {
+  private sendError(client: RemoteClient, id: string, code: string, message: string, retryable: boolean): void {
+    client.send({
+      v: protocolVersion,
+      kind: "response",
+      id,
+      ok: false,
+      error: { code, message, retryable },
+    });
+  }
+
+  private broadcastPeers(): void {
+    const peers = [...this.clients.values()]
+      .filter((client) => client.sessionOpen)
+      .map((client) => ({
+        id: client.id,
+        name: client.clientName,
+        remoteAddress: client.remoteAddress,
+      }));
+    const message: ProtocolMessage = {
+      v: protocolVersion,
+      kind: "event",
+      name: "session.peers",
+      body: {
+        count: peers.length,
+        peers,
+      },
+    };
+
     for (const client of this.clients.values()) {
-      client.send(message);
+      if (client.sessionOpen) {
+        client.send(message);
+      }
     }
   }
 
   private removeClient(clientId: string): void {
     this.clients.delete(clientId);
-    this.broadcastClientCount();
+    this.broadcastPeers();
   }
 
   private getServerInfo() {

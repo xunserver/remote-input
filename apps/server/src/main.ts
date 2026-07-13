@@ -21,9 +21,10 @@ const server = http.createServer((req, res) => {
 wsServer = new RemoteWebSocketServer({
   server,
   config,
-  onInput: (client, requestId, text) => {
-    inputQueue.enqueue({ client, requestId, text });
+  onInput: (client, operationId, text) => {
+    inputQueue.enqueue({ client, operationId, text });
   },
+  getOperationStatus: (client, operationId) => inputQueue.getStatus(client.id, operationId),
 });
 
 server.listen(config.port, config.host, () => {

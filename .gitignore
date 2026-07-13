@@ -1,6 +1,4 @@
 node_modules
 dist
-server/dist
-apps/server/dist
-public
 .turbo
+/public
