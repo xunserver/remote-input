@@ -1,8 +1,8 @@
 # @remote-copy/sdk
 
-`@remote-copy/sdk` 是一个与前端框架和具体传输方式无关的远程输入 SDK。
+`@remote-copy/sdk` 是 Remote Copy 的 TypeScript SDK。它在可靠、有序、保留消息边界的双工 Transport 上运行统一应用协议，为网页和其他调用方提供连接、远程输入、operation 状态缓存与订阅能力。
 
-SDK 在一个可靠、有序、保留消息边界的双工传输上运行统一协议。当前提供 `WebSocketTransport`；未来可以增加蓝牙 Transport，而不修改 `RemoteInputClient`、请求响应模型或状态事件模型。
+当前实现提供 `WebSocketTransport`。SDK 核心不依赖 WebSocket 业务语义，未来可以接入其他 Transport，而不改变 `RemoteInputClient`、请求响应模型或 operation 状态模型。
 
 ## 快速开始
 
@@ -40,164 +40,280 @@ unsubscribe();
 await client.disconnect();
 ```
 
-## 分层架构
+`sendInput()` resolve 只表示当前协议下游已经接受请求并返回 `operationId`，不表示整个操作已经成功完成。最终结果通过 `operation.status` 事件更新。
 
-```mermaid
-flowchart TB
-    UI["页面或业务代码"]
-    Client["RemoteInputClient<br/>远程输入 API、operation 缓存与订阅"]
-    Session["ProtocolSession<br/>会话握手、请求响应、超时与事件流"]
-    Codec["ProtocolCodec<br/>ProtocolMessage 与 Uint8Array 转换"]
-    Transport["DuplexTransport<br/>可靠、有序、保留消息边界的双工管道"]
-    WebSocket["WebSocketTransport"]
-    Bluetooth["BluetoothTransport<br/>未来实现"]
-    Server["Remote Copy Server"]
-    ESP32["ESP32<br/>未来下游"]
-
-    UI -->|"调用公共 SDK API"| Client
-    Client -->|"调用统一协议方法"| Session
-    Session -->|"编解码完整报文"| Codec
-    Codec -->|"收发 Uint8Array"| Transport
-    Transport --> WebSocket
-    Transport -.-> Bluetooth
-    WebSocket --> Server
-    Bluetooth -.-> ESP32
-```
-
-不支持 Mermaid 的阅读环境可以参考下面的等价文本结构：
+## 架构
 
 ```text
-页面或业务代码
-      |
-      v
-RemoteInputClient        远程输入 API、operation 状态缓存和订阅
-      |
-      v
-ProtocolSession          请求/响应关联、超时、事件流和会话握手
-      |
-      v
-ProtocolCodec            协议报文与 Uint8Array 之间的编解码
-      |
-      v
-DuplexTransport          可靠、有序、保留消息边界的双工管道
-      |
-      +-- WebSocketTransport
-      |
-      +-- 未来的 BluetoothTransport
+RemoteInputClient
+  -> ProtocolSession
+    -> ProtocolCodec
+      -> DuplexTransport
 ```
-
-每一层只关心自己的职责：
-
-- `RemoteInputClient` 不知道 WebSocket、BLE、JSON 或分片。
-- `ProtocolSession` 不知道数据通过哪种物理链路传输。
-- `ProtocolCodec` 不管理连接和业务状态。
-- `DuplexTransport` 不解析业务协议，也不理解输入命令。
-
-依赖方向始终从上层抽象指向下层接口。具体 Transport 不得反向依赖 `RemoteInputClient`，Server 或 ESP32 也不会成为 SDK 的编译依赖。
-
-## DuplexTransport
-
-所有传输实现都必须遵守：
-
-```ts
-interface DuplexTransport {
-  readonly kind: string;
-  readonly state: TransportState;
-
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-  send(message: Uint8Array): Promise<void>;
-  subscribe(listener: TransportListener): () => void;
-}
-```
-
-传输层向上层交付完整的 `Uint8Array` 报文，并负责：
-
-- 建立和关闭连接；
-- 双向消息收发；
-- 保留消息边界；
-- 有序交付；
-- 传输错误和断线通知；
-- 传输特有的分片、重组和重试。
-
-当前 `WebSocketTransport` 使用 WebSocket 二进制帧。未来蓝牙 Transport 应在内部处理 GATT、MTU、分片、ACK 和重试，协议层只接收重组后的完整报文。
-
-### Transport 可替换拓扑
 
 ```mermaid
 flowchart LR
-    Client["RemoteInputClient"] --> Session["ProtocolSession"]
-    Session --> Codec["JsonProtocolCodec"]
-    Codec --> Port["DuplexTransport 接口"]
-
-    Port --> WS["WebSocketTransport"]
-    WS -->|"WebSocket 二进制帧"| Server["Server 协议端点"]
-
-    Port -.-> BLE["BluetoothTransport"]
-    BLE -.->|"GATT、分片、ACK、重组"| ESP["ESP32 协议端点"]
-
-    Server --> Contract["统一 Request / Response / Event 协议"]
-    ESP -.-> Contract
+    App["页面或业务代码"] --> Client["RemoteInputClient"]
+    Client --> Session["ProtocolSession"]
+    Session --> Codec["ProtocolCodec"]
+    Codec --> Transport["DuplexTransport"]
+    Transport --> WebSocket["WebSocketTransport"]
+    WebSocket --> Server["Remote Copy Server"]
 ```
 
-图中的实线是当前实现，虚线是未来扩展点。无论选择哪种 Transport，`ProtocolSession` 看到的始终是完整协议报文。
+各层职责固定：
 
-## 协议模型
+- `RemoteInputClient`：远程输入 API、operation 缓存、状态订阅和能力检查。
+- `ProtocolSession`：`session.open` 握手、请求响应关联、超时、断线清理和事件分发。
+- `ProtocolCodec`：`ProtocolMessage` 与 `Uint8Array` 之间的转换。
+- `DuplexTransport`：可靠、有序、保留消息边界的双工传输，不解析业务协议。
+- `WebSocketTransport`：当前 WebSocket Transport 实现，只处理连接和字节消息。
 
-协议运行在同一条持久双工管道上，包含三类报文：
+统一协议的类型和运行时校验位于 `@remote-copy/shared`，它是协议的唯一事实源。
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant App as 页面/业务代码
-    participant Client as RemoteInputClient
-    participant Session as ProtocolSession
-    participant Transport as DuplexTransport
-    participant Peer as 当前下游
+## RemoteInputClient
 
-    App->>Client: connect(transport)
-    Client->>Transport: connect()
-    Transport-->>Client: 传输已连接
-    Client->>Session: session.open(clientName)
-    Session->>Transport: Request(req-open)
-    Transport->>Peer: 完整二进制报文
-    Peer-->>Transport: Response(req-open, peer, capabilities)
-    Transport-->>Session: 完整二进制报文
-    Session-->>Client: 会话 ready
-    Client-->>App: connect() resolve
+### 创建客户端
 
-    App->>Client: sendInput(text)
-    Client->>Session: input.submit
-    Session->>Transport: Request(req-input)
-    Transport->>Peer: 完整二进制报文
-    Peer-->>Transport: Response(req-input, operationId)
-    Session-->>Client: operationId
-    Client-->>App: sendInput() resolve
-
-    Peer-->>Transport: Event(operation.status, revision 1)
-    Transport-->>Session: Event
-    Session-->>Client: 更新 operation 缓存
-    Client-->>App: 状态订阅通知
-
-    Peer-->>Transport: Event(operation.status, revision 2...n)
-    Transport-->>Session: Event
-    Session-->>Client: 更新 operation 缓存
-    Client-->>App: 状态订阅通知
+```ts
+const client = new RemoteInputClient({
+  clientName: "网页浏览器",
+  requestTimeoutMs: 10_000,
+});
 ```
 
-这条时序中，Response 结束一次 request 生命周期；后续状态通过独立 Event 推送，不占用原请求。
+`RemoteInputClientOptions`：
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `clientName` | `string` | `"Client"` | `session.open` 中报告给下游的名称 |
+| `requestTimeoutMs` | `number` | `10000` | 单次协议请求的超时时间 |
+| `createRequestId` | `() => string` | SDK 内置生成器 | 自定义 requestId，主要用于测试或特殊运行环境 |
+
+默认 requestId 不依赖 `crypto.randomUUID()`，可以在普通局域网 HTTP 页面中使用。格式为：
 
 ```text
-SDK                         下游
- |                           |
- |--------- Request -------->|
- |<-------- Response ---------|
- |                           |
- |<------ Status Event -------|
- |<------ Status Event -------|
+request-<base36 时间戳>-<base36 运行时递增序号>
 ```
 
-所有报文都有版本和报文种类：
+requestId 只用于请求响应关联，不是身份凭证或安全令牌。自定义 `createRequestId` 时，必须保证所有未完成请求的 ID 不重复。
+
+### 连接
+
+```ts
+await client.connect(
+  new WebSocketTransport("ws://192.168.1.10:17888/ws"),
+);
+```
+
+连接过程包含两个阶段：
+
+1. Transport 建立连接。
+2. `ProtocolSession` 发送 `session.open` 并校验响应。
+
+只有两个阶段都成功后，`connect()` 才 resolve，`connectionState` 才会进入 `ready`。
+
+```text
+idle -> connecting -> connected -> ready
+                         |
+                         +-> error / disconnected
+```
+
+### 断开
+
+```ts
+await client.disconnect();
+```
+
+主动断开或 Transport 进入 `disconnected`/`error` 后，SDK 会：
+
+- 拒绝未完成的协议请求；
+- 清空当前会话的 `peer`、`capabilities` 和 `peers`；
+- 将 `isSubmitting` 恢复为 `false`；
+- 保留 operation 缓存和 `currentOperation`，允许断线后本地读取最后状态。
+
+下一次 `connect()` 开始时会清空旧 operation 缓存，建立一个新的会话视图。
+
+### 读取和订阅状态
+
+```ts
+const state = client.getState();
+
+const unsubscribe = client.subscribe((nextState) => {
+  console.log(nextState.connectionState);
+});
+
+unsubscribe();
+```
+
+`RemoteInputState`：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `connectionState` | `ConnectionState` | Client 当前连接状态 |
+| `transportKind` | `string \| null` | 当前 Transport 类型，例如 `websocket` |
+| `peer` | `PeerInfo \| null` | 当前协议下游身份 |
+| `capabilities` | `ProtocolCapabilities \| null` | 下游声明的方法和事件能力 |
+| `peers` | `PeerSummary[]` | 当前会话收到的 peer 列表 |
+| `currentOperation` | `OperationStatus \| null` | 最近应用到 Client 的 operation 状态 |
+| `isSubmitting` | `boolean` | `input.submit` 请求是否尚未返回 |
+| `error` | `RemoteInputError \| null` | 最近一次 Client 级错误 |
+
+`ConnectionState` 可能为：
+
+```ts
+type ConnectionState =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "ready"
+  | "disconnected"
+  | "error";
+```
+
+### 发送输入
+
+```ts
+const { operationId } = await client.sendInput("需要发送的文本");
+```
+
+方法签名：
+
+```ts
+sendInput(text: string): Promise<{
+  operationId: string;
+}>;
+```
+
+Client 会在发送前检查：
+
+- 文本不是空白内容；
+- 会话已经 `ready`；
+- 下游声明支持 `input.submit`；
+- 当前没有正在提交或仍处于活动状态的 operation。
+
+失败时抛出 `SendInputError`：
+
+| `code` | 含义 |
+| --- | --- |
+| `input-empty` | 输入内容为空 |
+| `transport-not-ready` | Transport 或协议会话尚未就绪 |
+| `input-unsupported` | 下游没有声明 `input.submit` 能力 |
+| `input-busy` | 另一个输入操作仍处于活动状态 |
+| `request-failed` | 请求超时、传输失败、响应非法或下游返回错误 |
+
+下游错误可以通过 `cause` 继续检查：
+
+```ts
+import {
+  ProtocolResponseError,
+  SendInputError,
+} from "@remote-copy/sdk";
+
+try {
+  await client.sendInput("文本");
+} catch (error) {
+  if (
+    error instanceof SendInputError &&
+    error.cause instanceof ProtocolResponseError
+  ) {
+    console.error(error.cause.protocolError.code);
+    console.error(error.cause.protocolError.retryable);
+  }
+}
+```
+
+### operation 缓存
+
+读取本地缓存不会访问下游：
+
+```ts
+const status = client.getOperationStatus(operationId);
+```
+
+订阅指定 operation 的后续更新：
+
+```ts
+const unsubscribe = client.subscribeOperation(
+  operationId,
+  (status) => {
+    console.log(status.state, status.stage, status.progress);
+  },
+);
+```
+
+`subscribeOperation()` 不会立即重放已有缓存；需要初始值时先调用 `getOperationStatus()`。
+
+主动向下游刷新：
+
+```ts
+const status = await client.refreshOperationStatus(operationId);
+```
+
+刷新会发送 `operation.get`。正常连接期间应优先使用 `operation.status` 推送，不建议固定间隔轮询。
+
+每个状态都携带递增的 `revision`。SDK 只接受比缓存更新的 revision，避免重复事件或旧响应覆盖新状态。
+
+## operation 状态语义
+
+公共 operation state 只有四种：
+
+```ts
+type OperationState =
+  | "accepted"
+  | "processing"
+  | "succeeded"
+  | "failed";
+```
+
+`OperationStatus`：
+
+```ts
+type OperationStatus = {
+  operationId: string;
+  revision: number;
+  state: OperationState;
+  stage: string;
+  progress: number;
+  message: string;
+};
+```
+
+- `state` 表达跨下游一致的公共状态。
+- `stage` 表达下游专属阶段，例如 Server 的 `copying`、`pasting`，或未来其他下游的 `forwarding`。
+- `progress` 是 `0` 到 `100` 的有限数字。
+- `revision` 是从 `0` 开始的非负整数，并随状态更新递增。
+- `succeeded` 表示当前协议下游完成了自身职责，不固定解释为某个最终 Agent 已执行。
+
+```mermaid
+stateDiagram-v2
+    [*] --> accepted
+    accepted --> processing
+    accepted --> succeeded
+    accepted --> failed
+    processing --> processing: revision 更新
+    processing --> succeeded
+    processing --> failed
+    succeeded --> [*]
+    failed --> [*]
+```
+
+## Client 错误状态
+
+`RemoteInputState.error` 使用以下错误码：
+
+| `code` | 含义 |
+| --- | --- |
+| `transport-connect-failed` | Transport 连接或 `session.open` 失败 |
+| `transport-error` | Transport 操作失败或非协议校验类错误 |
+| `invalid-message` | 收到非法 UTF-8、非法 JSON 或结构不符合协议的消息 |
+| `peer-error` | 下游返回失败 Response |
+
+`state.error` 用于 UI 状态展示；具体 API 调用仍会通过 Promise rejection 报告失败。
+
+## 统一协议
+
+协议包含三类报文：
 
 ```ts
 type ProtocolMessage =
@@ -206,7 +322,7 @@ type ProtocolMessage =
   | EventMessage;
 ```
 
-当前协议版本是 `1`。
+当前协议版本为 `1`。
 
 ### Request
 
@@ -214,7 +330,7 @@ type ProtocolMessage =
 {
   "v": 1,
   "kind": "request",
-  "id": "req-123",
+  "id": "request-lx1-1",
   "method": "input.submit",
   "body": {
     "text": "你好"
@@ -228,10 +344,10 @@ type ProtocolMessage =
 {
   "v": 1,
   "kind": "response",
-  "id": "req-123",
+  "id": "request-lx1-1",
   "ok": true,
   "body": {
-    "operationId": "op-456"
+    "operationId": "operation-123"
   }
 }
 ```
@@ -242,7 +358,7 @@ type ProtocolMessage =
 {
   "v": 1,
   "kind": "response",
-  "id": "req-123",
+  "id": "request-lx1-1",
   "ok": false,
   "error": {
     "code": "input.rejected",
@@ -260,7 +376,7 @@ type ProtocolMessage =
   "kind": "event",
   "name": "operation.status",
   "body": {
-    "operationId": "op-456",
+    "operationId": "operation-123",
     "revision": 2,
     "state": "processing",
     "stage": "copying",
@@ -270,272 +386,212 @@ type ProtocolMessage =
 }
 ```
 
-## requestId 与 operationId
+### 当前方法和事件
 
-协议刻意区分两种 ID。
+| 类型 | 名称 | 用途 |
+| --- | --- | --- |
+| 方法 | `session.open` | 打开协议会话并交换 peer、版本和能力 |
+| 方法 | `input.submit` | 提交输入并获得 `operationId` |
+| 方法 | `operation.get` | 获取指定 operation 的当前状态 |
+| 事件 | `operation.status` | 推送 operation 状态和递增 revision |
+| 事件 | `session.peers` | 推送当前会话可见的 peer 列表 |
 
-```mermaid
-flowchart LR
-    subgraph RequestLifecycle["一次请求响应生命周期"]
-        Req["Request<br/>id = req-123"] --> Res["Response<br/>id = req-123"]
-    end
-
-    Res -->|"返回"| Operation["operationId = op-456"]
-
-    subgraph OperationLifecycle["长期 operation 生命周期"]
-        Operation --> Event1["operation.status<br/>revision = 1"]
-        Operation --> Event2["operation.status<br/>revision = 2"]
-        Operation --> EventN["operation.status<br/>revision = n"]
-    end
-
-    subgraph TransportLifecycle["传输内部生命周期"]
-        Packet1["packet/fragment sequence"] --> Packet2["ACK、重试、重组"]
-    end
-
-    Packet2 -.->|"不得复用 ID"| Req
-```
-
-三个生命周期互相独立：Transport 可以重试分片，但不能因此创建新的 operation；协议可以发起多个 request 查询同一个 operation。
-
-### requestId
-
-Request 的 `id` 是一次请求响应的关联 ID：
+### ID 职责
 
 ```text
-Request(req-123) <-> Response(req-123)
+传输分片序号：只属于 Transport
+requestId：    只关联一次 Request / Response
+operationId：  关联长期 operation 和状态事件
 ```
 
-`ProtocolSession` 内部使用它处理：
+Response 使用相同 requestId 结束一次请求。后续 `operation.status` 只携带 operationId，不依赖最初的 requestId。
 
-- 并发请求与响应关联；
-- 请求超时；
-- 错误 Response；
-- 断线时拒绝未完成请求。
+## ProtocolSession
 
-收到 Response 后，该 request 生命周期结束。SDK 的业务调用方通常不需要使用 requestId。
-
-### operationId
-
-`operationId` 标识一个可能持续较长时间的下游操作：
-
-```text
-input.submit Response
-          |
-          v
-operationId = op-456
-          |
-          +-- operation.status revision 1
-          +-- operation.status revision 2
-          +-- operation.status revision 3
-```
-
-状态事件不携带最初的 requestId，只使用 operationId。
-
-传输实现可能还需要自己的分片序号或 ACK 序号。传输序号、requestId 和 operationId 不得复用。
-
-## 会话握手
-
-Transport 连接后，`ProtocolSession` 自动发送：
-
-```json
-{
-  "v": 1,
-  "kind": "request",
-  "id": "req-open",
-  "method": "session.open",
-  "body": {
-    "clientName": "网页浏览器"
-  }
-}
-```
-
-下游响应协议版本、身份和能力：
-
-```json
-{
-  "v": 1,
-  "kind": "response",
-  "id": "req-open",
-  "ok": true,
-  "body": {
-    "protocolVersion": 1,
-    "peer": {
-      "id": "peer-1",
-      "type": "server",
-      "name": "Remote Copy Server"
-    },
-    "capabilities": {
-      "methods": ["input.submit", "operation.get"],
-      "events": ["operation.status", "session.peers"]
-    }
-  }
-}
-```
-
-`client.connect()` 只有在 Transport 连接和 `session.open` 都成功后才 resolve。
-
-## 发送输入
+需要直接使用协议层时，可以跳过 `RemoteInputClient`：
 
 ```ts
-const { operationId } = await client.sendInput("需要发送的内容");
-```
+import {
+  ProtocolSession,
+  WebSocketTransport,
+} from "@remote-copy/sdk";
 
-方法签名：
-
-```ts
-sendInput(text: string): Promise<{
-  operationId: string;
-}>;
-```
-
-Promise resolve 表示：
-
-> 当前下游已经解析并接受 `input.submit`，并返回了可跟踪的 operationId。
-
-它不表示固定的 Agent 已执行完成。当前下游可能是直接执行输入的 Server，也可能是只负责转发的设备。后续状态代表当前协议下游对该操作的处理情况。
-
-`SendInputError.code` 包含：
-
-| 错误码 | 含义 |
-| --- | --- |
-| `input-empty` | 输入内容为空 |
-| `transport-not-ready` | Transport 或协议会话尚未就绪 |
-| `input-unsupported` | 当前下游没有声明 `input.submit` 能力 |
-| `input-busy` | 上一个输入操作仍处于活动状态 |
-| `request-failed` | 请求超时、传输失败或下游返回错误 Response |
-
-## 操作状态
-
-公共状态只定义与具体下游无关的 `state`：
-
-```ts
-type OperationState =
-  | "accepted"
-  | "processing"
-  | "succeeded"
-  | "failed";
-```
-
-具体处理阶段通过 `stage` 表达：
-
-```text
-WebSocket Server：queued / copying / pasting / done
-未来 ESP32：     received / forwarding / forwarded
-```
-
-`succeeded` 的含义是“当前下游已完成它在当前协议中的职责”，不自动表示某个未知的最终 Agent 已执行。
-
-```mermaid
-stateDiagram-v2
-    [*] --> accepted: input.submit 已接受
-    accepted --> processing: 下游开始处理
-    accepted --> succeeded: 下游立即完成
-    accepted --> failed: 接受后失败
-    processing --> processing: stage/progress/revision 更新
-    processing --> succeeded: 下游完成自身职责
-    processing --> failed: 处理失败
-    succeeded --> [*]
-    failed --> [*]
-```
-
-`stage` 不参与公共状态机约束。当前 Server 可以依次报告 `queued -> copying -> pasting -> done`，未来 ESP32 可以报告 `received -> forwarding -> forwarded`。
-
-每次状态更新都包含递增的 `revision`。SDK 会忽略旧 revision，防止重复通知或旧状态覆盖新状态。
-
-## 获取操作状态
-
-### 订阅全部 SDK 状态
-
-```ts
-client.subscribe((state) => {
-  console.log(state.currentOperation);
-});
-```
-
-Transport 断开或进入错误状态后，SDK 会清空当前会话的 `peer`、`capabilities` 和 `peers`。operation 缓存和 `currentOperation` 会保留，断线后仍可通过本地 API 读取最后收到的操作状态。
-
-### 读取本地缓存
-
-```ts
-const status = client.getOperationStatus(operationId);
-```
-
-该方法只读取 SDK 最近收到的状态，不访问下游。
-
-### 订阅单个操作
-
-```ts
-const unsubscribe = client.subscribeOperation(
-  operationId,
-  (status) => {
-    console.log(status.state, status.stage, status.progress);
-  },
+const session = new ProtocolSession(
+  new WebSocketTransport("ws://127.0.0.1:17888/ws"),
+  { requestTimeoutMs: 10_000 },
 );
+
+session.subscribe((event) => {
+  if (event.type === "event") {
+    console.log(event.event.name, event.event.body);
+  }
+});
+
+const info = await session.connect("协议客户端");
+const result = await session.request("operation.get", {
+  operationId: "operation-123",
+});
+
+console.log(info.peer, result.state);
+await session.disconnect();
 ```
 
-### 主动刷新
+`ProtocolSessionOptions`：
 
-```ts
-const status = await client.refreshOperationStatus(operationId);
-```
+| 字段 | 类型 | 默认值 |
+| --- | --- | --- |
+| `codec` | `ProtocolCodec` | `JsonProtocolCodec` |
+| `createRequestId` | `() => string` | SDK 内置生成器 |
+| `requestTimeoutMs` | `number` | `10000` |
 
-这会发送 `operation.get` 请求，适合重连恢复或手动刷新。正常连接期间应优先使用 `operation.status` 推送，不建议固定间隔轮询。
+`session.info` 在握手成功后返回 `SessionOpenResult`。Transport 断开、进入错误状态或主动 `disconnect()` 后，它会恢复为 `null`。
 
-## 编码
+下游失败 Response 会拒绝对应请求并抛出 `ProtocolResponseError`，完整错误位于 `error.protocolError`。
 
-当前 `JsonProtocolCodec` 使用：
+## Codec
 
-```mermaid
-flowchart LR
-    Message["ProtocolMessage"] --> JSON["JSON.stringify"]
-    JSON --> UTF8["UTF-8 编码"]
-    UTF8 --> Bytes["Uint8Array"]
-    Bytes --> Transport["DuplexTransport"]
-    Transport --> RemoteBytes["下游 Uint8Array"]
-    RemoteBytes --> Decode["UTF-8 + JSON.parse"]
-    Decode --> Validate["parseProtocolMessage<br/>运行时校验"]
-    Validate --> RemoteMessage["ProtocolMessage"]
-```
-
-非法 UTF-8、JSON 语法错误和协议结构错误都会作为协议校验错误报告；`RemoteInputClient` 将这类错误统一映射为 `invalid-message`。
+默认 `JsonProtocolCodec` 执行：
 
 ```text
 ProtocolMessage
-      -> JSON.stringify
-      -> UTF-8
-      -> Uint8Array
-      -> DuplexTransport
+  -> JSON.stringify
+  -> UTF-8
+  -> Uint8Array
 ```
 
-协议类型和运行时校验位于 `@remote-copy/shared`。SDK 与 Server 都必须通过 `parseProtocolMessage` 校验收到的未知数据。
+接收方向执行相反转换，并调用 `@remote-copy/shared` 的 `parseProtocolMessage()` 做运行时校验。
 
-未来可以实现其他 Codec，但同一会话的双方必须使用相同编码。更换 Codec 不应影响 `RemoteInputClient` 或 Transport 接口。
+非法 UTF-8、JSON 语法错误和协议结构错误都会作为 `ProtocolValidationError` 报告。Client UI 不需要也不应直接解析协议报文。
 
-## 新增 Transport
+自定义 Codec 必须实现：
 
-未来实现蓝牙或其他 Transport 时：
+```ts
+interface ProtocolCodec {
+  encode(message: ProtocolMessage): Uint8Array;
+  decode(message: Uint8Array): ProtocolMessage;
+}
+```
 
-1. 实现 `DuplexTransport`。
-2. 向上层交付完整 `Uint8Array` 报文。
-3. 在内部处理连接、权限、分片、重组、ACK 和重试。
-4. 不解析 `session.open`、`input.submit` 或 `operation.status`。
-5. 不创建或修改 operationId。
-6. 不向 `RemoteInputClient` 暴露 BLE 或 WebSocket 对象。
+同一会话的双方必须使用相同编码。
 
-只要下游实现相同协议，SDK 上层不需要知道当前使用的是 WebSocket 还是蓝牙。
+## DuplexTransport
+
+Transport 接口：
+
+```ts
+interface DuplexTransport {
+  readonly kind: string;
+  readonly state: TransportState;
+
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  send(message: Uint8Array): Promise<void>;
+  subscribe(listener: TransportListener): () => void;
+}
+```
+
+`TransportState`：
+
+```ts
+type TransportState =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "error";
+```
+
+Transport 通过订阅发送三类事件：
+
+```ts
+type TransportEvent =
+  | { type: "state"; state: TransportState }
+  | { type: "message"; message: Uint8Array }
+  | { type: "error"; error: unknown };
+```
+
+Transport 必须负责：
+
+- 建立和关闭连接；
+- 可靠、有序地传递完整消息；
+- 保留消息边界；
+- 报告连接状态和传输错误；
+- 在内部处理传输特有的分片、重组、ACK 和重试。
+
+Transport 不得：
+
+- 解析协议业务 JSON；
+- 理解 `session.open`、`input.submit` 或 `operation.status`；
+- 创建或修改 operationId；
+- 向 `RemoteInputClient` 暴露底层 WebSocket、GATT 或分片细节。
+
+## WebSocketTransport
+
+```ts
+const transport = new WebSocketTransport(
+  "ws://127.0.0.1:17888/ws",
+  { connectTimeoutMs: 10_000 },
+);
+```
+
+`WebSocketTransportOptions`：
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `connectTimeoutMs` | `number` | `10000` | WebSocket 建连超时 |
+| `createWebSocket` | `(url: string) => WebSocket` | 浏览器 `WebSocket` | 测试或非浏览器环境的工厂 |
+
+实现特性：
+
+- 发送时复制 `Uint8Array` 并使用二进制 WebSocket 消息；
+- 接收 `ArrayBuffer`、TypedArray、Blob 和字符串消息并统一转换为 `Uint8Array`；
+- Blob 异步转换期间保持原始消息顺序；
+- 重连后丢弃旧 socket 尚未完成解码的消息；
+- Transport 层不解析 JSON。
+
+## 公共导出
+
+主要运行时导出：
+
+```ts
+RemoteInputClient
+SendInputError
+ProtocolSession
+ProtocolResponseError
+JsonProtocolCodec
+WebSocketTransport
+```
+
+主要类型导出：
+
+```text
+RemoteInputClientOptions     RemoteInputState
+RemoteInputError             ConnectionState
+InputSubmission              OperationStatus
+OperationState               ProtocolCapabilities
+PeerInfo                     PeerSummary
+ProtocolCodec                ProtocolSessionOptions
+ProtocolSessionEvent         DuplexTransport
+TransportState               TransportEvent
+WebSocketTransportOptions    WebSocketFactory
+```
 
 ## 开发与验证
 
+SDK 单独验证：
+
 ```bash
+pnpm test:sdk
 pnpm check:sdk
 pnpm build:sdk
-pnpm test:sdk
 ```
 
-跨协议、SDK、Server 或网页的修改应运行：
+修改协议或跨 workspace 行为时运行：
 
 ```bash
 pnpm test:sdk
 pnpm check
 pnpm build
 ```
+
+自动验证不得向真实服务发送非空 `input.submit`，避免修改本机剪贴板或触发粘贴。真实联调默认只验证 `session.open`。
