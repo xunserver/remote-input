@@ -1,11 +1,20 @@
-import { ProtocolValidationError, type OperationStatus } from "@remote-copy/shared";
-import { ProtocolResponseError, ProtocolSession, type ProtocolSessionEvent } from "./protocol/protocol-session.js";
-import { createDefaultRequestId } from "./protocol/request-id.js";
+import {
+  createOperationId,
+  maxInputBytes,
+  ProtocolResponseError,
+  ProtocolSession,
+  ProtocolValidationError,
+  SocketIoClientTransport,
+  type MessageTransport,
+  type NotificationMessage,
+  type OperationStatus,
+  type ProtocolSessionEvent,
+} from "@remote-copy/protocol";
 import { SendInputError } from "./send-input-error.js";
-import type { DuplexTransport } from "./transports/transport.js";
 import type {
   InputSubmission,
   OperationStatusListener,
+  ProtocolNotificationListener,
   RemoteInputClientOptions,
   RemoteInputError,
   RemoteInputState,
@@ -23,23 +32,33 @@ const initialState: RemoteInputState = {
   error: null,
 };
 
+type NormalizedOptions = RemoteInputClientOptions & {
+  clientName: string;
+  requestTimeoutMs: number;
+  heartbeatIntervalMs: number;
+  heartbeatTimeoutMs: number;
+};
+
 export class RemoteInputClient {
   private readonly listeners = new Set<RemoteInputStateListener>();
+  private readonly notificationListeners = new Set<ProtocolNotificationListener>();
   private readonly operationListeners = new Map<string, Set<OperationStatusListener>>();
   private readonly operations = new Map<string, OperationStatus>();
   private readonly syntheticOperations = new Set<string>();
-  private readonly clientName: string;
-  private readonly createRequestId: () => string;
-  private readonly requestTimeoutMs: number;
+  private readonly options: NormalizedOptions;
   private state = initialState;
   private session: ProtocolSession | null = null;
   private unsubscribeSession: (() => void) | null = null;
   private connectionGeneration = 0;
 
   constructor(options: RemoteInputClientOptions = {}) {
-    this.clientName = options.clientName ?? "Client";
-    this.createRequestId = options.createRequestId ?? createDefaultRequestId;
-    this.requestTimeoutMs = options.requestTimeoutMs ?? 10_000;
+    this.options = {
+      ...options,
+      clientName: options.clientName ?? "Client",
+      requestTimeoutMs: options.requestTimeoutMs ?? 10_000,
+      heartbeatIntervalMs: options.heartbeatIntervalMs ?? 15_000,
+      heartbeatTimeoutMs: options.heartbeatTimeoutMs ?? 10_000,
+    };
   }
 
   getState(): RemoteInputState {
@@ -55,30 +74,32 @@ export class RemoteInputClient {
     return () => this.listeners.delete(listener);
   }
 
+  subscribeNotification(listener: ProtocolNotificationListener): () => void {
+    this.notificationListeners.add(listener);
+    return () => this.notificationListeners.delete(listener);
+  }
+
   subscribeOperation(operationId: string, listener: OperationStatusListener): () => void {
     const listeners = this.operationListeners.get(operationId) ?? new Set<OperationStatusListener>();
     listeners.add(listener);
     this.operationListeners.set(operationId, listeners);
-
     return () => {
       listeners.delete(listener);
-      if (listeners.size === 0) {
-        this.operationListeners.delete(operationId);
-      }
+      if (listeners.size === 0) this.operationListeners.delete(operationId);
     };
   }
 
-  async connect(transport: DuplexTransport): Promise<void> {
+  async connect(url: string): Promise<void> {
     const generation = ++this.connectionGeneration;
     await this.releaseSession();
+    if (generation !== this.connectionGeneration) return;
 
-    if (generation !== this.connectionGeneration) {
-      return;
-    }
-
+    const transport = this.createTransport(url);
     const session = new ProtocolSession(transport, {
-      createRequestId: this.createRequestId,
-      requestTimeoutMs: this.requestTimeoutMs,
+      createRequestId: this.options.createRequestId,
+      requestTimeoutMs: this.options.requestTimeoutMs,
+      heartbeatIntervalMs: this.options.heartbeatIntervalMs,
+      heartbeatTimeoutMs: this.options.heartbeatTimeoutMs,
     });
     this.session = session;
     this.unsubscribeSession = session.subscribe((event) => this.handleSessionEvent(session, event));
@@ -91,11 +112,10 @@ export class RemoteInputClient {
     });
 
     try {
-      const info = await session.connect(this.clientName);
-      if (this.session !== session) {
-        return;
-      }
-
+      await session.connect();
+      const info = await session.request("session.open", { clientName: this.options.clientName });
+      if (this.session !== session) return;
+      session.startHeartbeat();
       this.updateState({
         ...this.state,
         connectionState: "ready",
@@ -105,6 +125,7 @@ export class RemoteInputClient {
       });
     } catch (error) {
       if (this.session === session) {
+        await this.releaseSession();
         this.setConnectionError("transport-connect-failed", error);
       }
       throw error;
@@ -127,36 +148,36 @@ export class RemoteInputClient {
 
   async sendInput(text: string): Promise<InputSubmission> {
     const session = this.session;
-
     if (!text.trim()) {
       throw new SendInputError("input-empty", "Input text cannot be empty.");
     }
-
+    if (new TextEncoder().encode(text).byteLength > maxInputBytes) {
+      throw new SendInputError("input-too-large", `Input text exceeds ${maxInputBytes} UTF-8 bytes.`);
+    }
     if (this.state.connectionState !== "ready" || !session) {
       throw new SendInputError("transport-not-ready", "The protocol session is not ready.");
     }
-
     if (!this.state.capabilities?.methods.includes("input.submit")) {
       throw new SendInputError("input-unsupported", "The downstream peer does not support input.submit.");
     }
-
     if (this.state.isSubmitting || isOperationActive(this.state.currentOperation)) {
       throw new SendInputError("input-busy", "Another input operation is still active.");
     }
 
-    this.updateState({
-      ...this.state,
-      isSubmitting: true,
-      error: null,
-    });
+    const operationId = (this.options.createOperationId ?? createOperationId)();
+    if (!operationId) {
+      throw new SendInputError("request-failed", "Operation ID must not be empty.");
+    }
+    this.updateState({ ...this.state, isSubmitting: true, error: null });
 
     try {
-      const result = await session.request("input.submit", { text });
-      const existing = this.operations.get(result.operationId);
-
-      if (!existing) {
+      const result = await session.request("input.submit", { operationId, text });
+      if (result.operationId !== operationId) {
+        throw new Error("The downstream peer returned a different operation ID.");
+      }
+      if (!this.operations.has(operationId)) {
         this.applyOperationStatus({
-          operationId: result.operationId,
+          operationId,
           revision: 0,
           state: "accepted",
           stage: "accepted",
@@ -164,7 +185,6 @@ export class RemoteInputClient {
           message: "下游已接受输入请求。",
         }, true);
       }
-
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Input request failed.";
@@ -177,14 +197,10 @@ export class RemoteInputClient {
           },
         });
       }
-
       throw new SendInputError("request-failed", message, { cause: error });
     } finally {
       if (this.session === session) {
-        this.updateState({
-          ...this.state,
-          isSubmitting: false,
-        });
+        this.updateState({ ...this.state, isSubmitting: false });
       }
     }
   }
@@ -194,13 +210,15 @@ export class RemoteInputClient {
     if (this.state.connectionState !== "ready" || !session) {
       throw new Error("The protocol session is not ready.");
     }
-
     if (!this.state.capabilities?.methods.includes("operation.get")) {
       throw new Error("The downstream peer does not support operation.get.");
     }
-
     const status = await session.request("operation.get", { operationId });
     return this.applyOperationStatus(status);
+  }
+
+  private createTransport(url: string): MessageTransport {
+    return this.options.createTransport?.(url) ?? new SocketIoClientTransport(url);
   }
 
   private async releaseSession(): Promise<void> {
@@ -208,33 +226,18 @@ export class RemoteInputClient {
     this.unsubscribeSession?.();
     this.unsubscribeSession = null;
     this.session = null;
-
-    if (session) {
-      await session.disconnect();
-    }
+    if (session) await session.disconnect();
   }
 
   private handleSessionEvent(session: ProtocolSession, event: ProtocolSessionEvent): void {
-    if (this.session !== session) {
-      return;
-    }
-
+    if (this.session !== session) return;
     if (event.type === "transport-state") {
       if (event.state === "connected" && this.state.connectionState === "connecting") {
         this.updateState({ ...this.state, connectionState: "connected" });
-      } else if (event.state === "disconnected") {
+      } else if (event.state === "disconnected" || event.state === "error") {
         this.updateState({
           ...this.state,
-          connectionState: "disconnected",
-          peer: null,
-          capabilities: null,
-          peers: [],
-          isSubmitting: false,
-        });
-      } else if (event.state === "error") {
-        this.updateState({
-          ...this.state,
-          connectionState: "error",
+          connectionState: event.state,
           peer: null,
           capabilities: null,
           peers: [],
@@ -243,7 +246,6 @@ export class RemoteInputClient {
       }
       return;
     }
-
     if (event.type === "error") {
       this.updateState({
         ...this.state,
@@ -254,16 +256,16 @@ export class RemoteInputClient {
       });
       return;
     }
+    this.handleNotification(event.notification);
+  }
 
-    if (event.event.name === "operation.status") {
-      this.applyOperationStatus(event.event.body);
-      return;
+  private handleNotification(notification: NotificationMessage): void {
+    for (const listener of this.notificationListeners) listener(notification);
+    if (notification.name === "operation.status") {
+      this.applyOperationStatus(notification.body);
+    } else {
+      this.updateState({ ...this.state, peers: notification.body.peers });
     }
-
-    this.updateState({
-      ...this.state,
-      peers: event.event.body.peers,
-    });
   }
 
   private applyOperationStatus(status: OperationStatus, synthetic = false): OperationStatus {
@@ -272,25 +274,13 @@ export class RemoteInputClient {
       && existing.revision === status.revision
       && this.syntheticOperations.has(status.operationId)
       && !synthetic;
-    if (existing && existing.revision >= status.revision && !replacesSynthetic) {
-      return existing;
-    }
+    if (existing && existing.revision >= status.revision && !replacesSynthetic) return existing;
 
     this.operations.set(status.operationId, status);
-    if (synthetic) {
-      this.syntheticOperations.add(status.operationId);
-    } else {
-      this.syntheticOperations.delete(status.operationId);
-    }
-    this.updateState({
-      ...this.state,
-      currentOperation: status,
-    });
-
-    for (const listener of this.operationListeners.get(status.operationId) ?? []) {
-      listener(status);
-    }
-
+    if (synthetic) this.syntheticOperations.add(status.operationId);
+    else this.syntheticOperations.delete(status.operationId);
+    this.updateState({ ...this.state, currentOperation: status });
+    for (const listener of this.operationListeners.get(status.operationId) ?? []) listener(status);
     return status;
   }
 
@@ -299,18 +289,13 @@ export class RemoteInputClient {
       ...this.state,
       connectionState: "error",
       isSubmitting: false,
-      error: {
-        code,
-        message: error instanceof Error ? error.message : undefined,
-      },
+      error: { code, message: error instanceof Error ? error.message : undefined },
     });
   }
 
   private updateState(state: RemoteInputState): void {
     this.state = state;
-    for (const listener of this.listeners) {
-      listener(state);
-    }
+    for (const listener of this.listeners) listener(state);
   }
 }
 

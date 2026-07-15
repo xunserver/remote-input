@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   RemoteInputClient,
-  WebSocketTransport,
   type OperationStatus,
   type PeerInfo,
   type RemoteInputError,
@@ -9,7 +8,7 @@ import {
   type ServerInfo,
 } from "@remote-copy/sdk";
 import { isInputBusy, type HistoryItem } from "@/types/remote-input";
-import { buildWsUrl, connectionStorageKey, getConfigFromUrl, getDefaultConnectionConfig } from "@/utils/connection";
+import { buildSocketIoUrl, connectionStorageKey, getConfigFromUrl, getDefaultConnectionConfig } from "@/utils/connection";
 import { loadHistory, maxHistoryItems, saveHistory } from "@/utils/history";
 
 type InitialConnection = {
@@ -19,12 +18,12 @@ type InitialConnection = {
 
 function getInitialConnection(): InitialConnection {
   const savedUrl = localStorage.getItem(connectionStorageKey);
-  const fallbackUrl = buildWsUrl(getDefaultConnectionConfig());
+  const fallbackUrl = buildSocketIoUrl(getDefaultConnectionConfig());
   const config = getConfigFromUrl(savedUrl || fallbackUrl);
 
   return {
     savedUrl,
-    url: savedUrl || buildWsUrl(config),
+    url: savedUrl || buildSocketIoUrl(config),
   };
 }
 
@@ -83,7 +82,7 @@ export function useRemoteInput() {
     (url: string) => {
       activeUrlRef.current = url;
       setConnectionUrl(url);
-      void client.connect(new WebSocketTransport(url)).catch(() => undefined);
+      void client.connect(url).catch(() => undefined);
     },
     [client],
   );

@@ -1,9 +1,9 @@
-import { protocolVersion, type OperationState, type OperationStatus, type ProtocolMessage } from "@remote-copy/shared";
-import { writeClipboardAndPaste } from "../os/clipboard";
+import type { OperationState, OperationStatus } from "@remote-copy/protocol";
+import { writeClipboardAndPaste } from "../os/clipboard.js";
 
 export type InputClient = {
   id: string;
-  send: (message: ProtocolMessage) => void;
+  notifyStatus: (status: OperationStatus) => Promise<void>;
 };
 
 type InputJob = {
@@ -18,11 +18,16 @@ type StoredOperation = {
 };
 
 export class InputQueue {
+  private static readonly maxQueueJobs = 100;
+  private static readonly maxStoredOperations = 1_000;
   private readonly queue: InputJob[] = [];
   private readonly operations = new Map<string, StoredOperation>();
   private processing = false;
 
-  enqueue(job: InputJob): void {
+  enqueue(job: InputJob): boolean {
+    if (this.queue.length >= InputQueue.maxQueueJobs) {
+      return false;
+    }
     this.queue.push(job);
     this.sendStatus(
       job,
@@ -32,11 +37,11 @@ export class InputQueue {
       `已进入队列，前面还有 ${Math.max(0, this.queue.length - 1)} 条。`,
     );
     void this.process();
+    return true;
   }
 
   getStatus(clientId: string, operationId: string): OperationStatus | null {
-    const operation = this.operations.get(operationId);
-    return operation?.clientId === clientId ? operation.status : null;
+    return this.operations.get(operationKey(clientId, operationId))?.status ?? null;
   }
 
   private async process(): Promise<void> {
@@ -75,7 +80,8 @@ export class InputQueue {
     progress: number,
     message: string,
   ): void {
-    const previous = this.operations.get(job.operationId)?.status;
+    const key = operationKey(job.client.id, job.operationId);
+    const previous = this.operations.get(key)?.status;
     const status: OperationStatus = {
       operationId: job.operationId,
       revision: (previous?.revision ?? 0) + 1,
@@ -84,15 +90,21 @@ export class InputQueue {
       progress,
       message,
     };
-    this.operations.set(job.operationId, {
+    this.operations.set(key, {
       clientId: job.client.id,
       status,
     });
-    job.client.send({
-      v: protocolVersion,
-      kind: "event",
-      name: "operation.status",
-      body: status,
+    while (this.operations.size > InputQueue.maxStoredOperations) {
+      const oldest = this.operations.keys().next().value;
+      if (oldest === undefined) break;
+      this.operations.delete(oldest);
+    }
+    void job.client.notifyStatus(status).catch((error) => {
+      console.error("Failed to notify operation status:", error);
     });
   }
+}
+
+function operationKey(clientId: string, operationId: string): string {
+  return `${clientId}\u0000${operationId}`;
 }

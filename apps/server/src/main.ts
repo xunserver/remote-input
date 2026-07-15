@@ -1,36 +1,28 @@
 import http from "node:http";
-import { getConfig } from "./config";
-import { createStaticHandler } from "./http/staticServer";
-import { InputQueue } from "./input/inputQueue";
-import { getLanAddresses } from "./network";
-import { RemoteWebSocketServer } from "./ws/webSocketServer";
+import { getConfig } from "./config.js";
+import { createStaticHandler } from "./http/staticServer.js";
+import { InputQueue } from "./input/inputQueue.js";
+import { getLanAddresses } from "./network.js";
+import { RemoteSocketIoServer } from "./socket-io/protocol-server.js";
 
 const config = getConfig();
 const inputQueue = new InputQueue();
+let protocolServer: RemoteSocketIoServer;
 
-let wsServer: RemoteWebSocketServer;
-
+const staticHandler = createStaticHandler(config, () => protocolServer.getClientCount());
 const server = http.createServer((req, res) => {
-  createStaticHandler(config, () => wsServer.getClientCount())(req, res).catch((error) => {
+  staticHandler(req, res).catch((error) => {
     console.error(error);
     res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
     res.end(JSON.stringify({ error: "Internal server error" }));
   });
 });
 
-wsServer = new RemoteWebSocketServer({
-  server,
-  config,
-  onInput: (client, operationId, text) => {
-    inputQueue.enqueue({ client, operationId, text });
-  },
-  getOperationStatus: (client, operationId) => inputQueue.getStatus(client.id, operationId),
-});
+protocolServer = new RemoteSocketIoServer({ server, config, inputQueue });
 
 server.listen(config.port, config.host, () => {
   console.log(`Remote input server is running on port ${config.port}.`);
   console.log(`Local:   http://localhost:${config.port}`);
-
   for (const address of getLanAddresses()) {
     console.log(`LAN:     http://${address}:${config.port}`);
   }

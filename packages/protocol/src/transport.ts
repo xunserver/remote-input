@@ -7,7 +7,7 @@ export type TransportEvent =
 
 export type TransportListener = (event: TransportEvent) => void;
 
-export interface DuplexTransport {
+export interface MessageTransport {
   readonly kind: string;
   readonly state: TransportState;
 

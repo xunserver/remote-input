@@ -2,13 +2,14 @@
   "compilerOptions": {
     "paths": {
       "@/*": ["./apps/client/src/*"],
-      "@remote-copy/shared": ["./packages/shared/src/index.ts"]
+      "@remote-copy/protocol": ["./packages/protocol/src/index.ts"]
     }
   },
   "files": [],
   "references": [
     { "path": "./apps/server" },
     { "path": "./apps/client" },
-    { "path": "./packages/shared" }
+    { "path": "./packages/protocol" },
+    { "path": "./packages/sdk" }
   ]
 }

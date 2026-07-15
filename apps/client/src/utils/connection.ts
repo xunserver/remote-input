@@ -18,18 +18,18 @@ export function getConfigFromUrl(value: string): ConnectionConfig {
   const fallback = getDefaultConnectionConfig();
 
   try {
-    const url = new URL(/^wss?:\/\//i.test(value) ? value : `ws://${value}`);
+    const url = new URL(/^(?:https?|wss?):\/\//i.test(value) ? value : `http://${value}`);
     return {
       host: url.hostname || fallback.host,
       port: url.port,
-      secure: url.protocol === "wss:",
+      secure: url.protocol === "https:" || url.protocol === "wss:",
     };
   } catch {
     return fallback;
   }
 }
 
-export function buildWsUrl(config: ConnectionConfig): string {
+export function buildSocketIoUrl(config: ConnectionConfig): string {
   const fallback = getDefaultConnectionConfig();
   const rawHost = config.host.trim() || fallback.host;
   let host = rawHost;
@@ -37,14 +37,16 @@ export function buildWsUrl(config: ConnectionConfig): string {
   let secure = config.secure;
 
   try {
-    const parsed = new URL(/^wss?:\/\//i.test(rawHost) ? rawHost : `ws://${rawHost}`);
+    const parsed = new URL(/^(?:https?|wss?):\/\//i.test(rawHost) ? rawHost : `http://${rawHost}`);
     host = parsed.hostname;
     port = port || parsed.port;
-    secure = /^wss?:\/\//i.test(rawHost) ? parsed.protocol === "wss:" : secure;
+    secure = /^(?:https?|wss?):\/\//i.test(rawHost)
+      ? parsed.protocol === "https:" || parsed.protocol === "wss:"
+      : secure;
   } catch {
-    host = rawHost.replace(/^wss?:\/\//i, "").replace(/\/.*$/, "");
+    host = rawHost.replace(/^(?:https?|wss?):\/\//i, "").replace(/\/.*$/, "");
   }
 
-  const protocol = secure ? "wss:" : "ws:";
-  return `${protocol}//${host}${port ? `:${port}` : ""}/ws`;
+  const protocol = secure ? "https:" : "http:";
+  return `${protocol}//${host}${port ? `:${port}` : ""}`;
 }

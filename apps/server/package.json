@@ -2,19 +2,22 @@
   "name": "@remote-copy/server",
   "version": "1.0.0",
   "private": true,
-  "type": "commonjs",
+  "type": "module",
   "main": "./dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
+    "test": "pnpm run build && node --test tests/*.test.mjs",
     "start": "node dist/main.js",
     "dev": "pnpm run build && node dist/main.js"
   },
   "dependencies": {
-    "@remote-copy/shared": "workspace:*",
-    "clipboardy": "^5.3.1"
+    "@remote-copy/protocol": "workspace:*",
+    "clipboardy": "^5.3.1",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "socket.io-client": "^4.8.1",
     "@types/node": "^26.1.1",
     "typescript": "^7.0.2"
   }

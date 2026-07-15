@@ -1,18 +1,19 @@
 import type {
+  IdFactory,
+  MessageTransport,
+  NotificationMessage,
   OperationStatus,
   PeerInfo,
   PeerSummary,
   ProtocolCapabilities,
-} from "@remote-copy/shared";
+} from "@remote-copy/protocol";
 
 export type ConnectionState = "idle" | "connecting" | "connected" | "ready" | "disconnected" | "error";
-
-export type InputSubmission = {
-  operationId: string;
-};
+export type InputSubmission = { operationId: string };
 
 export type SendInputErrorCode =
   | "input-empty"
+  | "input-too-large"
   | "transport-not-ready"
   | "input-unsupported"
   | "input-busy"
@@ -24,10 +25,7 @@ export type RemoteInputErrorCode =
   | "invalid-message"
   | "peer-error";
 
-export type RemoteInputError = {
-  code: RemoteInputErrorCode;
-  message?: string;
-};
+export type RemoteInputError = { code: RemoteInputErrorCode; message?: string };
 
 export type RemoteInputState = {
   connectionState: ConnectionState;
@@ -41,11 +39,16 @@ export type RemoteInputState = {
 };
 
 export type RemoteInputStateListener = (state: RemoteInputState) => void;
-
 export type OperationStatusListener = (status: OperationStatus) => void;
+export type ProtocolNotificationListener = (notification: NotificationMessage) => void;
+export type RemoteInputTransportFactory = (url: string) => MessageTransport;
 
 export type RemoteInputClientOptions = {
   clientName?: string;
-  createRequestId?: () => string;
+  createRequestId?: IdFactory;
+  createOperationId?: IdFactory;
+  createTransport?: RemoteInputTransportFactory;
   requestTimeoutMs?: number;
+  heartbeatIntervalMs?: number;
+  heartbeatTimeoutMs?: number;
 };

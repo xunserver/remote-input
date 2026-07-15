@@ -1,33 +1,26 @@
 export { RemoteInputClient } from "./remote-input-client.js";
 export { SendInputError } from "./send-input-error.js";
-export { JsonProtocolCodec } from "./protocol/json-protocol-codec.js";
-export { ProtocolResponseError, ProtocolSession } from "./protocol/protocol-session.js";
-export { WebSocketTransport } from "./transports/websocket-transport.js";
-export type { ProtocolCodec } from "./protocol/json-protocol-codec.js";
-export type {
-  ProtocolEventBody,
-  ProtocolSessionEvent,
-  ProtocolSessionListener,
-  ProtocolSessionOptions,
-} from "./protocol/protocol-session.js";
-export type { DuplexTransport, TransportEvent, TransportListener, TransportState } from "./transports/transport.js";
-export type { WebSocketFactory, WebSocketTransportOptions } from "./transports/websocket-transport.js";
 export type {
   ConnectionState,
   InputSubmission,
   OperationStatusListener,
+  ProtocolNotificationListener,
   RemoteInputClientOptions,
   RemoteInputError,
   RemoteInputErrorCode,
   RemoteInputState,
   RemoteInputStateListener,
+  RemoteInputTransportFactory,
   SendInputErrorCode,
 } from "./types.js";
 export type {
+  NotificationMessage,
   OperationState,
   OperationStatus,
   PeerInfo,
   PeerSummary,
   ProtocolCapabilities,
+  ProtocolNotificationMap,
+  ProtocolNotificationName,
   ServerInfo,
-} from "@remote-copy/shared";
+} from "@remote-copy/protocol";

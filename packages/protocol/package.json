@@ -1,5 +1,5 @@
 {
-  "name": "@remote-copy/sdk",
+  "name": "@remote-copy/protocol",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -18,9 +18,10 @@
     "test": "pnpm run build && node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "@remote-copy/protocol": "workspace:*"
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
+    "socket.io": "^4.8.1",
     "typescript": "^7.0.2"
   }
 }

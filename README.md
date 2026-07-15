@@ -10,8 +10,8 @@ apps/
   server/                  Node.js + TypeScript 后端应用
 
 packages/
-  sdk/                     SDK、协议会话、Codec 和 Transport
-  shared/                  统一协议类型、方法/事件载荷和运行时校验
+  protocol/                协议消息、校验、Codec、Session 和 Socket.IO Transport
+  sdk/                     面向应用的轻量 RemoteInputClient
 
 public/                    client 构建输出目录，由 server 运行时托管
 components.json            shadcn 配置，指向 apps/client
@@ -22,11 +22,15 @@ turbo.json                 Turborepo 任务编排配置
 ## 典型边界
 
 - `apps/client`：只放浏览器 UI、React 状态、页面组件、shadcn 组件。
-- `apps/server`：只放 Node 后端、WebSocket、HTTP 静态托管、系统剪贴板/粘贴操作。
-- `packages/sdk`：提供 `RemoteInputClient`、`ProtocolSession`、Codec、`DuplexTransport` 和 WebSocket Transport。
-- `packages/shared`：定义统一的 Request/Response/Event 协议及运行时校验，不依赖具体传输方式。
+- `apps/server`：只放 Node 后端、Socket.IO 对端、HTTP 静态托管、系统剪贴板/粘贴操作。
+- `packages/protocol`：统一定义 Request/Response/Notification/Ping/Pong、运行时校验、Session 和 Socket.IO 双端 Transport。
+- `packages/sdk`：提供轻量 `RemoteInputClient`、状态缓存和通知订阅。
 
-当前 WebSocket 只是可靠双工传输器。上层协议使用 requestId 关联一次请求响应，使用 operationId 关联长期操作及状态事件。详细设计见 `packages/sdk/README.md`。
+当前只实现 Socket.IO Transport。上层协议使用 requestId 关联一次请求响应，使用 operationId 关联长期操作及状态通知，心跳使用独立 heartbeatId。
+
+- [远程输入模块架构](docs/architecture.md)：目标分层、协议语义和 Socket.IO 双端边界。
+- [协议与 SDK 重构计划](docs/implementation-plan.md)：实施步骤、测试范围和完成标准。
+- [SDK 使用与协议说明](packages/sdk/README.md)：当前公共 API 和协议报文参考。
 
 ## pnpm + Turborepo
 
@@ -46,7 +50,7 @@ pnpm build
 pnpm dev
 ```
 
-`turbo.json` 中 `build` 使用 `dependsOn: ["^build"]`，所以构建 app 前会先构建其依赖包，例如 `packages/shared`。
+`turbo.json` 中 `build` 使用 `dependsOn: ["^build"]`，所以构建 app 前会先构建其依赖包，例如 `packages/protocol`。
 
 ## 常用命令
 

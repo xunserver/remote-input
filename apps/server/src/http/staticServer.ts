@@ -1,8 +1,8 @@
 import http from "node:http";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
-import type { AppConfig } from "../config";
-import { getLanAddresses } from "../network";
+import type { AppConfig } from "../config.js";
+import { getLanAddresses } from "../network.js";
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const data = Buffer.from(JSON.stringify(body));

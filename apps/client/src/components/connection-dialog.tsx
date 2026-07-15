@@ -4,7 +4,7 @@ import { Button } from "@shadcn/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@shadcn/card";
 import { Input } from "@shadcn/input";
 import type { ConnectionConfig, ConnectionState } from "@/types/remote-input";
-import { buildWsUrl, getConfigFromUrl, getDefaultConnectionConfig } from "@/utils/connection";
+import { buildSocketIoUrl, getConfigFromUrl, getDefaultConnectionConfig } from "@/utils/connection";
 
 type ConnectionDialogProps = {
   open: boolean;
@@ -38,7 +38,7 @@ export function ConnectionDialog({
   }
 
   const defaultConfig = getDefaultConnectionConfig();
-  const connectionUrl = buildWsUrl(config);
+  const connectionUrl = buildSocketIoUrl(config);
   const isConnecting = connectionState === "connecting";
 
   return (

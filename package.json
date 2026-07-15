@@ -12,13 +12,15 @@
     "start": "pnpm --filter @remote-copy/server start",
     "build:client": "pnpm --filter @remote-copy/client build",
     "build:server": "pnpm --filter @remote-copy/server build",
-    "build:shared": "pnpm --filter @remote-copy/shared build",
+    "build:protocol": "pnpm --filter @remote-copy/protocol build",
     "build:sdk": "pnpm --filter @remote-copy/sdk build",
     "check:client": "pnpm --filter @remote-copy/client check",
     "check:server": "pnpm --filter @remote-copy/server check",
-    "check:shared": "pnpm --filter @remote-copy/shared check",
+    "check:protocol": "pnpm --filter @remote-copy/protocol check",
     "check:sdk": "pnpm --filter @remote-copy/sdk check",
-    "test:sdk": "pnpm --filter @remote-copy/sdk test"
+    "test:protocol": "pnpm --filter @remote-copy/protocol test",
+    "test:sdk": "pnpm --filter @remote-copy/sdk test",
+    "test:server": "pnpm --filter @remote-copy/server test"
   },
   "packageManager": "pnpm@10.0.0",
   "devDependencies": {
