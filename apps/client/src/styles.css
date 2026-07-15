@@ -58,6 +58,8 @@
 
   body {
     margin: 0;
+    min-width: 320px;
+    min-height: 100svh;
     background: var(--background);
     color: var(--foreground);
     font-family:
@@ -67,5 +69,10 @@
       BlinkMacSystemFont,
       "Segoe UI",
       sans-serif;
+    text-rendering: optimizeLegibility;
+  }
+
+  #root {
+    min-height: 100svh;
   }
 }

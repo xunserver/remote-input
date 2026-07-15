@@ -2,7 +2,7 @@
 
 Configuration is read from `components.json`.
 
-> **IMPORTANT:** Always run commands using the project's package runner: `npx shadcn@latest`, `pnpm dlx shadcn@latest`, or `bunx --bun shadcn@latest`. Check `packageManager` from project context to choose the right one. Examples below use `npx shadcn@latest` but substitute the correct runner for the project.
+> **IMPORTANT:** Always run shadcn CLI commands with `npx shadcn@latest`. Do not substitute `pnpm dlx` based on the project's `packageManager`; the pnpm dlx environment can resolve an incompatible Zod dependency for the shadcn CLI. The detected `packageManager` still controls non-shadcn dependency installation.
 
 > **IMPORTANT:** Only use the flags documented below. Do not invent or guess flags — if a flag isn't listed here, it doesn't exist. The CLI auto-detects the package manager from the project's lockfile; there is no `--package-manager` flag.
 

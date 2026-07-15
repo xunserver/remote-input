@@ -8,8 +8,8 @@ export function RemoteInputView() {
   const remoteInput = useRemoteInput();
 
   return (
-    <main className="min-h-svh bg-muted/40 text-foreground">
-      <section className="mx-auto flex min-h-svh w-full max-w-3xl flex-col gap-3 p-3 sm:gap-4 sm:p-5">
+    <main className="min-h-svh text-foreground">
+      <section className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:gap-5 sm:px-6 sm:pt-6">
         <ConnectionStatus
           connectionState={remoteInput.connectionState}
           connectionUrl={remoteInput.connectionUrl}
@@ -21,12 +21,19 @@ export function RemoteInputView() {
           onReconnect={remoteInput.reconnect}
           onOpenSettings={remoteInput.openConnectionSettings}
         />
-        <InputComposer
-          connectionState={remoteInput.connectionState}
-          isBusy={remoteInput.isBusy}
-          onSend={remoteInput.sendInput}
-        />
-        <InputHistory history={remoteInput.history} onClear={remoteInput.clearHistory} />
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-5">
+          <InputComposer
+            connectionState={remoteInput.connectionState}
+            isBusy={remoteInput.isBusy}
+            onSend={remoteInput.sendInput}
+          />
+          <InputHistory
+            history={remoteInput.history}
+            canResend={remoteInput.connectionState === "ready" && !remoteInput.isBusy}
+            onResend={remoteInput.sendInput}
+            onClear={remoteInput.clearHistory}
+          />
+        </div>
       </section>
 
       <ConnectionDialog
