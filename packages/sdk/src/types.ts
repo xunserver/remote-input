@@ -41,7 +41,8 @@ export type RemoteInputState = {
 export type RemoteInputStateListener = (state: RemoteInputState) => void;
 export type OperationStatusListener = (status: OperationStatus) => void;
 export type ProtocolNotificationListener = (notification: NotificationMessage) => void;
-export type RemoteInputTransportFactory = (url: string) => MessageTransport;
+/** 创建并可异步初始化底层 Transport；例如在返回蓝牙 Transport 前完成设备选择。 */
+export type RemoteInputTransportFactory = (url: string) => MessageTransport | Promise<MessageTransport>;
 
 export type RemoteInputClientOptions = {
   clientName?: string;

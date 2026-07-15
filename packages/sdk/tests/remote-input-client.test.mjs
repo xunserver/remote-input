@@ -65,7 +65,10 @@ async function createFixture(options = {}) {
   await server.connect();
 
   const client = new RemoteInputClient({
-    createTransport: () => pair.client,
+    createTransport: async () => {
+      await Promise.resolve();
+      return pair.client;
+    },
     createRequestId: (() => {
       let id = 0;
       return () => `request-${++id}`;
@@ -125,4 +128,28 @@ test("RemoteInputClient validates calls and clears session state", async () => {
     unsupported.client.sendInput("hello"),
     (error) => error instanceof SendInputError && error.code === "input-unsupported",
   );
+});
+
+test("RemoteInputClient awaits asynchronous transport creation and discards stale transports", async () => {
+  const pendingFactories = [];
+  const client = new RemoteInputClient({
+    createTransport: () => new Promise((resolve, reject) => {
+      pendingFactories.push({ resolve, reject });
+    }),
+    heartbeatIntervalMs: 0,
+  });
+
+  const firstConnect = client.connect("first");
+  await new Promise((resolve) => setImmediate(resolve));
+  const secondConnect = client.connect("second");
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const staleTransport = new MemoryTransport();
+  pendingFactories[0].resolve(staleTransport);
+  await firstConnect;
+  assert.equal(staleTransport.state, "disconnected");
+
+  pendingFactories[1].reject(new Error("device selection failed"));
+  await assert.rejects(secondConnect, /device selection failed/);
+  assert.equal(client.getState().connectionState, "error");
 });

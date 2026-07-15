@@ -54,6 +54,21 @@ class RemoteInputClient {
 
 普通调用方只需传入 Socket.IO Server 的 HTTP(S) origin。SDK 第一版关闭 Socket.IO 自动重连；重连应显式再次调用 `connect(url)`。
 
+`createTransport` 工厂可以同步或异步返回 `MessageTransport`，SDK 会在创建 `ProtocolSession` 前等待工厂完成。异步工厂可用于设备选择、权限申请或 Transport 初始化：
+
+```ts
+const client = new RemoteInputClient({
+  createTransport: async () => {
+    const device = await selectDevice();
+    return new BluetoothTransport(device);
+  },
+});
+
+await client.connect("bluetooth");
+```
+
+工厂负责准备 Transport 实例；Transport 自身的连接、断开和消息资源仍由 `connect()`、`disconnect()`、`send()` 和 `subscribe()` 管理。
+
 ## 状态语义
 
 operation state：

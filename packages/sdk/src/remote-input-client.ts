@@ -96,24 +96,30 @@ export class RemoteInputClient {
     await this.releaseSession();
     if (generation !== this.connectionGeneration) return;
 
-    const transport = this.createTransport(url);
-    const session = new ProtocolSession(transport, {
-      createRequestId: this.options.createRequestId,
-      requestTimeoutMs: this.options.requestTimeoutMs,
-      heartbeatIntervalMs: this.options.heartbeatIntervalMs,
-      heartbeatTimeoutMs: this.options.heartbeatTimeoutMs,
-    });
-    this.session = session;
-    this.unsubscribeSession = session.subscribe((event) => this.handleSessionEvent(session, event));
     this.operations.clear();
     this.syntheticOperations.clear();
     this.updateState({
       ...initialState,
       connectionState: "connecting",
-      transportKind: transport.kind,
     });
 
     try {
+      const transport = await this.createTransport(url);
+      if (generation !== this.connectionGeneration) {
+        await transport.disconnect();
+        return;
+      }
+
+      const session = new ProtocolSession(transport, {
+        createRequestId: this.options.createRequestId,
+        requestTimeoutMs: this.options.requestTimeoutMs,
+        heartbeatIntervalMs: this.options.heartbeatIntervalMs,
+        heartbeatTimeoutMs: this.options.heartbeatTimeoutMs,
+      });
+      this.session = session;
+      this.unsubscribeSession = session.subscribe((event) => this.handleSessionEvent(session, event));
+      this.updateState({ ...this.state, transportKind: transport.kind });
+
       await session.connect();
       const info = await session.request("session.open", { clientName: this.options.clientName });
       if (this.session !== session) return;
@@ -126,7 +132,7 @@ export class RemoteInputClient {
         error: null,
       });
     } catch (error) {
-      if (this.session === session) {
+      if (generation === this.connectionGeneration) {
         await this.releaseSession();
         this.setConnectionError("transport-connect-failed", error);
       }
@@ -219,7 +225,7 @@ export class RemoteInputClient {
     return this.applyOperationStatus(status);
   }
 
-  private createTransport(url: string): MessageTransport {
+  private async createTransport(url: string): Promise<MessageTransport> {
     return this.options.createTransport?.(url) ?? new SocketIoClientTransport(url);
   }
 
