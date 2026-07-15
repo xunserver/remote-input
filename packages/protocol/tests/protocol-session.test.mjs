@@ -5,7 +5,7 @@ import {
   ProtocolRequestError,
   ProtocolResponseError,
   ProtocolSession,
-} from "../dist/index.js";
+} from "../dist/implementations/index.js";
 
 class MemoryTransport {
   kind = "memory";

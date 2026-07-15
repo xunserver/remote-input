@@ -37,14 +37,19 @@ client.subscribeNotification((notification) => {
 packages/
   protocol/                 统一协议核心，唯一事实源
     src/
-      messages.ts           协议消息、方法和通知类型
-      validation.ts         运行时校验
-      codec.ts              MessageCodec / JsonMessageCodec
-      transport.ts          MessageTransport 接口
-      protocol-session.ts   请求关联、通知、心跳和请求处理器
-      socket-io-client.ts   浏览器 Socket.IO Transport
-      socket-io-server.ts   Server Socket.IO socket 适配器
-      index.ts              公共导出
+      definitions/          只定义各层契约，不包含运行时实现
+        messages.ts         协议消息、方法和通知类型
+        message-codec.ts    MessageCodec 接口
+        message-transport.ts MessageTransport 接口
+        protocol-session.ts ProtocolSession 契约和事件类型
+        index.ts            definitions 公开导出
+      implementations/      只实现 definitions 中的契约
+        validation.ts       运行时校验
+        json-message-codec.ts JSON/UTF-8 Codec
+        protocol-session.ts Session 运行时实现
+        socket-io-*.ts      Socket.IO Client/Server Transport
+        index.ts            implementations 公开导出
+      index.ts              根入口，仅重导出 definitions
 
   sdk/                      面向应用的轻量 SDK
     src/
@@ -60,15 +65,23 @@ apps/
 
 ### 2.1 `@remote-copy/protocol`
 
-协议包负责大部分可复用机制：
+协议包包含两个相互分离的公开部分。
+
+`@remote-copy/protocol` 和 `@remote-copy/protocol/definitions` 只负责定义：
 
 - `ProtocolMessage` 判别联合。
 - Request method、body 和 result 映射。
 - Notification name 和 body 映射。
-- requestId、operationId 和 heartbeatId 的类型与生成规则。
-- 消息运行时校验。
-- `MessageCodec` 和 JSON/UTF-8 实现。
+- requestId、operationId 和 heartbeatId 的类型规则。
+- `MessageCodec` 接口。
 - `MessageTransport` 契约。
+- `ProtocolSessionContract`、选项、事件和 handler 类型。
+
+`@remote-copy/protocol/implementations` 只负责实现：
+
+- ID 生成器。
+- 消息运行时校验。
+- `JsonMessageCodec`。
 - `ProtocolSession`。
 - 请求超时、Response 关联和断线清理。
 - Notification 发送与分发。
@@ -96,7 +109,7 @@ SDK 负责面向应用的少量业务代码：
 - 提供 SDK 状态、operation 和原始 notification 订阅。
 - 将协议错误映射为稳定的 SDK 错误。
 
-SDK 不重新定义协议类型、Codec、Session 或 Socket.IO Transport，而是直接从 `@remote-copy/protocol` 引入。
+SDK 不重新定义协议类型、Codec、Session 或 Socket.IO Transport。类型和契约从 `@remote-copy/protocol` 引入，运行时类从 `@remote-copy/protocol/implementations` 引入。
 
 ### 2.3 `@remote-copy/server`
 
@@ -121,11 +134,11 @@ Application
     ↓ sendInput(text)
 RemoteInputClient                       @remote-copy/sdk
     ↓ request / subscribe notification
-ProtocolSession                         @remote-copy/protocol
+ProtocolSession                         @remote-copy/protocol/implementations
     ↓ ProtocolMessage
-MessageCodec                            @remote-copy/protocol
+MessageCodec contract                   @remote-copy/protocol
     ↓ Uint8Array
-SocketIoClientTransport                 @remote-copy/protocol
+SocketIoClientTransport                 @remote-copy/protocol/implementations
     ↓ Socket.IO "protocol:message"
 Socket.IO
 ```
@@ -135,11 +148,11 @@ Socket.IO
 ```text
 Socket.IO
     ↓ "protocol:message"
-SocketIoServerTransport                 @remote-copy/protocol
+SocketIoServerTransport                 @remote-copy/protocol/implementations
     ↓ Uint8Array
-MessageCodec                            @remote-copy/protocol
+MessageCodec contract                   @remote-copy/protocol
     ↓ ProtocolMessage
-ProtocolSession                         @remote-copy/protocol
+ProtocolSession                         @remote-copy/protocol/implementations
     ↓ typed request handler
 Server Operation Service                @remote-copy/server
     ↓
@@ -559,7 +572,9 @@ accepted -> processing -> succeeded
 
 ## 14. 公共导出
 
-`@remote-copy/protocol` 至少导出：
+协议包的导入示例、契约完成语义和自定义实现要求见 [协议包定义与实现](../packages/protocol/README.md)。
+
+`@remote-copy/protocol` 根入口以及 `/definitions` 只导出定义：
 
 ```text
 协议：
@@ -574,7 +589,17 @@ accepted -> processing -> succeeded
   ProtocolError
   OperationStatus 等领域类型
 
-运行时：
+接口：
+  MessageCodec
+  MessageTransport
+  ProtocolSessionContract
+  ProtocolSessionOptions / ProtocolSessionEvent
+  TransportState / TransportEvent
+```
+
+`@remote-copy/protocol/implementations` 只导出运行时实现：
+
+```text
   parseProtocolMessage
   parseResultBody
   ProtocolValidationError
@@ -583,12 +608,6 @@ accepted -> processing -> succeeded
   ProtocolResponseError
   SocketIoClientTransport
   SocketIoServerTransport
-
-接口：
-  MessageCodec
-  MessageTransport
-  ProtocolSessionOptions / ProtocolSessionEvent
-  TransportState / TransportEvent
 ```
 
 `@remote-copy/sdk` 导出：
@@ -602,7 +621,7 @@ SDK listener 和 error 类型
 常用 operation / peer / notification 类型重导出
 ```
 
-需要直接实现对端或新的 SDK 时，依赖 `@remote-copy/protocol`；普通应用只依赖 `@remote-copy/sdk`。
+需要定义边界时依赖 `@remote-copy/protocol`；需要使用标准运行时实现时显式依赖 `@remote-copy/protocol/implementations`；普通应用只依赖 `@remote-copy/sdk`。
 
 ## 15. 测试边界
 

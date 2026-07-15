@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { JsonMessageCodec, ProtocolValidationError } from "../dist/index.js";
+import { JsonMessageCodec, ProtocolValidationError } from "../dist/implementations/index.js";
 
 const codec = new JsonMessageCodec();
 const encoder = new TextEncoder();

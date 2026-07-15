@@ -2,10 +2,12 @@ import crypto from "node:crypto";
 import type http from "node:http";
 import {
   protocolVersion,
+} from "@remote-copy/protocol";
+import {
   ProtocolRequestError,
   ProtocolSession,
   SocketIoServerTransport,
-} from "@remote-copy/protocol";
+} from "@remote-copy/protocol/implementations";
 import { Server, type Socket } from "socket.io";
 import type { AppConfig } from "../config.js";
 import type { InputQueue } from "../input/inputQueue.js";

@@ -5,7 +5,7 @@ import {
   ProtocolResponseError,
   ProtocolSession,
   SocketIoClientTransport,
-} from "@remote-copy/protocol";
+} from "@remote-copy/protocol/implementations";
 import { RemoteSocketIoServer } from "../dist/socket-io/protocol-server.js";
 
 test("Socket.IO server enforces session open, deduplicates operations, and notifies status", async (context) => {

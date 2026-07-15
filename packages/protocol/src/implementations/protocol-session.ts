@@ -1,5 +1,4 @@
-import { JsonMessageCodec, type MessageCodec } from "./codec.js";
-import { createHeartbeatId, createRequestId, type IdFactory } from "./ids.js";
+import type { MessageCodec } from "../definitions/message-codec.js";
 import {
   maxPendingRequests,
   protocolVersion,
@@ -11,52 +10,41 @@ import {
   type ProtocolRequestMap,
   type ProtocolResultMap,
   type RequestMessage,
-} from "./messages.js";
-import type { MessageTransport, TransportState } from "./transport.js";
+} from "../definitions/messages.js";
+import type { MessageTransport } from "../definitions/message-transport.js";
+import type {
+  ProtocolRequestContext,
+  ProtocolRequestHandler,
+  ProtocolSessionContract,
+  ProtocolSessionEvent,
+  ProtocolSessionListener,
+  ProtocolSessionOptions,
+} from "../definitions/protocol-session.js";
+import type { IdFactory } from "../definitions/id-factory.js";
+import { createHeartbeatId, createRequestId } from "./ids.js";
+import { JsonMessageCodec } from "./json-message-codec.js";
 import { parseResultBody } from "./validation.js";
 
+/** 对端返回的结构化失败 Response。 */
 export class ProtocolResponseError extends Error {
+  /** 对端提供的错误码、消息和可重试语义。 */
   constructor(readonly protocolError: ProtocolError) {
     super(protocolError.message);
     this.name = "ProtocolResponseError";
   }
 }
 
+/** 请求处理器用于主动返回结构化失败 Response 的错误。 */
 export class ProtocolRequestError extends Error {
   readonly protocolError: ProtocolError;
 
+  /** 创建将被发送给请求方的协议错误。 */
   constructor(code: string, message: string, retryable = false) {
     super(message);
     this.name = "ProtocolRequestError";
     this.protocolError = { code, message, retryable };
   }
 }
-
-export type ProtocolSessionEvent =
-  | { type: "transport-state"; state: TransportState }
-  | { type: "notification"; notification: NotificationMessage }
-  | { type: "error"; error: unknown };
-
-export type ProtocolSessionListener = (event: ProtocolSessionEvent) => void;
-
-export type ProtocolRequestContext = {
-  requestId: string;
-};
-
-export type ProtocolRequestHandler<M extends ProtocolMethod> = (
-  body: ProtocolRequestMap[M],
-  context: ProtocolRequestContext,
-) => ProtocolResultMap[M] | Promise<ProtocolResultMap[M]>;
-
-export type ProtocolSessionOptions = {
-  codec?: MessageCodec;
-  createRequestId?: IdFactory;
-  createHeartbeatId?: IdFactory;
-  requestTimeoutMs?: number;
-  maxPendingRequests?: number;
-  heartbeatIntervalMs?: number;
-  heartbeatTimeoutMs?: number;
-};
 
 type PendingRequest = {
   method: ProtocolMethod;
@@ -70,7 +58,13 @@ type AnyRequestHandler = (
   context: ProtocolRequestContext,
 ) => unknown | Promise<unknown>;
 
-export class ProtocolSession {
+/**
+ * 默认 ProtocolSession 实现。
+ *
+ * 负责 Request/Response 关联、超时、处理器、通知分发和心跳；
+ * 不解析具体 Transport，也不承担分片、重组或链路 ACK。
+ */
+export class ProtocolSession implements ProtocolSessionContract {
   private readonly listeners = new Set<ProtocolSessionListener>();
   private readonly handlers = new Map<ProtocolMethod, AnyRequestHandler>();
   private readonly pendingRequests = new Map<string, PendingRequest>();
@@ -87,6 +81,7 @@ export class ProtocolSession {
   private pendingHeartbeatId: string | null = null;
   private generation = 0;
 
+  /** 使用给定消息 Transport 创建 Session，并允许替换 Codec、ID 工厂和资源限制。 */
   constructor(
     readonly transport: MessageTransport,
     options: ProtocolSessionOptions = {},
@@ -100,6 +95,7 @@ export class ProtocolSession {
     this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 10_000;
   }
 
+  /** 订阅并连接 Transport；不会隐式执行 `session.open` 或启动心跳。 */
   async connect(): Promise<void> {
     const generation = ++this.generation;
     this.unsubscribeTransport?.();
@@ -120,6 +116,7 @@ export class ProtocolSession {
     }
   }
 
+  /** 停止心跳、拒绝未完成请求并断开 Transport。 */
   async disconnect(): Promise<void> {
     ++this.generation;
     this.stopHeartbeat();
@@ -130,6 +127,7 @@ export class ProtocolSession {
     unsubscribe?.();
   }
 
+  /** 发送类型安全的 Request，并等待对应的成功 Response。 */
   async request<M extends ProtocolMethod>(
     method: M,
     body: ProtocolRequestMap[M],
@@ -181,6 +179,7 @@ export class ProtocolSession {
     return response;
   }
 
+  /** 发送不需要 Response 的单向 Notification。 */
   notify<N extends ProtocolNotificationName>(
     name: N,
     body: ProtocolNotificationMap[N],
@@ -188,6 +187,7 @@ export class ProtocolSession {
     return this.send({ v: protocolVersion, kind: "notification", name, body } as NotificationMessage<N>);
   }
 
+  /** 注册指定方法的处理器；再次注册会替换之前的处理器。 */
   handleRequest<M extends ProtocolMethod>(method: M, handler: ProtocolRequestHandler<M>): () => void {
     const storedHandler = handler as unknown as AnyRequestHandler;
     this.handlers.set(method, storedHandler);
@@ -198,11 +198,13 @@ export class ProtocolSession {
     };
   }
 
+  /** 订阅 Session 事件。 */
   subscribe(listener: ProtocolSessionListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
+  /** 启动单实例心跳循环；调用前会清理已有循环。 */
   startHeartbeat(): void {
     this.stopHeartbeat();
     if (this.heartbeatIntervalMs <= 0 || this.heartbeatTimeoutMs <= 0) {
@@ -213,6 +215,7 @@ export class ProtocolSession {
     }, this.heartbeatIntervalMs);
   }
 
+  /** 停止心跳循环和等待中的 Pong 超时计时器。 */
   stopHeartbeat(): void {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
@@ -225,7 +228,7 @@ export class ProtocolSession {
     this.pendingHeartbeatId = null;
   }
 
-  private handleTransportEvent(event: import("./transport.js").TransportEvent): void {
+  private handleTransportEvent(event: import("../definitions/message-transport.js").TransportEvent): void {
     if (event.type === "state") {
       if (event.state === "disconnected" || event.state === "error") {
         this.stopHeartbeat();
@@ -257,7 +260,7 @@ export class ProtocolSession {
     }
   }
 
-  private handleResponse(message: import("./messages.js").ResponseMessage): void {
+  private handleResponse(message: import("../definitions/messages.js").ResponseMessage): void {
     const pending = this.pendingRequests.get(message.requestId);
     if (!pending) {
       this.emit({ type: "error", error: new Error(`Received an unknown or late response: ${message.requestId}.`) });
@@ -351,7 +354,7 @@ export class ProtocolSession {
     this.pendingHeartbeatId = null;
   }
 
-  private send(message: import("./messages.js").ProtocolMessage): Promise<void> {
+  private send(message: import("../definitions/messages.js").ProtocolMessage): Promise<void> {
     return this.transport.send(this.codec.encode(message));
   }
 

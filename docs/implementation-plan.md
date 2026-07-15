@@ -50,14 +50,17 @@
 ```text
 packages/protocol/package.json
 packages/protocol/tsconfig.json
-packages/protocol/src/messages.ts
-packages/protocol/src/validation.ts
-packages/protocol/src/codec.ts
-packages/protocol/src/transport.ts
-packages/protocol/src/ids.ts
-packages/protocol/src/protocol-session.ts
-packages/protocol/src/socket-io-client.ts
-packages/protocol/src/socket-io-server.ts
+packages/protocol/src/definitions/messages.ts
+packages/protocol/src/definitions/message-codec.ts
+packages/protocol/src/definitions/message-transport.ts
+packages/protocol/src/definitions/protocol-session.ts
+packages/protocol/src/definitions/index.ts
+packages/protocol/src/implementations/validation.ts
+packages/protocol/src/implementations/json-message-codec.ts
+packages/protocol/src/implementations/protocol-session.ts
+packages/protocol/src/implementations/socket-io-client-transport.ts
+packages/protocol/src/implementations/socket-io-server-transport.ts
+packages/protocol/src/implementations/index.ts
 packages/protocol/src/index.ts
 ```
 
@@ -69,6 +72,7 @@ packages/protocol/src/index.ts
 - `ProtocolSession` 不依赖 DOM、React、Node HTTP 或输入执行。
 - Socket.IO Client Transport 是唯一需要浏览器 Socket.IO runtime 的协议模块。
 - Server Transport 只依赖最小 socket 接口，Server 负责创建真正的 Socket.IO Server。
+- 根入口和 `/definitions` 只导出定义，`/implementations` 只导出实现，禁止交叉混放。
 
 ### 步骤二：实现协议消息和校验
 

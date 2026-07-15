@@ -23,12 +23,13 @@ turbo.json                 Turborepo 任务编排配置
 
 - `apps/client`：只放浏览器 UI、React 状态、页面组件、shadcn 组件。
 - `apps/server`：只放 Node 后端、Socket.IO 对端、HTTP 静态托管、系统剪贴板/粘贴操作。
-- `packages/protocol`：统一定义 Request/Response/Notification/Ping/Pong、运行时校验、Session 和 Socket.IO 双端 Transport。
+- `packages/protocol`：`definitions` 定义各层契约，`implementations` 提供校验、Session、Codec 和 Socket.IO 双端实现。
 - `packages/sdk`：提供轻量 `RemoteInputClient`、状态缓存和通知订阅。
 
 当前只实现 Socket.IO Transport。上层协议使用 requestId 关联一次请求响应，使用 operationId 关联长期操作及状态通知，心跳使用独立 heartbeatId。
 
 - [远程输入模块架构](docs/architecture.md)：目标分层、协议语义和 Socket.IO 双端边界。
+- [协议包定义与实现](packages/protocol/README.md)：definitions 契约、标识符边界、导入入口和自定义实现要求。
 - [协议与 SDK 重构计划](docs/implementation-plan.md)：实施步骤、测试范围和完成标准。
 - [SDK 使用与协议说明](packages/sdk/README.md)：当前公共 API 和协议报文参考。
 

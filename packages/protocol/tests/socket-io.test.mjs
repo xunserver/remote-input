@@ -3,11 +3,13 @@ import http from "node:http";
 import test from "node:test";
 import { Server } from "socket.io";
 import {
+  protocolVersion,
+} from "../dist/definitions/index.js";
+import {
   ProtocolSession,
   SocketIoClientTransport,
   SocketIoServerTransport,
-  protocolVersion,
-} from "../dist/index.js";
+} from "../dist/implementations/index.js";
 
 test("Socket.IO transports carry a real protocol session", async (context) => {
   const httpServer = http.createServer();

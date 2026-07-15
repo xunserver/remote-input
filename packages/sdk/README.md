@@ -1,10 +1,11 @@
 # @remote-copy/sdk
 
-`@remote-copy/sdk` 是 Remote Copy 面向应用的轻量 SDK。它只提供 Socket.IO 连接、远程输入、状态缓存和通知订阅；统一消息、运行时校验、Codec、Session、心跳和 Transport 位于 `@remote-copy/protocol`。
+`@remote-copy/sdk` 是 Remote Copy 面向应用的轻量 SDK。它只提供 Socket.IO 连接、远程输入、状态缓存和通知订阅。协议契约位于 `@remote-copy/protocol`，标准运行时位于 `@remote-copy/protocol/implementations`。
 
 架构和协议设计见：
 
 - [远程输入模块目标架构](../../docs/architecture.md)
+- [协议包定义与实现](../protocol/README.md)
 - [Socket.IO 协议与 SDK 重构实施计划](../../docs/implementation-plan.md)
 
 ## 快速开始
@@ -75,12 +76,13 @@ accepted -> processing -> succeeded
 ```text
 Application
   -> RemoteInputClient              @remote-copy/sdk
-    -> ProtocolSession              @remote-copy/protocol
-      -> JsonMessageCodec           @remote-copy/protocol
-        -> SocketIoClientTransport  @remote-copy/protocol
+    -> ProtocolSession              @remote-copy/protocol/implementations
+      -> MessageCodec contract      @remote-copy/protocol
+      -> JsonMessageCodec           @remote-copy/protocol/implementations
+        -> SocketIoClientTransport  @remote-copy/protocol/implementations
 ```
 
-需要实现 Server 对端、调试 Session 或使用分层接口时，直接依赖 `@remote-copy/protocol`。
+定义自有实现时依赖 `@remote-copy/protocol`；使用标准 Session、Codec 或 Socket.IO Transport 时从 `@remote-copy/protocol/implementations` 引入。
 
 ## 验证
 

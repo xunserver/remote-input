@@ -17,7 +17,7 @@ Browser Client -> RemoteInputClient -> ProtocolSession -> SocketIoClientTranspor
 ```text
 apps/client/       React 网页、UI 状态和用户配置
 apps/server/       HTTP 静态托管、Socket.IO 协议对端和输入处理
-packages/protocol/ 统一协议、校验、Codec、Session 和 Socket.IO Transport
+packages/protocol/ definitions 定义各层，implementations 实现各层
 packages/sdk/      轻量 RemoteInputClient、SDK 状态和订阅
 public/            Client 生产构建输出，不要手动编辑
 ```
@@ -46,6 +46,10 @@ RemoteInputClient
 ## 协议约束
 
 `packages/protocol` 是统一应用协议的唯一事实源。
+
+- 根入口和 `@remote-copy/protocol/definitions` 只能导出类型、常量和分层契约。
+- `@remote-copy/protocol/implementations` 只能导出运行时校验、Codec、Session 和 Transport 实现。
+- SDK/Server 必须从 definitions 使用契约，从 implementations 显式使用标准实现。
 
 协议包含：
 

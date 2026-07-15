@@ -17,8 +17,9 @@ import {
   type ProtocolResultMap,
   type RequestMessage,
   type SessionOpenResult,
-} from "./messages.js";
+} from "../definitions/messages.js";
 
+/** 网络输入不满足当前协议版本或结构约束。 */
 export class ProtocolValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -26,6 +27,7 @@ export class ProtocolValidationError extends Error {
   }
 }
 
+/** 将不可信值解析为经过完整运行时校验的协议消息。 */
 export function parseProtocolMessage(value: unknown): ProtocolMessage {
   const message = requireRecord(value, "Protocol message");
   requireVersion(message.v);
@@ -79,6 +81,7 @@ export function parseProtocolMessage(value: unknown): ProtocolMessage {
   throw new ProtocolValidationError("Unsupported protocol message kind.");
 }
 
+/** 按请求方法校验成功 Response 的 body。 */
 export function parseResultBody<M extends ProtocolMethod>(method: M, value: unknown): ProtocolResultMap[M] {
   if (method === "session.open") {
     return parseSessionOpenResult(value) as ProtocolResultMap[M];

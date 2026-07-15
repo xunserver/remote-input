@@ -1,15 +1,17 @@
 import {
-  createOperationId,
   maxInputBytes,
-  ProtocolResponseError,
-  ProtocolSession,
-  ProtocolValidationError,
-  SocketIoClientTransport,
   type MessageTransport,
   type NotificationMessage,
   type OperationStatus,
   type ProtocolSessionEvent,
 } from "@remote-copy/protocol";
+import {
+  createOperationId,
+  ProtocolResponseError,
+  ProtocolSession,
+  ProtocolValidationError,
+  SocketIoClientTransport,
+} from "@remote-copy/protocol/implementations";
 import { SendInputError } from "./send-input-error.js";
 import type {
   InputSubmission,

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  ProtocolSession,
   protocolVersion,
 } from "@remote-copy/protocol";
+import {
+  ProtocolSession,
+} from "@remote-copy/protocol/implementations";
 import { RemoteInputClient, SendInputError } from "../dist/index.js";
 
 class MemoryTransport {

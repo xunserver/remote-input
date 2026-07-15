@@ -10,6 +10,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./definitions": {
+      "types": "./dist/definitions/index.d.ts",
+      "default": "./dist/definitions/index.js"
+    },
+    "./implementations": {
+      "types": "./dist/implementations/index.d.ts",
+      "default": "./dist/implementations/index.js"
     }
   },
   "scripts": {
