@@ -14,8 +14,8 @@
     "components": "@shadcn",
     "utils": "@shadcn/utils",
     "ui": "@shadcn",
-    "lib": "@shadcn/lib",
-    "hooks": "@shadcn/hooks"
+    "lib": "@shadcn",
+    "hooks": "@/hooks"
   },
   "iconLibrary": "lucide"
 }

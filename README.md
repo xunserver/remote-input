@@ -14,7 +14,7 @@ packages/
   sdk/                     面向应用的轻量 RemoteInputClient
 
 public/                    client 构建输出目录，由 server 运行时托管
-components.json            shadcn 配置，指向 apps/client
+apps/client/components.json shadcn 配置，组件生成到 apps/client/src/shadcn
 pnpm-workspace.yaml        pnpm workspace 配置
 turbo.json                 Turborepo 任务编排配置
 ```
@@ -52,6 +52,14 @@ pnpm dev
 ```
 
 `turbo.json` 中 `build` 使用 `dependsOn: ["^build"]`，所以构建 app 前会先构建其依赖包，例如 `packages/protocol`。
+
+shadcn CLI 应在 Client workspace 中执行，并固定使用 `npx shadcn@latest`：
+
+```bash
+cd apps/client
+npx shadcn@latest info
+npx shadcn@latest add button
+```
 
 ## 常用命令
 
