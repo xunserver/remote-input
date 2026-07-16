@@ -2,6 +2,17 @@
 export * from "./ids.js";
 export * from "./json-message-codec.js";
 export * from "./protocol-session.js";
+export {
+  defaultSocketIoAcknowledgementTimeoutMs,
+  defaultSocketIoChunkPayloadBytes,
+  defaultSocketIoMaxMessageBytes,
+  defaultSocketIoMaxQueuedBytes,
+  defaultSocketIoMaxQueuedMessages,
+  defaultSocketIoMaxRetransmissions,
+  defaultSocketIoReassemblyTimeoutMs,
+  defaultSocketIoSendWindowChunks,
+  type SocketIoTransportOptions,
+} from "./socket-io-fragment-controller.js";
 export * from "./socket-io-client-transport.js";
 export * from "./socket-io-server-transport.js";
 export * from "./validation.js";

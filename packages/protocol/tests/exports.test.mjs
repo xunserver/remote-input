@@ -12,5 +12,6 @@ test("protocol public entries keep definitions and implementations separate", ()
   assert.equal(typeof implementations.ProtocolSession, "function");
   assert.equal(typeof implementations.JsonMessageCodec, "function");
   assert.equal(typeof implementations.SocketIoClientTransport, "function");
+  assert.equal("SocketIoFragmentController" in implementations, false);
   assert.equal("protocolVersion" in implementations, false);
 });

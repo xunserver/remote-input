@@ -1,5 +1,5 @@
-/** Socket.IO 层唯一承载协议字节消息的事件名。 */
-export const protocolSocketEvent = "protocol:message" as const;
+/** Socket.IO 层唯一承载 Transport DATA/ACK 二进制帧的事件名。 */
+export const protocolSocketEvent = "protocol:frame" as const;
 
 /** 将 Socket.IO 支持的二进制形态归一为 Uint8Array 视图。 */
 export function toUint8Array(value: unknown): Uint8Array {
@@ -12,7 +12,7 @@ export function toUint8Array(value: unknown): Uint8Array {
   if (ArrayBuffer.isView(value)) {
     return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
   }
-  throw new Error("Socket.IO protocol message must be binary data.");
+  throw new Error("Socket.IO transport frame must be binary data.");
 }
 
 /** 复制消息，避免发送方或 Socket.IO 缓冲区后续修改共享内存。 */

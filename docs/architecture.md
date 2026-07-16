@@ -19,14 +19,14 @@ client.subscribeNotification((notification) => {
 });
 ```
 
-本版本只实现 Socket.IO Transport，不实现普通 WebSocket、BLE 或通用不可靠传输协议。架构需要保留清晰边界，但不为尚不存在的 Transport 提前设计分片、窗口、ACK 或重传层。
+本版本只实现 Socket.IO Transport，不实现普通 WebSocket、BLE 或通用不可靠传输协议。Socket.IO Transport 仍必须在内部实现统一的二进制分帧、重组、滑动窗口、累计 ACK 和超时重传；这些机制属于 Transport，不得泄漏到 Codec 或 Session。
 
 目标是：
 
 - 协议由独立 workspace 统一定义并供 SDK、Server 和测试复用。
 - SDK 保持轻量，只提供最终业务 API、状态缓存和通知订阅。
 - Server 使用同一套协议 Session，不自行解析或拼装协议报文。
-- Socket.IO 只负责完整字节消息传输，不理解 request、operation 或输入文本。
+- Socket.IO 只承载 `protocol:frame` 二进制帧；Socket.IO Transport 将完整字节消息拆帧发送并在接收端重组，但不理解 request、operation 或输入文本。
 - request、response、notification 和 heartbeat 的职责与标识符严格分开。
 
 ## 2. Workspace 划分
@@ -139,7 +139,8 @@ ProtocolSession                         @remote-copy/protocol/implementations
 MessageCodec contract                   @remote-copy/protocol
     ↓ Uint8Array
 SocketIoClientTransport                 @remote-copy/protocol/implementations
-    ↓ Socket.IO "protocol:message"
+    ↓ 拆分为 DATA frame / 接收累计 ACK
+Socket.IO "protocol:frame"
 Socket.IO
 ```
 
@@ -147,9 +148,10 @@ Socket.IO
 
 ```text
 Socket.IO
-    ↓ "protocol:message"
+    ↓ "protocol:frame"
 SocketIoServerTransport                 @remote-copy/protocol/implementations
-    ↓ Uint8Array
+    ↓ 校验、累计 ACK、按消息边界重组
+    ↓ 完整 Uint8Array
 MessageCodec contract                   @remote-copy/protocol
     ↓ ProtocolMessage
 ProtocolSession                         @remote-copy/protocol/implementations
@@ -174,7 +176,7 @@ type ProtocolMessage =
   | PongMessage;
 ```
 
-这里的消息是应用协议消息，不是 Socket.IO packet，也不是未来链路的 fragment。
+这里的消息是应用协议消息，不是 Socket.IO packet 或 Transport frame。Transport 只拆分 Codec 产出的字节消息，不解析这里的消息结构。
 
 ### 4.1 Request
 
@@ -226,6 +228,10 @@ type ResponseMessage =
       error: ProtocolError;
     };
 ```
+
+Session 必须在发送前登记 pending request，以接受可能早于本地 `send()` Promise 完成的 Response；Response timeout 只在 Transport 确认完整 Request 已交付后开始。这样发送队列和分片重传不会提前耗尽业务响应时间，也不会出现本地已超时但 Request 随后才被送达并执行的情况。
+
+每次 `connect()` 都建立新的 Session generation。重连或断开必须立即清理旧 generation 的 pending request 与心跳；旧连接上已经开始但稍后才完成的异步 Request handler 不得把 Response 发送到新连接。
 
 成功示例：
 
@@ -306,6 +312,8 @@ Ping/Pong 不使用 requestId，也不进入普通 pending request Map。
 - 拒绝全部 pending request。
 - disconnect 时清理 interval 和 timeout。
 
+发送 Ping 前必须先登记本次 `heartbeatId`，以接受可能早于本地 Transport ACK 的 Pong；心跳 timeout 只在 Ping 被 Transport 确认交付后开始。
+
 任何 Session 收到 Ping 都立即回复相同 heartbeatId 的 Pong。Server 第一版作为被动响应端，Client 作为主动检测端，避免双向重复心跳。
 
 Socket.IO 自身的 Engine.IO 心跳负责检测 Socket.IO 连接；协议 Ping/Pong 进一步验证远端 ProtocolSession 仍能处理协议消息。两者语义不同。
@@ -317,7 +325,9 @@ Socket.IO 自身的 Engine.IO 心跳负责检测 Socket.IO 连接；协议 Ping/
 | requestId | ProtocolSession | 关联一次 Request/Response |
 | operationId | Remote Input protocol | 关联长期输入操作、查询和状态通知 |
 | heartbeatId | ProtocolSession | 关联一次 Ping/Pong |
-| Socket.IO packet ID | Socket.IO | Socket.IO 内部事件与 ACK，不进入协议 |
+| Transport `messageId` | Socket.IO Transport | 标识一个待拆分或重组的完整字节消息 |
+| Transport `frameSeq` | Socket.IO Transport | 标识一个方向上的 DATA 帧顺序和累计 ACK 位置 |
+| Socket.IO packet ID | Socket.IO | Socket.IO 内部机制，不进入应用协议或 Transport 帧格式 |
 
 规则：
 
@@ -463,13 +473,81 @@ interface MessageTransport {
 - 报告连接、断开和错误。
 - 不解析 ProtocolMessage。
 
-Socket.IO 事件固定为：
+`send(message)` 接受一个完整的 Codec 字节消息。只有该消息的全部 DATA 帧都被对端 Transport 的累计 ACK 确认后，Promise 才能 resolve；这不表示对端 Session 已解析消息，更不表示 Request 对应的业务已经完成。协议 Response 和 `operation.status` Notification 的语义不能由 Transport ACK 替代。
+
+### 9.1 Socket.IO 帧事件与编码
+
+Socket.IO 双端只使用一个事件：
 
 ```text
-protocol:message(Uint8Array)
+protocol:frame(Uint8Array)
 ```
 
-不为每个 method 建立一个 Socket.IO event，也不使用 Socket.IO ACK 代替协议 Response。这样 request/response/notification/heartbeat 的语义全部由协议包统一管理，Server 与未来其他对端实现可以复用相同 Session。
+事件载荷必须恰好包含一个 DATA 帧或 ACK 帧，不得在一个事件中拼接多个帧，也不为每个 method 建立单独事件。所有多字节整数都使用大端（network byte order）。
+
+DATA 帧固定使用 28-byte header，之后紧跟 payload：
+
+| Offset | 长度 | 字段 | 约束 |
+| ---: | ---: | --- | --- |
+| 0 | 2 | `magic` | `0x5243` |
+| 2 | 1 | `frameVersion` | `1` |
+| 3 | 1 | `kind` | `1`，表示 DATA |
+| 4 | 4 | `frameSeq` | 当前发送方向的 DATA 帧序号，范围 `0..0xfffffffe` |
+| 8 | 4 | `messageId` | 当前连接、当前发送方向内的完整消息标识 |
+| 12 | 4 | `chunkIndex` | 从 `0` 开始 |
+| 16 | 4 | `chunkCount` | 当前消息总分片数，必须大于 `0` |
+| 20 | 4 | `totalMessageBytes` | 重组后完整消息的字节数 |
+| 24 | 4 | `payloadBytes` | payload 实际字节数 |
+| 28 | `payloadBytes` | `payload` | 当前分片内容 |
+
+ACK 帧固定为 8 bytes：
+
+| Offset | 长度 | 字段 | 约束 |
+| ---: | ---: | --- | --- |
+| 0 | 2 | `magic` | `0x5243` |
+| 2 | 1 | `frameVersion` | `1` |
+| 3 | 1 | `kind` | `2`，表示 ACK |
+| 4 | 4 | `nextExpectedFrameSeq` | 累计确认此序号之前的全部 DATA 帧，可取 `0xffffffff` |
+
+Client 到 Server 与 Server 到 Client 分别维护独立的 `frameSeq`、`messageId`、发送窗口和接收重组状态。每个新连接的 `frameSeq`、`nextExpectedFrameSeq` 和 `messageId` 都从 `0` 开始，DATA 帧和完整消息分别连续递增；DATA 保留 `0xffffffff` 作为最终累计 ACK 的 exclusive upper bound，因此最大 DATA `frameSeq` 是 `0xfffffffe`。序号不得在同一连接内回绕，耗尽时必须重新连接。ACK 不使用 `messageId`，也不需要 ACK。
+
+### 9.2 拆分、窗口与累计 ACK
+
+Socket.IO Transport 使用 Go-Back-N：
+
+1. `send()` 将完整消息按默认 16 KiB 最大 payload 拆成 DATA 帧，并为帧分配连续的 `frameSeq`。
+2. 发送窗口默认允许最多 8 个尚未确认的 DATA 帧。窗口可以跨越发送队列中的消息，但 `messageId`、`chunkIndex` 和 `chunkCount` 必须保留每条消息的边界与原始顺序。
+3. 接收端只接收恰好等于本方向 `nextExpectedFrameSeq` 的 DATA 帧；收到重复或越序帧时丢弃 payload，并再次发送当前累计 ACK。
+4. 每接受一个连续 DATA 帧，接收端先提交重组与序号状态，再立即发送携带新 `nextExpectedFrameSeq` 的 ACK；若该帧完成消息，ACK 发送后才向 Session 分发完整消息。ACK 必须绕过 DATA 发送窗口、完整消息队列和上层 Session 回调，避免双向窗口互相阻塞，也避免上层监听器延迟或阻止 ACK。
+5. 发送端收到推进窗口的累计 ACK 后释放已确认帧并继续填充窗口。重复或未推进的 ACK 不回退发送状态。
+6. 最老未确认帧默认等待 ACK 2 秒；超时后从该帧起重传当前所有未确认帧。每批帧最多重传 3 次，耗尽后 Transport 报错并断开。
+7. 一个完整消息的最后一帧得到累计确认后，才 resolve 对应的 `send()`；较后消息的窗口发送不能改变 Promise 按各自确认进度完成的语义。
+
+Transport 接收端按 `messageId` 和 chunk 元数据重组，并且只在完整消息的所有分片连续到达、总字节数校验一致后，向 Session 发布一次完整 `Uint8Array`。Session 与 Codec 永远看不到 DATA 或 ACK 帧。
+重组开始后若连续 10 秒没有接受到新的连续 DATA 帧，Transport 必须按连接级错误清理并断开，不能保留永久占用内存的半包。
+
+### 9.3 资源限制与错误清理
+
+默认限制为：
+
+| 项目 | 默认值 |
+| --- | ---: |
+| DATA payload 最大值 | 16 KiB |
+| DATA 发送窗口 | 8 帧 |
+| ACK timeout | 2 秒 |
+| 最大重传次数 | 3 次 |
+| 重组无进展 timeout | 10 秒 |
+| 单条完整消息 | 256 KiB |
+| 待发送完整消息数 | 128 条 |
+| 待发送完整消息总字节数 | 4 MiB |
+
+完整消息在拆分前先检查 256 KiB 限制。发送队列统计正在发送以及等待 ACK 的全部未完成消息，并同时执行 128 条和 4 MiB 两项上限；超过任一上限时拒绝新的 `send()`，不得静默丢弃旧消息。
+
+实现选项只允许为测试或更严格的宿主约束调低 16 KiB chunk、8 帧窗口、3 次重传、10 秒重组 timeout 和三项资源上限，不得配置成突破本节上限的值。ACK timeout 可以调整，但必须是宿主计时器可准确表示的正整数毫秒值，最大为 `2^31-1`。若两端调低 chunk 大小，必须使用相同值；当前 Transport frame version 不包含 chunk 大小协商。
+
+入站 Socket.IO packet 必须先按当前 chunk 上限检查编码后总长度（ACK 固定 8 bytes，DATA 不得超过 28-byte header 加一个 chunk），再解析 header 或复制 payload，避免非法大帧在拒绝前造成额外内存放大。收到 magic、版本、kind、header 长度、payload 长度、分片索引或消息总长度非法，连续帧的消息元数据互相矛盾，或者 ACK 超过已发送序号范围时，Transport 必须报告错误并断开。单纯重复或越序的合法 DATA 帧仍按 Go-Back-N 规则丢弃并回复当前累计 ACK。断线、非法帧或重传耗尽都必须清空发送窗口、完整消息队列、重组缓存和计时器，并 reject 所有尚未完成的 `send()`。旧连接迟到的帧不得进入新连接状态。
+
+这些 Transport ACK 只证明对端 Transport 已接收对应字节帧，不使用 Socket.IO event ACK，也绝不能替代协议 Response。request/response/notification/heartbeat 的语义仍全部由协议包统一管理，Server 与未来其他对端实现可以复用相同 Session。
 
 Client Transport 负责创建 `socket.io-client` socket；Server Transport 包装 Socket.IO Server 提供的单个 socket。Server Transport 创建时已经 connected，`connect()` 只完成适配器启动。
 
@@ -561,6 +639,8 @@ accepted -> processing -> succeeded
 
 - 最大输入 UTF-8 字节数。
 - 最大协议消息字节数。
+- Transport 单帧 payload、发送窗口、完整消息队列条数和总字节数上限。
+- Transport ACK 超时、重传上限和接收重组缓存清理。
 - 最大 pending request 数。
 - 每个 Session 的请求超时。
 - operation Map 和执行队列上限。
@@ -634,7 +714,11 @@ SDK listener 和 error 类型
 - incoming request handler 的成功、协议错误和未知 method。
 - notification 发送与分发。
 - Ping/Pong、心跳超时和计时器清理。
-- Socket.IO Client/Server Transport 消息边界和状态。
+- Socket.IO Client/Server Transport 的 DATA/ACK 编解码、16 KiB 拆分和完整消息重组。
+- Go-Back-N 累计 ACK、8 帧窗口、跨消息发送、2 秒超时和最多 3 次重传。
+- ACK 绕过 DATA 窗口、`send()` 确认时机、双向独立状态和消息顺序。
+- 256 KiB 单消息与 128 条/4 MiB 队列限制。
+- 非法帧、断线、重传耗尽和旧连接迟到事件的清理。
 
 ### SDK
 
@@ -664,8 +748,10 @@ SDK listener 和 error 类型
 | Notification 没有 requestId | 它不要求 Response，长期状态用 operationId 关联 |
 | 心跳使用 heartbeatId | 不占用普通 RPC pending request，也不混淆 requestId |
 | Codec 统一产出 `Uint8Array` | Socket.IO 不直接接触应用对象，未来编码可替换 |
-| Socket.IO 只传 `protocol:message` | 不把方法语义分散到 Socket.IO event 名称和 ACK 中 |
+| Socket.IO 只传 `protocol:frame` | 用单一二进制帧事件承载 DATA 和累计 ACK，不把方法语义分散到 event 名称中 |
+| Socket.IO Transport 使用 Go-Back-N | 所有完整消息统一经过拆帧、窗口、累计 ACK、重传和重组 |
+| Transport ACK 不替代 Response | 字节交付与协议请求处理是不同的完成语义 |
 | Client 主动心跳、Server 被动 Pong | 避免双向重复定时器，仍验证远端 Session 活性 |
 | 第一版关闭自动重连 | 一次连接绑定一次 Session，失败和清理语义明确 |
 | operationId 由发送端创建 | 支持结果不确定时以相同 ID 安全重试 |
-| 暂不建立 ReliableMessageChannel | Socket.IO 已提供完整可靠消息，当前没有不可靠 Transport |
+| 可靠传输留在 MessageTransport 内 | Session/Codec 只处理完整消息，不新增同时承担协议与传输职责的 Channel 抽象 |

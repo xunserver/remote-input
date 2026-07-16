@@ -50,7 +50,7 @@ type PendingRequest = {
   method: ProtocolMethod;
   resolve: (value: unknown) => void;
   reject: (error: unknown) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | null;
 };
 
 type AnyRequestHandler = (
@@ -79,6 +79,7 @@ export class ProtocolSession implements ProtocolSessionContract {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimeout: ReturnType<typeof setTimeout> | null = null;
   private pendingHeartbeatId: string | null = null;
+  private pendingHeartbeatAttempt: symbol | null = null;
   private generation = 0;
 
   /** 使用给定消息 Transport 创建 Session，并允许替换 Codec、ID 工厂和资源限制。 */
@@ -98,15 +99,23 @@ export class ProtocolSession implements ProtocolSessionContract {
   /** 订阅并连接 Transport；不会隐式执行 `session.open` 或启动心跳。 */
   async connect(): Promise<void> {
     const generation = ++this.generation;
+    this.stopHeartbeat();
+    this.rejectPending(new Error("Protocol session connection was replaced."));
     this.unsubscribeTransport?.();
     this.unsubscribeTransport = this.transport.subscribe((event) => {
       if (this.generation === generation) {
-        this.handleTransportEvent(event);
+        this.handleTransportEvent(event, generation);
       }
     });
 
     try {
       await this.transport.connect();
+      if (this.generation !== generation) {
+        throw new Error("Protocol session connection was cancelled or replaced.");
+      }
+      if (this.transport.state !== "connected") {
+        throw new Error("Protocol transport did not enter connected state.");
+      }
     } catch (error) {
       if (this.generation === generation) {
         this.unsubscribeTransport?.();
@@ -123,8 +132,11 @@ export class ProtocolSession implements ProtocolSessionContract {
     this.rejectPending(new Error("Protocol session disconnected."));
     const unsubscribe = this.unsubscribeTransport;
     this.unsubscribeTransport = null;
-    await this.transport.disconnect();
-    unsubscribe?.();
+    try {
+      await this.transport.disconnect();
+    } finally {
+      unsubscribe?.();
+    }
   }
 
   /** 发送类型安全的 Request，并等待对应的成功 Response。 */
@@ -152,28 +164,39 @@ export class ProtocolSession implements ProtocolSessionContract {
       body,
     } as RequestMessage<M>;
 
+    let pendingRequest!: PendingRequest;
     const response = new Promise<ProtocolResultMap[M]>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingRequests.delete(requestId);
-        reject(new Error(`Protocol request timed out: ${method}.`));
-      }, this.requestTimeoutMs);
-      this.pendingRequests.set(requestId, {
+      pendingRequest = {
         method,
         resolve: (value) => resolve(value as ProtocolResultMap[M]),
         reject,
-        timer,
-      });
+        timer: null,
+      };
+      this.pendingRequests.set(requestId, pendingRequest);
     });
 
     try {
-      await this.send(message);
+      const sending = this.send(message);
+      void sending.then(
+        () => {
+          if (this.pendingRequests.get(requestId) !== pendingRequest) {
+            return;
+          }
+          pendingRequest.timer = setTimeout(() => {
+            if (this.pendingRequests.get(requestId) !== pendingRequest) {
+              return;
+            }
+            pendingRequest.timer = null;
+            this.pendingRequests.delete(requestId);
+            pendingRequest.reject(new Error(`Protocol request timed out: ${method}.`));
+          }, this.requestTimeoutMs);
+        },
+        (error) => {
+          this.rejectPendingRequest(requestId, pendingRequest, error);
+        },
+      );
     } catch (error) {
-      const pending = this.pendingRequests.get(requestId);
-      if (pending) {
-        clearTimeout(pending.timer);
-        this.pendingRequests.delete(requestId);
-        pending.reject(error);
-      }
+      this.rejectPendingRequest(requestId, pendingRequest, error);
     }
 
     return response;
@@ -226,9 +249,13 @@ export class ProtocolSession implements ProtocolSessionContract {
       this.heartbeatTimeout = null;
     }
     this.pendingHeartbeatId = null;
+    this.pendingHeartbeatAttempt = null;
   }
 
-  private handleTransportEvent(event: import("../definitions/message-transport.js").TransportEvent): void {
+  private handleTransportEvent(
+    event: import("../definitions/message-transport.js").TransportEvent,
+    generation: number,
+  ): void {
     if (event.type === "state") {
       if (event.state === "disconnected" || event.state === "error") {
         this.stopHeartbeat();
@@ -249,9 +276,13 @@ export class ProtocolSession implements ProtocolSessionContract {
       } else if (message.kind === "notification") {
         this.emit({ type: "notification", notification: message });
       } else if (message.kind === "request") {
-        void this.handleIncomingRequest(message);
+        void this.handleIncomingRequest(message, generation).catch((error) => {
+          this.reportAsyncSendError(error, generation);
+        });
       } else if (message.kind === "ping") {
-        void this.send({ v: protocolVersion, kind: "pong", heartbeatId: message.heartbeatId });
+        void this.send({ v: protocolVersion, kind: "pong", heartbeatId: message.heartbeatId }).catch((error) => {
+          this.reportAsyncSendError(error, generation);
+        });
       } else {
         this.handlePong(message.heartbeatId);
       }
@@ -266,7 +297,10 @@ export class ProtocolSession implements ProtocolSessionContract {
       this.emit({ type: "error", error: new Error(`Received an unknown or late response: ${message.requestId}.`) });
       return;
     }
-    clearTimeout(pending.timer);
+    if (pending.timer !== null) {
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
     this.pendingRequests.delete(message.requestId);
     if (!message.ok) {
       pending.reject(new ProtocolResponseError(message.error));
@@ -279,9 +313,10 @@ export class ProtocolSession implements ProtocolSessionContract {
     }
   }
 
-  private async handleIncomingRequest(message: RequestMessage): Promise<void> {
+  private async handleIncomingRequest(message: RequestMessage, generation: number): Promise<void> {
     const handler = this.handlers.get(message.method);
     if (!handler) {
+      if (this.generation !== generation) return;
       await this.sendError(message.requestId, {
         code: "method.unsupported",
         message: `No handler is registered for ${message.method}.`,
@@ -290,15 +325,9 @@ export class ProtocolSession implements ProtocolSessionContract {
       return;
     }
 
+    let body: unknown;
     try {
-      const body = parseResultBody(message.method, await handler(message.body, { requestId: message.requestId }));
-      await this.send({
-        v: protocolVersion,
-        kind: "response",
-        requestId: message.requestId,
-        ok: true,
-        body,
-      });
+      body = parseResultBody(message.method, await handler(message.body, { requestId: message.requestId }));
     } catch (error) {
       const protocolError = error instanceof ProtocolRequestError
         ? error.protocolError
@@ -307,8 +336,19 @@ export class ProtocolSession implements ProtocolSessionContract {
             message: error instanceof Error ? error.message : "Protocol request failed.",
             retryable: false,
           };
+      if (this.generation !== generation) return;
       await this.sendError(message.requestId, protocolError);
+      return;
     }
+
+    if (this.generation !== generation) return;
+    await this.send({
+      v: protocolVersion,
+      kind: "response",
+      requestId: message.requestId,
+      ok: true,
+      body,
+    });
   }
 
   private sendError(requestId: string, error: ProtocolError): Promise<void> {
@@ -324,20 +364,36 @@ export class ProtocolSession implements ProtocolSessionContract {
       this.emit({ type: "error", error: new Error("Heartbeat ID must not be empty.") });
       return;
     }
+    const attempt = Symbol(heartbeatId);
+    this.pendingHeartbeatId = heartbeatId;
+    this.pendingHeartbeatAttempt = attempt;
     try {
       await this.send({ v: protocolVersion, kind: "ping", heartbeatId });
-      this.pendingHeartbeatId = heartbeatId;
+      if (this.pendingHeartbeatAttempt !== attempt) {
+        return;
+      }
       this.heartbeatTimeout = setTimeout(() => {
-        if (this.pendingHeartbeatId !== heartbeatId) {
+        if (this.pendingHeartbeatAttempt !== attempt) {
           return;
         }
+        const generation = this.generation;
         const error = new Error(`Protocol heartbeat timed out: ${heartbeatId}.`);
-        this.emit({ type: "error", error });
         this.rejectPending(error);
         this.stopHeartbeat();
-        void this.transport.disconnect();
+        this.emit({ type: "error", error });
+        if (this.generation !== generation) return;
+        void this.transport.disconnect().catch((disconnectError) => {
+          this.reportAsyncSendError(disconnectError, generation);
+        });
       }, this.heartbeatTimeoutMs);
     } catch (error) {
+      if (this.pendingHeartbeatAttempt !== attempt) return;
+      if (this.heartbeatTimeout !== null) {
+        clearTimeout(this.heartbeatTimeout);
+        this.heartbeatTimeout = null;
+      }
+      this.pendingHeartbeatId = null;
+      this.pendingHeartbeatAttempt = null;
       this.emit({ type: "error", error });
     }
   }
@@ -352,6 +408,7 @@ export class ProtocolSession implements ProtocolSessionContract {
       this.heartbeatTimeout = null;
     }
     this.pendingHeartbeatId = null;
+    this.pendingHeartbeatAttempt = null;
   }
 
   private send(message: import("../definitions/messages.js").ProtocolMessage): Promise<void> {
@@ -360,15 +417,52 @@ export class ProtocolSession implements ProtocolSessionContract {
 
   private rejectPending(error: Error): void {
     for (const pending of this.pendingRequests.values()) {
-      clearTimeout(pending.timer);
+      if (pending.timer !== null) {
+        clearTimeout(pending.timer);
+        pending.timer = null;
+      }
       pending.reject(error);
     }
     this.pendingRequests.clear();
   }
 
+  private rejectPendingRequest(requestId: string, pending: PendingRequest, error: unknown): void {
+    if (this.pendingRequests.get(requestId) !== pending) {
+      return;
+    }
+    if (pending.timer !== null) {
+      clearTimeout(pending.timer);
+      pending.timer = null;
+    }
+    this.pendingRequests.delete(requestId);
+    pending.reject(error);
+  }
+
+  private reportAsyncSendError(error: unknown, generation: number): void {
+    if (this.generation === generation && this.transport.state === "connected") {
+      this.emit({ type: "error", error });
+    }
+  }
+
   private emit(event: ProtocolSessionEvent): void {
+    const listenerErrors: unknown[] = [];
     for (const listener of this.listeners) {
-      listener(event);
+      try {
+        listener(event);
+      } catch (error) {
+        listenerErrors.push(error);
+      }
+    }
+    if (event.type === "error") return;
+    for (const error of listenerErrors) {
+      const errorEvent: ProtocolSessionEvent = { type: "error", error };
+      for (const listener of this.listeners) {
+        try {
+          listener(errorEvent);
+        } catch {
+          // A listener must not interrupt Session lifecycle or other listeners.
+        }
+      }
     }
   }
 }

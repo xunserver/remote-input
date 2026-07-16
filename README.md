@@ -26,7 +26,9 @@ turbo.json                 Turborepo 任务编排配置
 - `packages/protocol`：`definitions` 定义各层契约，`implementations` 提供校验、Session、Codec 和 Socket.IO 双端实现。
 - `packages/sdk`：提供轻量 `RemoteInputClient`、状态缓存和通知订阅。
 
-当前只实现 Socket.IO Transport。上层协议使用 requestId 关联一次请求响应，使用 operationId 关联长期操作及状态通知，心跳使用独立 heartbeatId。
+当前只实现 Socket.IO Transport。它通过单一 `protocol:frame` 事件在内部完成二进制拆帧/重组、Go-Back-N 窗口、累计 ACK 和超时重传，再向 Session 交付完整消息；Codec 和 Session 不接触 Transport 帧。上层协议使用 requestId 关联一次请求响应，使用 operationId 关联长期操作及状态通知，心跳使用独立 heartbeatId。Transport ACK 只确认字节交付，不能替代协议 Response。
+
+Socket.IO Transport 默认使用 16 KiB DATA payload、8 帧窗口、2 秒 ACK timeout、最多 3 次重传和 10 秒重组无进展超时；单条完整消息上限为 256 KiB，发送队列同时受 128 条和 4 MiB 限制。完整 wire 格式与清理语义见 [远程输入模块架构](docs/architecture.md#9-messagetransport-与-socketio)。
 
 - [远程输入模块架构](docs/architecture.md)：目标分层、协议语义和 Socket.IO 双端边界。
 - [协议包定义与实现](packages/protocol/README.md)：definitions 契约、标识符边界、导入入口和自定义实现要求。

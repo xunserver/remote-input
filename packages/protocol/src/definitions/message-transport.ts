@@ -30,7 +30,8 @@ export interface MessageTransport {
   /**
    * 发送一个完整字节消息。
    *
-   * Promise 完成只代表 Transport 完成本层发送，不代表远端已处理业务消息。
+   * Promise 完成表示对端 Transport 已确认收到完整消息；不代表远端 Session
+   * 已解析消息，也不代表远端已处理或完成对应业务。
    */
   send(message: Uint8Array): Promise<void>;
 

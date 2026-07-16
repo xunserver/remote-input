@@ -38,6 +38,13 @@ RemoteInputClient
 - `MessageCodec` 负责协议报文与 `Uint8Array` 的转换。
 - `MessageTransport` 只负责可靠、有序、保留消息边界的双工传输。
 - Socket.IO Client/Server Transport 不得解析业务 JSON。
+- Socket.IO Client/Server Transport 必须通过单一 `protocol:frame` 事件在内部完成二进制拆帧、重组、Go-Back-N 窗口、累计 ACK 和超时重传；Session/Codec 只看到完整消息。
+- DATA 帧使用 28-byte header：大端 `u16 magic=0x5243`、`u8 frameVersion=1`、`u8 kind=1`、`u32 frameSeq`、`u32 messageId`、`u32 chunkIndex`、`u32 chunkCount`、`u32 totalMessageBytes`、`u32 payloadBytes`，之后紧跟 payload。
+- ACK 帧固定 8 bytes：大端 `u16 magic=0x5243`、`u8 frameVersion=1`、`u8 kind=2`、`u32 nextExpectedFrameSeq`。ACK 是累计确认，必须绕过 DATA 窗口且不再被 ACK。
+- 每个新连接双向独立维护序号，`frameSeq`、`nextExpectedFrameSeq` 和 `messageId` 均从 `0` 开始连续递增且不得回绕；DATA `frameSeq` 最大为 `0xfffffffe`，`0xffffffff` 只用于最终累计 ACK。
+- Transport 默认使用 16 KiB chunk、8 帧窗口、2 秒 ACK timeout、最多 3 次重传和 10 秒重组无进展超时；单条完整消息上限 256 KiB，发送队列上限 128 条且总计不超过 4 MiB。
+- 发送窗口允许跨消息但必须保持消息边界和顺序；`send()` 仅在完整消息所有 DATA 帧被 Transport ACK 后完成。
+- Transport ACK 不能替代协议 Response。断线、非法帧和重传耗尽必须清空发送队列、窗口、重组缓存与计时器，并拒绝未完成发送。
 - 未来 BluetoothTransport 必须在内部处理 GATT、MTU、分片、重组、ACK 和重试。
 - Client UI 不得直接解析协议报文。
 
@@ -124,7 +131,7 @@ pnpm dev:client
 
 - 修改协议：测试请求、成功/失败响应、通知、Ping/Pong 和非法报文。
 - 修改 ProtocolSession：测试关联 ID、超时、断线清理、通知和心跳。
-- 修改 Transport：测试字节消息边界、连接状态和错误。
+- 修改 Transport：测试 DATA/ACK wire 格式、字节消息拆分/重组、边界与顺序、跨消息窗口、累计 ACK、ACK 绕过窗口、超时重传、`send()` 完成时机、资源上限、连接状态和非法帧/断线清理。
 - 修改 operation：测试 revision 去重、本地读取、订阅和主动刷新。
 - 跨 workspace 改动：运行三个 test 命令、`pnpm check` 和 `pnpm build`。
 

@@ -39,13 +39,13 @@ export type ProtocolSessionOptions = {
   createRequestId?: IdFactory;
   /** Ping/Pong 关联 ID 工厂。 */
   createHeartbeatId?: IdFactory;
-  /** 单次请求等待 Response 的最长时间。 */
+  /** Request 被 Transport 确认交付后等待 Response 的最长时间。 */
   requestTimeoutMs?: number;
   /** 同时等待 Response 的请求数量上限。 */
   maxPendingRequests?: number;
   /** 自动发送 Ping 的间隔；只有调用 `startHeartbeat` 后才生效。 */
   heartbeatIntervalMs?: number;
-  /** Ping 发出后等待对应 Pong 的最长时间。 */
+  /** Ping 被 Transport 确认交付后等待对应 Pong 的最长时间。 */
   heartbeatTimeoutMs?: number;
 };
 
