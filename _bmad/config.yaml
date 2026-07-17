@@ -1,0 +1,10 @@
+document_output_language: 中文
+output_folder: '{project-root}/_bmad-output'
+bmad-loop:
+  name: BMAD Loop Skills
+  description: 'Automation-mode skills driven by the bmad-loop orchestrator: interactive
+    escalation resolution (bmad-loop-resolve) and deferred-work sweep triage (bmad-loop-sweep)
+    — the inner dev primitive (which self-reviews and commits) is the upstream bmad-dev-auto
+    skill'
+  version: 0.8.1
+  default_selected: false

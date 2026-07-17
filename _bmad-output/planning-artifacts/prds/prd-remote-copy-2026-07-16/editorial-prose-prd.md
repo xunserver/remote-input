@@ -1,0 +1,24 @@
+| Original Text | Revised Text | Changes |
+|---------------|--------------|---------|
+| 通知订阅只交付经过 Session/Codec 校验的 Notification 或其应用投影。 | 通知订阅只交付经过 Session/Codec 校验的 Notification 或该 Notification 的应用投影。 | FR-2：明确“其”指代 Notification，避免被理解为 Session 或 Codec 的投影。 |
+| Client 必须能够读取并订阅 Managed Transport 生命周期，用于连接编排、应用就绪和 UI 状态；协议数据仍只能经过 Session。 | Client 必须能够读取 Managed Transport 的生命周期状态并订阅其变化，用于连接编排、应用就绪和 UI 状态；协议数据仍只能经过 Session。 | FR-4：区分“读取状态”与“订阅变化”两个动作，消除“读取生命周期”的语义含混。 |
+| Client 只能在 Transport 可交换完整消息且当前连接所需的 `session.open` 成功后进入应用 ready。 | Client 只能在 Transport 能交换完整消息，且当前 Connection Generation 的 `session.open` 成功后进入应用 ready 状态。 | FR-5：明确 `session.open` 归属于 Connection Generation，并明确 ready 是状态。文中用作该已定义术语的 `generation`、`connection generation` 和 `connected generation` 应统一为 `Connection Generation`，`connected` 仅用于描述其状态。 |
+| Client connect 默认总期限为 30 秒；Transport 初次建链默认期限为 10 秒，任一期限都不得让 `connect()` 永久 pending。 | Client `connect()` 的默认总期限为 30 秒；Transport 初次建链的默认期限为 10 秒。超过任一期限时，都必须终结本次 `connect()`，不得使其永久 pending。 | FR-5：明确两个期限的对象，并把“不得永久 pending”改为可直接理解的终结义务。 |
+| 关闭、连接和重连并发时，迟到结果不得覆盖当前 Client 状态。 | 关闭、连接和重连并发时，旧关闭、连接或重连操作的迟到结果不得覆盖当前 Client 状态。 | FR-6：补足“迟到结果”的来源，避免泛指所有异步结果。 |
+| 较早 Request 尚未收到 Response或其 Transport `send` 尚未完成时，Session 必须立即尝试把后续 Request 提交给 Transport。 | 较早 Request 尚未收到 Response，或其 Transport `send` 尚未完成时，Session 必须立即尝试把后续 Request 提交给 Transport。 | FR-9：修正中英文粘连并补充分句标点。 |
+| Response deadline 从对应 Transport `send` 成功、即完整消息被对端 Transport 确认后开始；排队、连接恢复和链路重传时间由 Transport 自己限制。 | Response deadline 以对应 Transport `send` 成功的时刻为起点计算，即从对端 Transport 确认收到完整消息后计算；排队、连接恢复和链路重传时间由 Transport 自己限制。 | FR-10：deadline 是时间点，不能“开始”；改为“以某时刻为起点计算”以明确计时语义。 |
+| 对应 Transport `send` 失败时，Session 必须将失败关联回仍处于 pending 的 Request，并向 Client 保留 Transport cause。 | 对应 Transport `send` 失败时，Session 必须将失败关联到仍处于 pending 的 Request，并在向 Client 暴露的失败中保留 Transport 的原始 cause。 | FR-11：明确 cause 保存在什么对象中，并修正“关联回”的不自然搭配。 |
+| Pong timeout 只在对应 Ping 的 Transport `send` 成功且 heartbeat run 仍有效后启动。`stopHeartbeat()` 必须使该 run 的所有 send callback、timer 和迟到 Pong 失效；旧 run 不得停止新 run、清除新 generation ready 或再次触发恢复。 | Pong timeout 只在对应 Ping 的 Transport `send` 成功且当前 heartbeat 运行周期仍有效后启动。`stopHeartbeat()` 必须使该 heartbeat 运行周期的所有 send callback、timer 和迟到 Pong 失效；旧 heartbeat 运行周期不得停止新的运行周期、清除新 Connection Generation 的 ready 状态或再次触发恢复。 | FR-12：`run` 未定义且会被误解为函数执行；统一使用“heartbeat 运行周期”。验证门槛中的 `Ping/Pong run epoch` 也应改为 `heartbeat 运行周期隔离`。 |
+| 收到仍在处理或仍处于有界去重保留期的重复 `requestId` Request | 收到与正在处理或仍处于有界去重保留期的 Request 使用相同 `requestId` 的新 Request | FR-12 行为表：明确“重复”比较的两个 Request，避免误读为同一个 Request 同时处于两个状态。 |
+| Transport disconnect 不会触发 Session 立即批量清空已交付的 Pending Request；这些 Request 等待各自 Response timeout。 | Transport disconnect 不会触发 Session 立即批量清空已完成 Transport Delivery 的 Pending Request；这些 Request 等待各自的 Response timeout。 | FR-14：明确“已交付”指 Transport Delivery 已完成，而非 Request 已收到 Response。 |
+| 同一时刻只有一个有效的 connect/reconnect attempt。 | 同一时刻只能有一个有效的连接或重连尝试。 | FR-19：移除未定义且混合分隔的 `connect/reconnect attempt`，明确这是互斥的两类连接尝试。 |
+| 状态检查通过不保证随后 `send` 成功，`send` Promise 始终是权威结果。 | 状态检查显示 Transport 已 connected，也不保证随后 `send` 成功；`send` Promise 始终是权威结果。 | FR-20：“状态检查通过”没有说明通过什么条件；补足被检查的状态。 |
+| Transport 必须区分只影响当前调用的资源拒绝与使当前连接可靠性失效的失败。 | Transport 必须区分只影响当前调用的资源拒绝，以及导致当前连接无法继续保证可靠交付的失败。 | FR-22：将抽象的“可靠性失效”展开为对当前连接能力的明确影响。 |
+| 可恢复的数据或确认丢失、重复和乱序不会造成部分或重复完整消息交付。 | 在可恢复范围内，数据或确认的丢失、重复和乱序不会造成部分或重复的完整消息交付。 | FR-25：明确“可恢复”修饰整组异常情况，而非仅修饰“数据”。 |
+| 配置不兼容时确定失败，不静默解释为另一种格式。 | 配置不兼容时必须确定性失败，不得静默解释为另一种格式。 | FR-26：修正“确定失败”的不自然搭配，不改变失败语义。 |
+| Browser 依赖闭包为 SDK、共享 definitions/Session 的必要依赖和一个显式选择的 Client Transport，不由 SDK 隐式选择具体 Transport。 | Browser 的依赖闭包包括 SDK、共享 definitions 和 Session 的必要依赖，以及一个显式选择的 Client Transport；SDK 不得隐式选择具体 Transport。 | FR-29：消除 `definitions/Session` 斜杠关系和“不由”的主语歧义。 |
+| Client 在发送 `input.submit` 前生成 `operationId`；`inputText` 允许调用者显式复用该 ID，并在 ID 生成后的 Transport/Response 失败对象中携带它，使 `delivery-unknown` 后可以先调用 `operation.get` 再决定是否用相同 ID 重试。 | Client 在发送 `input.submit` 前生成 `operationId`；`inputText` 允许调用者显式复用该 ID。ID 生成后发生 Transport 失败或 Response 失败时，对应失败对象必须携带该 ID，使调用者在收到 `delivery-unknown` 后可以先调用 `operation.get`，再决定是否使用相同 ID 重试。 | FR-31：明确“ID 生成后”修饰失败发生时间，并拆开 `Transport/Response` 斜杠关系。 |
+| Session 只编译依赖 Session Transport Port 的替身。 | 仅实现 Session Transport Port 的 Session 测试替身也必须能够编译通过。 | FR-32：明确“替身”是 Session 测试替身，并将“只编译依赖”的含混结构改成可验证结果。 |
+| Transport reject 后不再产生该消息的新本地传输是不可放宽的保证；对端是否已经收到由 `not-delivered \| delivery-unknown` 明确表达。 | Transport reject 后不再产生该消息的新本地传输，是不可放宽的保证；对端接收结果的可判定程度由 `not-delivered \| delivery-unknown` 明确表达。 | §5.1：这两个结果表达的是本地能否判定对端已收到，而不是直接表达对端是否收到。 |
+| 不实现跨已经失败的 `send` 自动重放，也不承诺 exactly-once 业务执行。 | 不对已经失败的 `send` 执行跨连接自动重放，也不承诺 exactly-once 业务执行。 | §6：明确“跨”修饰连接边界，修正原句的语序歧义。 |
+| 最终 ACK 丢失时，对端可能已收到完整消息；必须返回 `delivery-unknown`，SDK 不得自动重试为新的 Operation。 | 最终 ACK 丢失时，对端可能已收到完整消息；必须返回 `delivery-unknown`，SDK 不得通过创建新的 Operation 自动重试。 | §9：明确“重试为新的 Operation”指创建新 Operation 进行重试。 |
