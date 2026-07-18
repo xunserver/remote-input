@@ -1,5 +1,4 @@
-import type { OperationState } from "@remote-copy/sdk";
-import type { HistoryItem } from "@/types/remote-input";
+import type { HistoryItem, OperationState } from "@/types/remote-input";
 
 export const maxHistoryItems = 20;
 
@@ -23,7 +22,14 @@ export function loadHistory(): HistoryItem[] {
 }
 
 export function saveHistory(history: HistoryItem[]): void {
-  localStorage.setItem(historyStorageKey, JSON.stringify(history.slice(0, maxHistoryItems)));
+  try {
+    localStorage.setItem(
+      historyStorageKey,
+      JSON.stringify(history.slice(0, maxHistoryItems)),
+    );
+  } catch {
+    // History persistence is optional and must not affect protocol state.
+  }
 }
 
 function parseHistoryItem(value: unknown): HistoryItem | null {
@@ -62,19 +68,13 @@ function normalizeOperationState(
   status: unknown,
   stage: unknown,
 ): { state: OperationState; stage: string } | null {
-  if (status === "accepted" || status === "processing" || status === "succeeded" || status === "failed") {
+  if (status === "processing" || status === "succeeded" || status === "failed") {
     return {
       state: status,
       stage: typeof stage === "string" ? stage : status,
     };
   }
 
-  if (status === "submitting") {
-    return { state: "accepted", stage: "submitting" };
-  }
-  if (status === "queued") {
-    return { state: "accepted", stage: "queued" };
-  }
   if (status === "copying" || status === "pasting") {
     return { state: "processing", stage: status };
   }

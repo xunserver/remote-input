@@ -7,18 +7,18 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "pnpm run build && node --test tests/*.test.mjs",
+    "test": "pnpm run build && node --test --test-timeout=10000 tests/*.test.mjs",
     "start": "node dist/main.js",
     "dev": "pnpm run build && node dist/main.js"
   },
   "dependencies": {
     "@remote-copy/protocol": "workspace:*",
     "clipboardy": "^5.3.1",
-    "socket.io": "^4.8.1"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
-    "socket.io-client": "^4.8.1",
     "@types/node": "^26.1.1",
+    "@types/ws": "^8.18.1",
     "typescript": "^7.0.2"
   }
 }

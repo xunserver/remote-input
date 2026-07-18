@@ -3,11 +3,11 @@ import { getConfig } from "./config.js";
 import { createStaticHandler } from "./http/staticServer.js";
 import { InputQueue } from "./input/inputQueue.js";
 import { getLanAddresses } from "./network.js";
-import { RemoteSocketIoServer } from "./socket-io/protocol-server.js";
+import { RemoteWebSocketServer } from "./websocket/protocol-server.js";
 
 const config = getConfig();
 const inputQueue = new InputQueue();
-let protocolServer: RemoteSocketIoServer;
+let protocolServer: RemoteWebSocketServer;
 
 const staticHandler = createStaticHandler(config, () => protocolServer.getClientCount());
 const server = http.createServer((req, res) => {
@@ -18,7 +18,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-protocolServer = new RemoteSocketIoServer({ server, config, inputQueue });
+protocolServer = new RemoteWebSocketServer({ server, inputQueue });
 
 server.listen(config.port, config.host, () => {
   console.log(`Remote input server is running on port ${config.port}.`);

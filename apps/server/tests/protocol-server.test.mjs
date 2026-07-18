@@ -1,94 +1,214 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import http from "node:http";
 import test from "node:test";
 import {
-  ProtocolResponseError,
-  ProtocolSession,
-  SocketIoClientTransport,
-} from "@remote-copy/protocol/implementations";
-import { RemoteSocketIoServer } from "../dist/socket-io/protocol-server.js";
+  RemoteError,
+  Session,
+  WebSocketTransport,
+} from "@remote-copy/protocol";
+import {
+  InputQueue,
+  InputQueueFullError,
+} from "../dist/input/inputQueue.js";
+import {
+  protocolWebSocketPath,
+  RemoteWebSocketServer,
+} from "../dist/websocket/protocol-server.js";
+import WebSocket from "ws";
 
-test("Socket.IO server enforces session open, deduplicates operations, and notifies status", async (context) => {
-  const operations = new Map();
-  let enqueueCount = 0;
-  const inputQueue = {
-    getStatus(clientId, operationId) {
-      const operation = operations.get(operationId);
-      return operation?.clientId === clientId ? operation.status : null;
-    },
-    enqueue(job) {
-      enqueueCount += 1;
-      const status = {
-        operationId: job.operationId,
-        revision: 1,
-        state: "accepted",
-        stage: "queued",
-        progress: 15,
-        message: "queued",
-      };
-      operations.set(job.operationId, { clientId: job.client.id, status });
-      void job.client.notifyStatus(status);
-      return true;
-    },
-  };
-
-  const server = http.createServer();
-  const protocolServer = new RemoteSocketIoServer({
-    server,
-    config: { host: "127.0.0.1", port: 0, publicDir: "/tmp" },
-    inputQueue,
+test("sendText responds only after globally serialized input processing completes", async (context) => {
+  const firstStarted = deferred();
+  const releaseFirst = deferred();
+  const startedTexts = [];
+  const inputQueue = new InputQueue(async (text) => {
+    startedTexts.push(text);
+    if (text === "first") {
+      firstStarted.resolve();
+      await releaseFirst.promise;
+    }
   });
+  const fixture = await createServerFixture(inputQueue);
+  context.after(() => fixture.close());
+
+  const firstClient = await fixture.connectClient();
+  const secondClient = await fixture.connectClient();
+  const firstResponse = firstClient.session.request("sendText", { text: "first" });
+  await firstStarted.promise;
+
+  let firstSettled = false;
+  void firstResponse.then(
+    () => { firstSettled = true; },
+    () => { firstSettled = true; },
+  );
+  const secondResponse = secondClient.session.request("sendText", { text: "second" });
+  await nextTurn();
+
+  assert.equal(firstSettled, false, "response must wait for clipboard/paste processing");
+  assert.deepEqual(startedTexts, ["first"], "a second client must share the same serial queue");
+
+  releaseFirst.resolve();
+  assert.equal(await firstResponse, null);
+  assert.equal(await secondResponse, null);
+  assert.deepEqual(startedTexts, ["first", "second"]);
+});
+
+test("sendText rejects invalid payloads and processor failures as remote errors", async (context) => {
+  const inputQueue = new InputQueue(async (text) => {
+    if (text === "fail") {
+      throw new Error("private processor detail");
+    }
+  });
+  const fixture = await createServerFixture(inputQueue);
+  context.after(() => fixture.close());
+  const client = await fixture.connectClient();
+
+  for (const payload of [
+    null,
+    "text",
+    {},
+    { text: 42 },
+    { text: "valid", extra: true },
+  ]) {
+    await assert.rejects(
+      client.session.request("sendText", payload),
+      isHandlerError,
+    );
+  }
+
+  await assert.rejects(
+    client.session.request("sendText", { text: "fail" }),
+    isHandlerError,
+  );
+});
+
+test("server tracks clients and closes every accepted WebSocket session", async (context) => {
+  const fixture = await createServerFixture(new InputQueue(async () => {}));
+  context.after(() => fixture.close());
+
+  assert.equal(fixture.protocolServer.getClientCount(), 0);
+  const firstClient = await fixture.connectClient();
+  const secondClient = await fixture.connectClient();
+  assert.equal(fixture.protocolServer.getClientCount(), 2);
+
+  await firstClient.session.close();
+  await waitFor(() => fixture.protocolServer.getClientCount() === 1);
+
+  await fixture.protocolServer.close();
+  assert.equal(fixture.protocolServer.getClientCount(), 0);
+  assert.equal(secondClient.transport.state, "closed");
+});
+
+test("an abnormal WebSocket disconnect removes the accepted server session", async (context) => {
+  const fixture = await createServerFixture(new InputQueue(async () => {}));
+  context.after(() => fixture.close());
+
+  const socket = new WebSocket(fixture.url);
+  await once(socket, "open");
+  assert.equal(fixture.protocolServer.getClientCount(), 1);
+
+  const closed = once(socket, "close");
+  socket.terminate();
+  await closed;
+  await waitFor(() => fixture.protocolServer.getClientCount() === 0);
+});
+
+test("InputQueue keeps a 100-waiting-job limit and continues after a failed job", async () => {
+  const activeStarted = deferred();
+  const releaseActive = deferred();
+  const processed = [];
+  const queue = new InputQueue(async (text) => {
+    processed.push(text);
+    if (text === "active") {
+      activeStarted.resolve();
+      await releaseActive.promise;
+    }
+    if (text === "failure") {
+      throw new Error("expected failure");
+    }
+  });
+
+  const active = queue.enqueue("active");
+  await activeStarted.promise;
+  const waiting = Array.from({ length: 100 }, (_, index) => queue.enqueue(`waiting-${index}`));
+  await assert.rejects(queue.enqueue("overflow"), InputQueueFullError);
+
+  releaseActive.resolve();
+  await active;
+  await Promise.all(waiting);
+
+  await assert.rejects(queue.enqueue("failure"), /expected failure/);
+  await queue.enqueue("after-failure");
+  assert.equal(processed.at(-1), "after-failure");
+});
+
+async function createServerFixture(inputQueue) {
+  const server = http.createServer();
+  const protocolServer = new RemoteWebSocketServer({ server, inputQueue });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  const session = new ProtocolSession(
-    new SocketIoClientTransport(`http://127.0.0.1:${address.port}`),
-    { heartbeatIntervalMs: 0 },
-  );
-  context.after(async () => {
-    await session.disconnect();
-    await secondSession?.disconnect();
-    await protocolServer.close();
+  assert.ok(address && typeof address === "object");
+  const url = `ws://127.0.0.1:${address.port}${protocolWebSocketPath}`;
+  const clients = [];
+  let closed = false;
+
+  return {
+    protocolServer,
+    url,
+    async connectClient() {
+      const transport = new WebSocketTransport(url);
+      const session = new Session(transport);
+      await transport.connect();
+      const client = { session, transport };
+      clients.push(client);
+      return client;
+    },
+    async close() {
+      if (closed) return;
+      closed = true;
+      await Promise.allSettled(clients.map(({ session }) => session.close()));
+      await protocolServer.close();
+      await closeHttpServer(server);
+    },
+  };
+}
+
+function isHandlerError(error) {
+  return error instanceof RemoteError
+    && error.remoteError.code === "HANDLER_ERROR"
+    && error.remoteError.message === "Remote handler failed.";
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  let secondSession = null;
+  return { promise, resolve, reject };
+}
 
-  const notifications = [];
-  session.subscribe((event) => {
-    if (event.type === "notification") notifications.push(event.notification);
+function nextTurn() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+async function waitFor(predicate) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await nextTurn();
+  }
+  assert.fail("condition was not reached");
+}
+
+function closeHttpServer(server) {
+  if (!server.listening) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) reject(error);
+      else resolve();
+    });
   });
-  await session.connect();
-
-  await assert.rejects(
-    session.request("input.submit", { operationId: "operation-1", text: "fixture" }),
-    (error) => error instanceof ProtocolResponseError && error.protocolError.code === "session.required",
-  );
-
-  const opened = await session.request("session.open", { clientName: "Fixture" });
-  assert.equal(opened.peer.name, "Remote Copy Server");
-  assert.ok(opened.capabilities.notifications.includes("operation.status"));
-
-  assert.deepEqual(
-    await session.request("input.submit", { operationId: "operation-1", text: "fixture" }),
-    { operationId: "operation-1" },
-  );
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(notifications.some((item) => item.name === "operation.status"), true);
-  assert.equal(enqueueCount, 1);
-
-  await session.request("input.submit", { operationId: "operation-1", text: "fixture" });
-  assert.equal(enqueueCount, 1);
-  assert.equal((await session.request("operation.get", { operationId: "operation-1" })).revision, 1);
-
-  secondSession = new ProtocolSession(
-    new SocketIoClientTransport(`http://127.0.0.1:${address.port}`),
-    { heartbeatIntervalMs: 0 },
-  );
-  await secondSession.connect();
-  await secondSession.request("session.open", { clientName: "Other client" });
-  await assert.rejects(
-    secondSession.request("operation.get", { operationId: "operation-1" }),
-    (error) => error instanceof ProtocolResponseError && error.protocolError.code === "operation.not-found",
-  );
-  await new Promise((resolve) => setImmediate(resolve));
-  const peerNotification = notifications.filter((item) => item.name === "session.peers").at(-1);
-  assert.equal(peerNotification.body.count, 2);
-});
+}

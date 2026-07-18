@@ -3,15 +3,27 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "../../public/**"]
+      "outputs": ["dist/**"]
     },
     "check": {
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "test": {
+      "dependsOn": ["build"],
+      "outputs": []
+    },
     "dev": {
+      "dependsOn": ["^build"],
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "env": ["HOST", "PORT"]
+    },
+    "start": {
+      "dependsOn": ["build", "@remote-copy/client#build"],
+      "cache": false,
+      "persistent": true,
+      "env": ["HOST", "PORT"]
     }
   }
 }

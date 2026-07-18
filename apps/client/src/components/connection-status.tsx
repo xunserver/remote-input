@@ -1,11 +1,16 @@
 import type { LucideIcon } from "lucide-react";
 import { Activity, CheckCircle2, Keyboard, RefreshCw, Server, Settings2, Users } from "lucide-react";
-import type { ServerInfo } from "@remote-copy/sdk";
 import { Button } from "@shadcn/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@shadcn/card";
 import { Progress } from "@shadcn/progress";
 import { cn } from "@shadcn/utils";
-import { connectionLabel, statusLabel, type ConnectionState, type OperationStatus } from "@/types/remote-input";
+import {
+  connectionLabel,
+  statusLabel,
+  type ConnectionState,
+  type OperationStatus,
+  type ServerInfo,
+} from "@/types/remote-input";
 
 type ConnectionStatusProps = {
   connectionState: ConnectionState;

@@ -29,7 +29,7 @@ export function getConfigFromUrl(value: string): ConnectionConfig {
   }
 }
 
-export function buildSocketIoUrl(config: ConnectionConfig): string {
+export function buildWebSocketUrl(config: ConnectionConfig): string {
   const fallback = getDefaultConnectionConfig();
   const rawHost = config.host.trim() || fallback.host;
   let host = rawHost;
@@ -47,6 +47,9 @@ export function buildSocketIoUrl(config: ConnectionConfig): string {
     host = rawHost.replace(/^(?:https?|wss?):\/\//i, "").replace(/\/.*$/, "");
   }
 
-  const protocol = secure ? "https:" : "http:";
-  return `${protocol}//${host}${port ? `:${port}` : ""}`;
+  const protocol = secure ? "wss:" : "ws:";
+  const authorityHost =
+    host.includes(":") && !host.startsWith("[") ? "[" + host + "]" : host;
+  const authority = port ? authorityHost + ":" + port : authorityHost;
+  return protocol + "//" + authority + "/ws";
 }

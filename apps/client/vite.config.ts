@@ -20,7 +20,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": "http://127.0.0.1:17888",
-      "/socket.io": {
+      "/ws": {
         target: "http://127.0.0.1:17888",
         ws: true,
       },

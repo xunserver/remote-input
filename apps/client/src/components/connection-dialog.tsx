@@ -13,7 +13,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@sh
 import { Input } from "@shadcn/input";
 import { cn } from "@shadcn/utils";
 import type { ConnectionConfig, ConnectionState } from "@/types/remote-input";
-import { buildSocketIoUrl, getConfigFromUrl, getDefaultConnectionConfig } from "@/utils/connection";
+import { buildWebSocketUrl, getConfigFromUrl, getDefaultConnectionConfig } from "@/utils/connection";
 
 type ConnectionDialogProps = {
   open: boolean;
@@ -43,7 +43,7 @@ export function ConnectionDialog({
   }, [currentUrl, open]);
 
   const defaultConfig = getDefaultConnectionConfig();
-  const connectionUrl = buildSocketIoUrl(config);
+  const connectionUrl = buildWebSocketUrl(config);
   const isConnecting = connectionState === "connecting";
 
   return (

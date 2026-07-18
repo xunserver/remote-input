@@ -2,7 +2,14 @@
 
 这是一个 pnpm workspace + Turborepo 管理的 monorepo。
 
-## 目录规划
+## 当前状态
+
+- V1 WebSocket Transport、双向 Session Request/Response 和 SDK Client 已实现。
+- apps/client 与 apps/server 已迁移到原生 WebSocket `/ws` 接入，不再使用 Socket.IO 协议。
+- [SDK Request/Response 协议 V1 设计](docs/sdk-protocol-v1.md) 是当前实现依据。
+- V1 只实现 WebSocket Transport 和双向 Request/Response，不实现旧版 Socket.IO、通知订阅或心跳协议。
+
+## V1 结构
 
 ```text
 apps/
@@ -10,8 +17,8 @@ apps/
   server/                  Node.js + TypeScript 后端应用
 
 packages/
-  protocol/                协议消息、校验、Codec、Session 和 Socket.IO Transport
-  sdk/                     面向应用的轻量 RemoteInputClient
+  protocol/                Session、Transport 契约与 WebSocket Transport
+  sdk/                     面向应用的 Client 和类型化方法
 
 public/                    client 构建输出目录，由 server 运行时托管
 apps/client/components.json shadcn 配置，组件生成到 apps/client/src/shadcn
@@ -19,21 +26,12 @@ pnpm-workspace.yaml        pnpm workspace 配置
 turbo.json                 Turborepo 任务编排配置
 ```
 
-## 典型边界
+## V1 边界
 
 - `apps/client`：只放浏览器 UI、React 状态、页面组件、shadcn 组件。
-- `apps/server`：只放 Node 后端、Socket.IO 对端、HTTP 静态托管、系统剪贴板/粘贴操作。
-- `packages/protocol`：`definitions` 定义各层契约，`implementations` 提供校验、Session、Codec 和 Socket.IO 双端实现。
-- `packages/sdk`：提供轻量 `RemoteInputClient`、状态缓存和通知订阅。
-
-当前只实现 Socket.IO Transport。它通过单一 `protocol:frame` 事件在内部完成二进制拆帧/重组、Go-Back-N 窗口、累计 ACK 和超时重传，再向 Session 交付完整消息；Codec 和 Session 不接触 Transport 帧。上层协议使用 requestId 关联一次请求响应，使用 operationId 关联长期操作及状态通知，心跳使用独立 heartbeatId。Transport ACK 只确认字节交付，不能替代协议 Response。
-
-Socket.IO Transport 默认使用 16 KiB DATA payload、8 帧窗口、2 秒 ACK timeout、最多 3 次重传和 10 秒重组无进展超时；单条完整消息上限为 256 KiB，发送队列同时受 128 条和 4 MiB 限制。完整 wire 格式与清理语义见 [远程输入模块架构](docs/architecture.md#9-messagetransport-与-socketio)。
-
-- [远程输入模块架构](docs/architecture.md)：目标分层、协议语义和 Socket.IO 双端边界。
-- [协议包定义与实现](packages/protocol/README.md)：definitions 契约、标识符边界、导入入口和自定义实现要求。
-- [协议与 SDK 重构计划](docs/implementation-plan.md)：实施步骤、测试范围和完成标准。
-- [SDK 使用与协议说明](packages/sdk/README.md)：当前公共 API 和协议报文参考。
+- `apps/server`：只放 Node 后端、WebSocket 接入、HTTP 静态托管、系统剪贴板/粘贴操作。
+- `packages/protocol`：定义 JSON 报文、错误、Session、Transport 契约和 WebSocket 实现。
+- `packages/sdk`：提供 Client、sendText 等类型化封装，不承担 ACK、重试或连接管理。
 
 ## pnpm + Turborepo
 
@@ -53,7 +51,7 @@ pnpm build
 pnpm dev
 ```
 
-`turbo.json` 中 `build` 使用 `dependsOn: ["^build"]`，所以构建 app 前会先构建其依赖包，例如 `packages/protocol`。
+`turbo.json` 中 `build` 使用 `dependsOn: ["^build"]`，构建 app 前会先构建其 workspace 依赖。根目录的 `start` 还会先构建服务端和客户端静态资源。
 
 shadcn CLI 应在 Client workspace 中执行，并固定使用 `npx shadcn@latest`：
 
@@ -79,3 +77,12 @@ pnpm dev:client
 - Vite：http://localhost:5173
 
 触发粘贴依赖当前机器的前台焦点窗口。发送前请先把光标放到需要输入的位置。
+
+## V1 安全边界
+
+V1 协议没有实现认证、授权或 WebSocket Origin 校验，服务端默认监听
+`0.0.0.0`。请只在可信网络中运行，或通过 `HOST=127.0.0.1`、防火墙及反向
+代理限制访问；任何能连到 `/ws` 的客户端都可以请求本机执行粘贴。
+
+浏览器会把最近 20 条输入（包括失败项）以明文保存到 `localStorage`。不要
+发送密码、一次性验证码等敏感内容；共享设备使用后请在页面中清空历史。
