@@ -47,6 +47,7 @@ type PendingRequest = {
   controller: AbortController;
 };
 
+// 冻结断连或关闭时的首个终止事件，避免后续异步结果覆盖当时的投递状态。
 type PendingTerminal =
   | {
     kind: "disconnect";
@@ -64,6 +65,7 @@ type HandlerRegistration = {
   token: symbol;
 };
 
+// 投递状态只允许单向推进，避免乱序回调降低已经确认的状态。
 const deliveryRank: Readonly<Record<DeliveryState, number>> = {
   not_sent: 0,
   unknown: 1,
@@ -76,11 +78,10 @@ const responseNotSerializableMessage =
 const maxTimerDelayMs = 2_147_483_647;
 
 /**
- * Symmetric request/response session layered over a single Transport.
+ * 构建在单个 Transport 之上的双向请求/响应会话。
  *
- * A transient Transport disconnect does not close the Session. It rejects all
- * current requests while preserving request IDs and handler registrations for
- * a later reconnect of the same Transport.
+ * Transport 暂时断连不会关闭 Session。当前请求会被拒绝，但请求 ID 进度和
+ * handler 注册会保留，供同一 Transport 后续重连继续使用。
  */
 export class Session implements TransportReceiver {
   readonly #transport: Transport;
@@ -134,11 +135,13 @@ export class Session implements TransportReceiver {
     };
     const controller = new AbortController();
     const requestedAt = this.#clock.now();
+    // 绝对截止时间覆盖排队、发送及等待响应的全过程。
     const deadlineAt = requestedAt + this.#requestTimeoutMs;
 
     return new Promise<JsonValue>((resolve, reject) => {
       const timer = this.#scheduleRequestTimeout(requestId, deadlineAt);
 
+      // 必须先登记请求再发送，Transport 可能在 send 返回前同步回送响应。
       this.#pending.set(requestId, {
         resolve,
         reject,
@@ -159,17 +162,16 @@ export class Session implements TransportReceiver {
           },
         });
       } catch (error) {
-        // Transport.send is specified to return a rejected Promise for every
-        // failure. Treat a non-conforming synchronous throw defensively so it
-        // still cannot strand a Pending entry.
+        // Transport.send 按约定应以 rejected Promise 表示失败；这里仍防御性处理
+        // 不符合约定的同步抛错，避免遗留无法结算的 Pending 记录。
         this.#handleSendFailure(requestId, error);
         return;
       }
 
       void Promise.resolve(sendPromise).then(
         () => {
-          // A resolved Transport.send is itself proof of delivery. This is a
-          // defensive update in case a custom Transport omitted its callback.
+          // send 成功本身即可证明已投递；即使自定义 Transport 漏掉回调，
+          // 这里也会防御性地推进投递状态。
           this.#advanceDelivery(requestId, "delivered");
         },
         (error: unknown) => {
@@ -191,6 +193,7 @@ export class Session implements TransportReceiver {
     }
 
     const token = Symbol(method);
+    // token 将注销函数绑定到本次注册，旧注销函数不能误删同名的新 handler。
     this.#handlers.set(method, { handler, token });
 
     let unregistered = false;
@@ -206,8 +209,8 @@ export class Session implements TransportReceiver {
   }
 
   /**
-   * Accepts one decoded Transport payload. It is deliberately synchronous and
-   * never lets malformed input or scheduling failures escape to the Transport.
+   * 接收一个已解码的 Transport 消息。此入口刻意保持同步，并确保畸形输入或
+   * 调度失败不会向外逃逸到 Transport。
    */
   accept(message: JsonValue): void {
     if (this.#closed) {
@@ -233,7 +236,9 @@ export class Session implements TransportReceiver {
       return;
     }
 
+    // 断连不关闭 Session，但会使旧连接上尚未完成的 handler 失效。
     this.#peerEpoch += 1;
+    // 限定本轮清理范围，避免稍后的微任务误伤断连后新建的请求。
     const pendingAtDisconnect = [...this.#pending.keys()];
     const disconnectedAt = this.#clock.now();
     for (const requestId of pendingAtDisconnect) {
@@ -255,10 +260,9 @@ export class Session implements TransportReceiver {
       }
     }
 
-    // Transport queues each send rejection before invoking disconnected().
-    // Queueing this sweep lets those per-item errors preserve exact delivery
-    // state; this only handles ACKed requests still waiting for a response (or
-    // a defensive non-conforming Transport that failed to reject an item).
+    // Transport 会先排入各 send 的 rejection，再调用 disconnected()。因此将
+    // 批量清理推迟到微任务，让逐项错误保留精确投递状态；这里只兜底处理已 ACK
+    // 但仍在等待响应的请求，以及未按约定 reject 的自定义 Transport。
     this.#queueMicrotask(() => {
       for (const requestId of pendingAtDisconnect) {
         this.#settleReject(requestId, (pending) => {
@@ -296,8 +300,8 @@ export class Session implements TransportReceiver {
       });
     }
 
-    // Do not insert an await before this call: Transport.close must enter its
-    // closing state in the same stack, before Abort-triggered FIFO pumps run.
+    // 此调用前不能插入 await：Transport.close 必须在同一调用栈内进入 closing，
+    // 早于 Abort 触发的 FIFO 发送泵继续运行。
     let closeResult: Promise<void>;
     try {
       closeResult = this.#transport.close();
@@ -309,6 +313,7 @@ export class Session implements TransportReceiver {
   }
 
   #allocateRequestId(): number {
+    // ID 不循环复用，避免迟到响应命中新请求；安全整数耗尽后必须创建新 Session。
     const requestId = this.#nextRequestId;
     if (requestId === Number.MAX_SAFE_INTEGER) {
       this.#requestIdsExhausted = true;
@@ -323,6 +328,7 @@ export class Session implements TransportReceiver {
     deadlineAt: number,
   ): TimeoutHandle {
     const remaining = deadlineAt - this.#clock.now();
+    // 单次定时器受平台上限约束；超长截止时间需分段调度并复核绝对时间。
     const delay = Math.min(maxTimerDelayMs, Math.max(0, remaining));
     return this.#clock.setTimeout(() => {
       const pending = this.#pending.get(requestId);
@@ -362,8 +368,7 @@ export class Session implements TransportReceiver {
 
     this.#advanceDelivery(message.requestId, "delivered");
 
-    // The absolute deadline wins even when the timer callback has been delayed
-    // by the event loop and this response callback happens to execute first.
+    // 即使事件循环延迟了定时器回调，绝对截止时间仍优先于恰好先执行的响应回调。
     if (this.#clock.now() >= pending.deadlineAt) {
       this.#settleReject(
         message.requestId,
@@ -386,6 +391,7 @@ export class Session implements TransportReceiver {
       return;
     }
 
+    // 捕获请求所属的连接世代，禁止异步 handler 将旧连接的结果发到重连后的对端。
     const peerEpoch = this.#peerEpoch;
     const handler = registration.handler;
     const context: RequestContext = {
@@ -393,6 +399,7 @@ export class Session implements TransportReceiver {
       method: message.method,
     };
 
+    // 异步启动用户代码，使 accept() 保持同步且不同请求可以并发处理。
     this.#queueMicrotask(() => {
       void this.#runHandler(handler, message.payload, context, peerEpoch);
     });
@@ -415,6 +422,7 @@ export class Session implements TransportReceiver {
       }
 
       if (result === undefined) {
+        // JSON 不支持 undefined，未返回值统一映射为 null。
         response = {
           type: "response",
           requestId: context.requestId,
@@ -422,6 +430,7 @@ export class Session implements TransportReceiver {
           data: null,
         };
       } else {
+        // 固化返回值，避免用户在校验后、实际发送前再次修改对象。
         const data = this.#snapshotJsonValueSafely(result);
         if (data === undefined) {
           response = this.#handlerErrorResponse(
@@ -447,6 +456,7 @@ export class Session implements TransportReceiver {
         return;
       }
 
+      // 只返回稳定的通用错误，不向对端暴露本地异常细节。
       response = this.#handlerErrorResponse(
         context.requestId,
         "HANDLER_ERROR",
@@ -454,8 +464,8 @@ export class Session implements TransportReceiver {
       );
     }
 
-    // Validation can inspect user-created objects (including Proxies), so make
-    // the epoch/open check once more at the actual send boundary.
+    // 校验可能检查用户创建的对象（包括 Proxy），因此在实际发送边界再次确认
+    // 连接世代和会话状态。
     if (!this.#canRespondTo(peerEpoch)) {
       this.#diagnose("Session dropped a handler response from an inactive peer epoch.");
       return;
@@ -464,6 +474,7 @@ export class Session implements TransportReceiver {
     try {
       await this.#transport.send(response);
     } catch (error) {
+      // 响应发送失败只做诊断，避免递归尝试发送新的错误响应。
       this.#diagnose("Session failed to send a handler response.", error);
     }
   }
@@ -504,6 +515,7 @@ export class Session implements TransportReceiver {
       this.#advanceDelivery(requestId, error.delivery);
     }
 
+    // 首个终止事件优先，其次按绝对超时、会话关闭、Transport 错误归一化。
     this.#settleReject(requestId, (current) => {
       const frozenTerminalError = this.#frozenTerminalError(current);
       if (frozenTerminalError !== undefined) {
@@ -554,6 +566,7 @@ export class Session implements TransportReceiver {
       return undefined;
     }
 
+    // 先删除记录再中止发送，使 Abort 引发的后续 rejection 无法重复结算。
     this.#pending.delete(requestId);
     this.#clock.clearTimeout(pending.timer);
     pending.controller.abort();
@@ -601,9 +614,8 @@ export class Session implements TransportReceiver {
       }
     }
 
-    // As with disconnected(), Transport has already rejected its sends. Let
-    // their Promise reactions retain item-level delivery before sweeping ACKed
-    // requests that were only waiting for a response.
+    // 与 disconnected() 相同，Transport 已先 reject 各 send；让其 Promise
+    // 回调先保留逐项投递状态，再清理已 ACK、仅等待响应的请求。
     this.#queueMicrotask(() => {
       for (const requestId of pendingAtClose) {
         this.#settleReject(requestId, (pending) => {
@@ -698,8 +710,8 @@ export class Session implements TransportReceiver {
     try {
       this.#clock.queueMicrotask(callback);
     } catch (error) {
-      // A runtime clock should not throw here. Falling back to the native queue
-      // preserves accept()'s no-throw contract without running user code inline.
+      // 运行时 clock 不应在此抛错；回退到原生微任务队列，既维持 accept()
+      // 不抛异常的约定，也避免同步执行用户代码。
       this.#diagnose("Session clock failed to queue a microtask.", error);
       globalThis.queueMicrotask(callback);
     }
@@ -713,7 +725,7 @@ export class Session implements TransportReceiver {
         this.#onDiagnostic(message, cause);
       }
     } catch {
-      // Diagnostics must never affect protocol state.
+      // 诊断回调绝不能影响协议状态。
     }
   }
 }

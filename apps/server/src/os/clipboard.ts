@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 
+// 仅在剪贴板写入和粘贴命令都完成后 resolve，使上层响应覆盖完整输入操作。
 export async function writeClipboardAndPaste(text: string, onPasting?: () => void): Promise<void> {
   const clipboardy = await import("clipboardy");
   await clipboardy.default.write(text);

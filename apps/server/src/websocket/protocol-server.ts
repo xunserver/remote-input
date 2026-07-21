@@ -21,6 +21,7 @@ export type RemoteWebSocketServerOptions = {
   inputQueue: InputQueue;
 };
 
+/** 为每个 WebSocket 创建独立会话，并通过共享输入队列串行化系统副作用。 */
 export class RemoteWebSocketServer {
   private readonly webSocketServer: WebSocketServer;
   private readonly clients = new Set<RemoteClient>();
@@ -52,6 +53,8 @@ export class RemoteWebSocketServer {
 
     const transport = WebSocketTransport.fromSocket(socket);
     const session = new Session(transport);
+    // subscribe() 会同步回放当前状态，回调可能在返回取消函数前移除客户端；
+    // 先放入空清理函数，订阅返回后再补偿释放真实监听器。
     const client: RemoteClient = {
       session,
       transport,
@@ -71,6 +74,7 @@ export class RemoteWebSocketServer {
 
     session.registerHandler("sendText", async (payload) => {
       const text = getText(payload);
+      // 必须等共享队列完成后再响应，避免把“已入队”误报为对端已完成粘贴。
       await this.options.inputQueue.enqueue(text);
       return null;
     });
@@ -81,6 +85,7 @@ export class RemoteWebSocketServer {
   }
 
   private removeClient(client: RemoteClient): void {
+    // delete 同时充当幂等门；先退订再关闭 Session，避免状态通知重入清理。
     if (!this.clients.delete(client)) {
       return;
     }
@@ -92,6 +97,7 @@ export class RemoteWebSocketServer {
 
   private async closeInternal(): Promise<void> {
     this.closing = true;
+    // WebSocketServer 的关闭回调会等待现有连接退出，因此必须同时启动会话关闭。
     const webSocketServerClosed = new Promise<void>((resolve, reject) => {
       this.webSocketServer.close((error) => {
         if (error) {
@@ -102,6 +108,7 @@ export class RemoteWebSocketServer {
       });
     });
     const clients = [...this.clients];
+    // 单个 Session 关闭失败不能阻断其他客户端的退订和移除。
     const sessionsClosed = Promise.allSettled(
       clients.map((client) => client.session.close()),
     ).then(() => {
@@ -114,6 +121,7 @@ export class RemoteWebSocketServer {
 }
 
 function getText(payload: JsonValue): string {
+  // 协议输入视为不可信数据，只接受没有额外字段的普通对象。
   if (
     payload === null
     || Array.isArray(payload)

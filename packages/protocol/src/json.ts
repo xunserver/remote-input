@@ -6,12 +6,11 @@ export type JsonValue =
   | { [key: string]: JsonValue };
 
 /**
- * Produces a detached JSON snapshot without invoking getters or toJSON hooks.
+ * 在不调用 getter 或 toJSON 的前提下生成与源值脱离的 JSON 快照。
  *
- * Returning the snapshot (instead of validating and later reading the source
- * again) closes the gap where a Proxy, accessor, or mutation can change what
- * JSON.stringify observes. Hidden properties and array extras are rejected so
- * an accepted value has one unambiguous wire representation.
+ * 返回快照而非校验后再次读取源值，可避免 Proxy、访问器或后续修改改变
+ * JSON.stringify 实际观察到的内容。隐藏属性和数组额外属性会被拒绝，
+ * 因此通过校验的值只有一种明确的线上表示。
  */
 export function snapshotJsonValue(value: unknown): JsonValue | undefined {
   try {
@@ -45,6 +44,7 @@ function snapshot(
     return undefined;
   }
 
+  // 只追踪当前递归路径：拒绝循环引用，但允许同一对象在不同分支重复出现。
   ancestors.add(value);
   try {
     return Array.isArray(value)
@@ -59,20 +59,23 @@ function snapshotArray(
   value: unknown[],
   ancestors: WeakSet<object>,
 ): JsonValue[] | undefined {
+  // 只接受连续索引和标准 length；稀疏项、额外属性及访问器均会被拒绝。
   const ownKeys = Reflect.ownKeys(value);
   const lengthDescriptor = Reflect.getOwnPropertyDescriptor(value, "length");
+  const length = lengthDescriptor?.value;
   if (
     !lengthDescriptor ||
     !("value" in lengthDescriptor) ||
-    !Number.isSafeInteger(lengthDescriptor.value) ||
-    lengthDescriptor.value < 0 ||
-    ownKeys.length !== lengthDescriptor.value + 1
+    typeof length !== "number" ||
+    !Number.isSafeInteger(length) ||
+    length < 0 ||
+    ownKeys.length !== length + 1
   ) {
     return undefined;
   }
 
   const result: JsonValue[] = [];
-  for (let index = 0; index < lengthDescriptor.value; index += 1) {
+  for (let index = 0; index < length; index += 1) {
     const key = String(index);
     if (ownKeys[index] !== key) {
       return undefined;
@@ -99,6 +102,7 @@ function snapshotObject(
   value: object,
   ancestors: WeakSet<object>,
 ): { [key: string]: JsonValue } | undefined {
+  // 只接受普通对象或 null 原型对象，排除实例自带的序列化语义。
   const prototype = Reflect.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
     return undefined;
@@ -121,6 +125,7 @@ function snapshotObject(
     if (child === undefined) {
       return undefined;
     }
+    // 避免 "__proto__" 命中继承的 setter 并修改结果对象的原型。
     Object.defineProperty(result, key, {
       configurable: true,
       enumerable: true,

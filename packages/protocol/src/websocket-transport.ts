@@ -32,8 +32,8 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 type SocketEventListener = (event: any) => void;
 
 /**
- * The EventTarget-shaped subset shared by browser WebSocket and the `ws`
- * package. V1 deliberately accepts text frames only.
+ * 浏览器 WebSocket 与 `ws` 包共有的 EventTarget 形状子集。
+ * V1 只接收文本帧。
  */
 export interface WebSocketLike {
   readonly readyState: number;
@@ -116,7 +116,7 @@ type NormalizedSendOptions = {
     | undefined;
 };
 
-/** Internal-only result used when a Session aborts work after another terminal event won. */
+/** Session 已由其他终态完成后，用于中止遗留发送工作的内部错误。 */
 export class TransportSendCancelledError extends Error {
   readonly delivery: DeliveryState;
 
@@ -127,6 +127,10 @@ export class TransportSendCancelledError extends Error {
   }
 }
 
+/**
+ * 在 WebSocket 上实现带 ACK、重试和关闭握手的可靠传输。
+ * DATA 严格按 FIFO 发送，连接代次用于隔离重连前后的事件与队列状态。
+ */
 export class WebSocketTransport implements Transport {
   private readonly url: string;
   private readonly socketFactory: WebSocketFactory | undefined;
@@ -141,11 +145,17 @@ export class WebSocketTransport implements Transport {
   private connectDeferred: Deferred<void> | undefined;
   private closeDeferred: Deferred<void> | undefined;
   private closeTimer: TimeoutHandle | undefined;
+
+  // 每次 attach 都分配新的连接代次；旧连接迟到的事件和定时器会因代次不匹配而失效。
   private generationCounter = 0;
   private currentGeneration = 0;
+
+  // transferId 和接收高水位只在当前连接代次内有效，重连后从初始值重新开始。
   private nextTransferId = 1;
   private highestAcceptedTransferId = 0;
   private highestAcceptedDigest: string | undefined;
+
+  // queue 包含 active 项；同一时刻只有队首 DATA 可以发送或等待 ACK。
   private queue: SendItem[] = [];
   private active: SendItem | undefined;
   private queuedBytes = 0;
@@ -162,9 +172,8 @@ export class WebSocketTransport implements Transport {
   }
 
   /**
-   * Adopt an accepted server-side socket. An already-open socket becomes
-   * connected synchronously; a connecting socket can be awaited through
-   * `connect()` or a later direct `attach()` call.
+   * 接管服务端已接受的套接字。已打开的套接字会同步进入 connected；
+   * 仍在连接中的套接字可通过 `connect()` 或后续直接调用 `attach()` 等待。
    */
   static fromSocket(
     socket: WebSocketLike,
@@ -376,6 +385,7 @@ export class WebSocketTransport implements Transport {
       );
     }
 
+    // 入队的是最终编码快照；ACK 超时重试始终发送相同内容，不受调用方后续修改影响。
     let snapshot: string;
     let byteLength: number;
     try {
@@ -429,6 +439,7 @@ export class WebSocketTransport implements Transport {
         ),
       );
     }
+    // active DATA 在进入终态前仍位于 queue[0]，因此队列预算也包含正在等待 ACK 的消息。
     if (
       this.queue.length >= MAX_QUEUED_MESSAGES ||
       this.queuedBytes + byteLength > MAX_QUEUED_BYTES
@@ -501,6 +512,7 @@ export class WebSocketTransport implements Transport {
       return deferred.promise;
     }
 
+    // 先同步冻结 FIFO 并拒绝全部 DATA，再让 CLOSE 绕过队列等待 CLOSE_ACK。
     const generation = this.binding.generation;
     this.stateValue = "closing";
     this.rejectAllForClose();
@@ -659,6 +671,7 @@ export class WebSocketTransport implements Transport {
     if (generation !== this.currentGeneration) {
       return;
     }
+    // 先使当前代次失效，再清理旧队列并通知 Session；重连不会恢复未完成的 DATA。
     const binding = this.invalidateBinding(generation);
     this.stateValue = "idle";
     const connectDeferred = this.connectDeferred;
@@ -701,6 +714,10 @@ export class WebSocketTransport implements Transport {
     }
   }
 
+  /**
+   * 使用连接内高水位保证 DATA 至多交付一次：同 ID、同摘要只重发 ACK，
+   * 旧 ID 或同 ID 冲突帧直接丢弃。仅在 accept 正常返回后推进高水位并确认。
+   */
   private receiveData(generation: number, raw: string, frame: DataFrame): void {
     const digest = raw;
     if (frame.transferId < this.highestAcceptedTransferId) {
@@ -769,6 +786,7 @@ export class WebSocketTransport implements Transport {
       return;
     }
 
+    // WebSocketLike 适配器可能在 send() 调用栈内同步触发 ACK，延迟完成以保持 active 一致。
     if (item.sending) {
       item.ackReceivedWhileSending = true;
       return;
@@ -794,6 +812,10 @@ export class WebSocketTransport implements Transport {
     this.schedulePump();
   }
 
+  /**
+   * 收到 CLOSE 始终先回复 CLOSE_ACK。双方同时关闭时保留本端原有代次和定时器，
+   * 继续等待自己的 CLOSE_ACK，避免提前结束握手。
+   */
   private receiveClose(generation: number): void {
     const wasClosing = this.stateValue === "closing";
     if (!wasClosing) {
@@ -824,6 +846,10 @@ export class WebSocketTransport implements Transport {
     }
   }
 
+  /**
+   * 下一项通过微任务调度，避免在 resolve/reject/abort 的重入调用栈中继续发送；
+   * token 会废弃连接重置前已经排队的旧 pump。
+   */
   private schedulePump(): void {
     if (this.pumpScheduled) {
       return;
@@ -881,6 +907,10 @@ export class WebSocketTransport implements Transport {
     this.transmitActive(item);
   }
 
+  /**
+   * 每次超时都重发同一快照。本地 send 返回后交付状态只能确定为 unknown，
+   * 只有收到匹配 ACK 才能推进为 delivered。
+   */
   private transmitActive(item: SendItem): void {
     if (
       item.settled ||
@@ -1081,6 +1111,7 @@ export class WebSocketTransport implements Transport {
   }
 
   private rejectAllForDisconnect(cause: unknown): void {
+    // active 项可能已经发出，保留其交付状态；其余排队项确定为 not_sent。
     const items = [...this.queue];
     for (const item of items) {
       const delivery = item === this.active ? item.delivery : "not_sent";
@@ -1207,6 +1238,7 @@ export class WebSocketTransport implements Transport {
   }
 
   private resetConnectionLocalState(): void {
+    // 所有传输与去重状态均按连接隔离；递增 token 同时使已排队的旧 pump 失效。
     this.nextTransferId = 1;
     this.highestAcceptedTransferId = 0;
     this.highestAcceptedDigest = undefined;
@@ -1294,7 +1326,7 @@ export class WebSocketTransport implements Transport {
     try {
       this.onDiagnostic?.(message, cause);
     } catch {
-      // Diagnostics must never change protocol behavior.
+      // 诊断回调不能改变协议行为。
     }
   }
 }
@@ -1420,7 +1452,7 @@ function closeSocket(
     try {
       onDiagnostic?.("Failed to close WebSocket.", cause);
     } catch {
-      // Diagnostics must never change protocol behavior.
+      // 诊断回调不能改变协议行为。
     }
   }
 }

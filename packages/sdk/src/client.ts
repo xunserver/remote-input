@@ -26,6 +26,7 @@ export class Client {
   }
 
   sendText(text: string): Promise<JsonValue> {
+    // 对无类型调用者仍保持 Promise 拒绝语义，并保证无效输入未触达传输层。
     if (typeof text !== "string") {
       return Promise.reject(
         new SDKError(

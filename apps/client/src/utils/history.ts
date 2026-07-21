@@ -28,7 +28,7 @@ export function saveHistory(history: HistoryItem[]): void {
       JSON.stringify(history.slice(0, maxHistoryItems)),
     );
   } catch {
-    // History persistence is optional and must not affect protocol state.
+    // 历史记录持久化是可选能力，失败不能影响协议状态。
   }
 }
 

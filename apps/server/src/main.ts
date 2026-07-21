@@ -6,6 +6,7 @@ import { getLanAddresses } from "./network.js";
 import { RemoteWebSocketServer } from "./websocket/protocol-server.js";
 
 const config = getConfig();
+// 所有客户端共享同一队列，避免剪贴板写入和系统粘贴操作相互穿插。
 const inputQueue = new InputQueue();
 let protocolServer: RemoteWebSocketServer;
 

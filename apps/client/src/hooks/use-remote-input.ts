@@ -30,6 +30,8 @@ type InitialConnection = {
 
 type Runtime = {
   client: Client;
+  // generation 隔离整个 Runtime，connectionEpoch 隔离同一 Runtime 内的连接尝试；
+  // 异步回调必须同时匹配两者，才能更新当前界面。
   connectionEpoch: number;
   generation: number;
   infoAbortController: AbortController | null;
@@ -56,6 +58,7 @@ function getInitialConnection(): InitialConnection {
   };
 }
 
+/** 统一管理连接生命周期、远端输入请求及其展示状态。 */
 export function useRemoteInput() {
   const [initialConnection] = useState(getInitialConnection);
   const [connectionUrl, setConnectionUrl] = useState(initialConnection.url);
@@ -73,6 +76,7 @@ export function useRemoteInput() {
   const [clientCount, setClientCount] = useState(0);
   const runtimeRef = useRef<Runtime | null>(null);
   const generationRef = useRef(0);
+  // ref 充当发送和重发入口的同步互斥锁，在 React 状态提交前也能拒绝重复调用。
   const operationInFlightRef = useRef(false);
 
   const isBusy =
@@ -96,6 +100,7 @@ export function useRemoteInput() {
         return;
       }
       const snapshot = parseServerSnapshot(await response.json());
+      // abort 无法撤回已经结算的 Promise，提交结果前仍需核对 Runtime 和连接代次。
       if (
         !snapshot ||
         signal.aborted ||
@@ -109,7 +114,7 @@ export function useRemoteInput() {
       setServerInfo(snapshot.info);
       setClientCount(snapshot.clients);
     } catch {
-      // /api/info is presentation metadata; the protocol connection remains usable.
+      // /api/info 仅提供展示元数据，失败不应影响协议连接。
     }
   }, []);
 
@@ -124,6 +129,7 @@ export function useRemoteInput() {
         return;
       }
       runtime.seenConnected = true;
+      // 状态订阅和 connect().then 都可能报告成功，每个连接代次只执行一次后续副作用。
       if (runtime.markedConnected) {
         return;
       }
@@ -150,6 +156,7 @@ export function useRemoteInput() {
         return;
       }
       setConnectionState("connecting");
+      // 推进代次，使同一 Runtime 上一次 connect 或元数据请求的迟到结果失效。
       const connectionEpoch = ++runtime.connectionEpoch;
       runtime.markedConnected = false;
       runtime.infoAbortController?.abort();
@@ -179,6 +186,7 @@ export function useRemoteInput() {
     (url: string) => {
       const previous = runtimeRef.current;
       const generation = ++generationRef.current;
+      // 先废弃旧 Runtime 再异步关闭，确保旧监听器和 Promise 无法回写新连接。
       runtimeRef.current = null;
       if (previous) {
         previous.infoAbortController?.abort();
@@ -205,6 +213,7 @@ export function useRemoteInput() {
           unsubscribe: () => {},
           url,
         };
+        // subscribe() 会同步回放当前状态，必须先发布 Runtime 引用。
         runtimeRef.current = runtime;
         runtime.unsubscribe = transport.subscribe((state: TransportState) => {
           if (
@@ -221,6 +230,7 @@ export function useRemoteInput() {
             setConnectionState("connecting");
             return;
           }
+          // 其余状态均终结当前连接尝试，先推进代次以屏蔽迟到回调。
           if (state === "idle") {
             runtime.connectionEpoch += 1;
             runtime.markedConnected = false;
@@ -260,6 +270,7 @@ export function useRemoteInput() {
 
   const reconnect = useCallback(() => {
     const runtime = runtimeRef.current;
+    // idle 状态可以复用 Transport；closing/closed 是终态，只能创建新 Runtime。
     if (
       !runtime ||
       runtime.transport.state === "closing" ||
@@ -284,6 +295,7 @@ export function useRemoteInput() {
 
     return () => {
       const runtime = runtimeRef.current;
+      // 卸载时先废弃 generation，屏蔽尚未结算的连接和元数据回调。
       ++generationRef.current;
       runtimeRef.current = null;
       if (runtime) {
@@ -357,6 +369,7 @@ export function useRemoteInput() {
           message,
         };
         setCurrentOperation(failed);
+        // 历史项仍需结算，但旧 Runtime 的失败不能污染新连接的错误提示。
         if (runtimeRef.current === runtime) {
           setLastError(message);
         }
@@ -440,7 +453,7 @@ function storeConnection(url: string): void {
   try {
     localStorage.setItem(connectionStorageKey, url);
   } catch {
-    // Connection persistence is optional and must not alter live state.
+    // 连接配置持久化是可选能力，失败不能改变实时连接状态。
   }
 }
 
@@ -485,6 +498,7 @@ function formatRequestError(error: unknown): string {
       : "请求失败，请稍后重试。";
   }
 
+  // 只有 not_sent 能保证对端未执行；其余交付状态必须保留重复执行风险。
   switch (error.code) {
     case sdkErrorCodes.requestTimeout:
       if (error.delivery === "not_sent") {

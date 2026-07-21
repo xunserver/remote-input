@@ -33,6 +33,7 @@ export type ResponseMessage =
 
 export type SessionMessage = RequestMessage | ResponseMessage;
 
+// 请求 ID 限制为正安全整数，确保 JSON/JavaScript 两端都能无损表示并精确匹配响应。
 export function isPositiveSafeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 1;
 }
