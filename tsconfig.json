@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@shadcn": ["./apps/client/src/shadcn"],
-      "@shadcn/utils": ["./apps/client/src/shadcn/utils.ts"],
-      "@shadcn/lib": ["./apps/client/src/shadcn"],
-      "@shadcn/hooks": ["./apps/client/src/hooks"],
       "@shadcn/*": ["./apps/client/src/shadcn/*"],
       "@/*": ["./apps/client/src/*"],
       "@remote-copy/protocol": ["./packages/protocol/src/index.ts"]

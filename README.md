@@ -13,7 +13,7 @@
 
 ```text
 apps/
-  client/                  Vite + React + Tailwind v4 + shadcn 前端应用
+  client/                  Vite + Vue 3 + Tailwind v4 + shadcn-vue 前端应用
   server/                  Node.js + TypeScript 后端应用
 
 packages/
@@ -21,14 +21,14 @@ packages/
   sdk/                     面向应用的 Client 和类型化方法
 
 public/                    client 构建输出目录，由 server 运行时托管
-apps/client/components.json shadcn 配置，组件生成到 apps/client/src/shadcn
+apps/client/components.json shadcn-vue 配置，组件生成到 apps/client/src/shadcn
 pnpm-workspace.yaml        pnpm workspace 配置
 turbo.json                 Turborepo 任务编排配置
 ```
 
 ## V1 边界
 
-- `apps/client`：只放浏览器 UI、React 状态、页面组件、shadcn 组件。
+- `apps/client`：只放浏览器 UI、Vue 状态、页面组件、shadcn-vue 组件。
 - `apps/server`：只放 Node 后端、WebSocket 接入、HTTP 静态托管、系统剪贴板/粘贴操作。
 - `packages/protocol`：定义 JSON 报文、错误、Session、Transport 契约和 WebSocket 实现。
 - `packages/sdk`：提供 Client、sendText 等类型化封装，不承担 ACK、重试或连接管理。
@@ -53,12 +53,12 @@ pnpm dev
 
 `turbo.json` 中 `build` 使用 `dependsOn: ["^build"]`，构建 app 前会先构建其 workspace 依赖。根目录的 `start` 还会先构建服务端和客户端静态资源。
 
-shadcn CLI 应在 Client workspace 中执行，并固定使用 `npx shadcn@latest`：
+shadcn-vue CLI 应在 Client workspace 中执行，并使用项目的 pnpm runner：
 
 ```bash
 cd apps/client
-npx shadcn@latest info
-npx shadcn@latest add button
+pnpm dlx shadcn-vue@latest info
+pnpm dlx shadcn-vue@latest add @shadcn/button
 ```
 
 ## 常用命令
