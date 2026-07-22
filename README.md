@@ -21,7 +21,8 @@ packages/
   protocol/                Session、Transport 契约与 WebSocket Transport
   sdk/                     面向应用的 Client 和类型化方法
 
-public/                    client 构建输出目录，由 server 运行时托管
+apps/client/dist/          client 的 Vite 构建输出
+apps/server/dist/public/   随 server 构建产物打包的网页静态文件
 apps/client/components.json shadcn-vue 配置，组件生成到 apps/client/src/shadcn
 pnpm-workspace.yaml        pnpm workspace 配置
 turbo.json                 Turborepo 任务编排配置
@@ -52,7 +53,9 @@ pnpm build
 pnpm dev
 ```
 
-`turbo.json` 中 `build` 使用 `dependsOn: ["^build"]`，构建 app 前会先构建其 workspace 依赖。根目录的 `start` 还会先构建服务端和客户端静态资源。
+`apps/server` 将 client 声明为构建依赖。构建 server 时，Turborepo 会先构建 client，
+再把网页静态资源复制到 `apps/server/dist/public`。因此 server 的 `dist` 目录包含
+可直接托管的完整网页资源。
 
 shadcn-vue CLI 应在 Client workspace 中执行，并使用项目的 pnpm runner：
 

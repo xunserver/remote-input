@@ -19,7 +19,7 @@ export function getConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     host: env.HOST || "0.0.0.0",
     port: Number(env.PORT || 17888),
-    publicDir: path.resolve(currentDir, "..", "..", "..", "public"),
+    publicDir: path.resolve(currentDir, "public"),
     inputMode: getInputMode(env.INPUT_MODE),
     protocolTraceLevel: parseProtocolTraceLevel(env.PROTOCOL_DEBUG),
   };

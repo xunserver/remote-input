@@ -27,7 +27,7 @@
       ]
     },
     "start": {
-      "dependsOn": ["build", "@remote-copy/client#build"],
+      "dependsOn": ["build"],
       "cache": false,
       "persistent": true,
       "env": [
