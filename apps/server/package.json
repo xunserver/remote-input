@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./dist/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-client.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "pnpm run build && node --test --test-timeout=10000 tests/*.test.mjs",
     "start": "node dist/main.js",
@@ -17,6 +17,7 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
+    "@remote-copy/client": "workspace:*",
     "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",
     "typescript": "^7.0.2"

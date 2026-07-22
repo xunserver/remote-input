@@ -79,6 +79,9 @@ importers:
         specifier: ^8.21.1
         version: 8.21.1
     devDependencies:
+      '@remote-copy/client':
+        specifier: workspace:*
+        version: link:../client
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
