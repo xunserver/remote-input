@@ -4,6 +4,8 @@ import {
   Session,
   sdkErrorCodes,
   type JsonValue,
+  type ProtocolTraceLevel,
+  type ProtocolTraceListener,
   type RequestHandler,
   type Transport,
 } from "@remote-copy/protocol";
@@ -11,6 +13,8 @@ import {
 export interface ClientOptions {
   transport: Transport;
   requestTimeoutMs?: number;
+  onTrace?: ProtocolTraceListener;
+  traceLevel?: ProtocolTraceLevel;
 }
 
 export class Client {
@@ -22,7 +26,13 @@ export class Client {
     if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) {
       throw new TypeError("requestTimeoutMs must be a positive finite number.");
     }
-    this.#session = new Session(options.transport, { requestTimeoutMs });
+    this.#session = new Session(options.transport, {
+      requestTimeoutMs,
+      ...(options.onTrace === undefined ? {} : { onTrace: options.onTrace }),
+      ...(options.traceLevel === undefined
+        ? {}
+        : { traceLevel: options.traceLevel }),
+    });
   }
 
   sendText(text: string): Promise<JsonValue> {

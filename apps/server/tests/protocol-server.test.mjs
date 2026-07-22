@@ -44,13 +44,28 @@ test("sendText responds only after globally serialized input processing complete
   const secondResponse = secondClient.session.request("sendText", { text: "second" });
   await nextTurn();
 
-  assert.equal(firstSettled, false, "response must wait for clipboard/paste processing");
+  assert.equal(firstSettled, false, "response must wait for configured input processing");
   assert.deepEqual(startedTexts, ["first"], "a second client must share the same serial queue");
 
   releaseFirst.resolve();
   assert.equal(await firstResponse, null);
   assert.equal(await secondResponse, null);
   assert.deepEqual(startedTexts, ["first", "second"]);
+});
+
+test("sendText reassembles a 5000-character input exactly once", async (context) => {
+  const processed = [];
+  const input = "汉".repeat(5000);
+  const fixture = await createServerFixture(
+    new InputQueue(async (text) => {
+      processed.push(text);
+    }),
+  );
+  context.after(() => fixture.close());
+
+  const client = await fixture.connectClient();
+  assert.equal(await client.session.request("sendText", { text: input }), null);
+  assert.deepEqual(processed, [input]);
 });
 
 test("sendText rejects invalid payloads and processor failures as remote errors", async (context) => {

@@ -1,5 +1,10 @@
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
-import { WebSocketTransport, type TransportState } from "@remote-copy/protocol";
+import {
+  createConsoleProtocolTracer,
+  parseProtocolTraceLevel,
+  WebSocketTransport,
+  type TransportState,
+} from "@remote-copy/protocol";
 import { Client, isSDKError, sdkErrorCodes } from "@remote-copy/sdk";
 import {
   isInputBusy,
@@ -39,6 +44,10 @@ type ServerSnapshot = {
   clients: number;
   info: ServerInfo;
 };
+
+const protocolTraceLevel = parseProtocolTraceLevel(
+  import.meta.env.VITE_PROTOCOL_DEBUG,
+);
 
 function getInitialConnection(): InitialConnection {
   const savedUrl = readStoredConnection();
@@ -192,8 +201,22 @@ export function useRemoteInput() {
     clientCount.value = 0;
 
     try {
-      const transport = new WebSocketTransport(url);
-      const client = new Client({ transport });
+      const onTrace = protocolTraceLevel === undefined
+        ? undefined
+        : createConsoleProtocolTracer(`客户端/运行-${runtimeGeneration}`);
+      const transport = new WebSocketTransport(url, {
+        ...(onTrace === undefined ? {} : { onTrace }),
+        ...(protocolTraceLevel === undefined
+          ? {}
+          : { traceLevel: protocolTraceLevel }),
+      });
+      const client = new Client({
+        transport,
+        ...(onTrace === undefined ? {} : { onTrace }),
+        ...(protocolTraceLevel === undefined
+          ? {}
+          : { traceLevel: protocolTraceLevel }),
+      });
       const nextRuntime: Runtime = {
         client,
         connectionEpoch: 0,

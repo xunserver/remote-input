@@ -2,7 +2,10 @@ import type { ProtocolClock, TimeoutHandle } from "./clock.js";
 import { systemClock } from "./clock.js";
 import {
   ACK_TIMEOUT_MS,
+  CHUNK_PAYLOAD_BYTES,
   CLOSE_ACK_TIMEOUT_MS,
+  MAX_CHUNKS_PER_TRANSFER,
+  MAX_IN_FLIGHT_CHUNKS,
   MAX_MESSAGE_BYTES,
   MAX_QUEUED_BYTES,
   MAX_QUEUED_MESSAGES,
@@ -15,6 +18,12 @@ import {
 } from "./errors.js";
 import { isJsonValue, snapshotJsonValue, type JsonValue } from "./json.js";
 import { isPositiveSafeInteger, isSessionMessage, type SessionMessage } from "./messages.js";
+import {
+  queueProtocolTrace,
+  type ProtocolTraceDetails,
+  type ProtocolTraceLevel,
+  type ProtocolTraceListener,
+} from "./trace.js";
 import type {
   ProtocolRuntimeOptions,
   Transport,
@@ -53,6 +62,8 @@ export type WebSocketFactory = (url: string) => WebSocketLike;
 
 export interface WebSocketTransportOptions extends ProtocolRuntimeOptions {
   socketFactory?: WebSocketFactory;
+  /** Maximum number of DATA chunks in flight for the active transfer. */
+  chunkWindowSize?: number;
 }
 
 export type TransportStateListener = (state: TransportState) => void;
@@ -60,15 +71,15 @@ export type TransportStateListener = (state: TransportState) => void;
 type DataFrame = {
   kind: "DATA";
   transferId: number;
-  chunkIndex: 0;
-  chunkCount: 1;
+  chunkIndex: number;
+  chunkCount: number;
   payload: string;
 };
 
 type AckFrame = {
   kind: "ACK";
   transferId: number;
-  chunkIndex: 0;
+  chunkIndex: number;
 };
 
 type CloseFrame = { kind: "CLOSE" };
@@ -91,21 +102,50 @@ type SocketBinding = {
   onError: SocketEventListener;
 };
 
-type SendItem = {
-  readonly transferId: number;
-  readonly generation: number;
+type EncodedChunk = {
+  readonly chunkIndex: number;
   readonly snapshot: string;
   readonly byteLength: number;
-  readonly options: NormalizedSendOptions;
-  readonly deferred: Deferred<void>;
+};
+
+type ChunkSendState = {
+  readonly chunk: EncodedChunk;
   attempts: number;
-  delivery: DeliveryState;
   settled: boolean;
   sending: boolean;
   ackReceivedWhileSending: boolean;
   ackTimer: TimeoutHandle | undefined;
+};
+
+type SendItem = {
+  readonly transferId: number;
+  readonly generation: number;
+  readonly chunks: readonly EncodedChunk[];
+  readonly byteLength: number;
+  readonly options: NormalizedSendOptions;
+  readonly deferred: Deferred<void>;
+  delivery: DeliveryState;
+  deliveryUnknownNotified: boolean;
+  settled: boolean;
+  nextChunkIndex: number;
+  readonly inFlight: Map<number, ChunkSendState>;
+  ackedChunks: number;
   deadlineTimer: TimeoutHandle | undefined;
   abortListener: (() => void) | undefined;
+};
+
+type IncomingTransfer = {
+  readonly transferId: number;
+  readonly chunkCount: number;
+  readonly chunks: Map<number, string>;
+  totalPayloadBytes: number;
+  delivering: boolean;
+};
+
+type CompletedTransfer = {
+  readonly transferId: number;
+  readonly chunkCount: number;
+  readonly chunks: Map<number, string>;
 };
 
 type NormalizedSendOptions = {
@@ -129,13 +169,18 @@ export class TransportSendCancelledError extends Error {
 
 /**
  * 在 WebSocket 上实现带 ACK、重试和关闭握手的可靠传输。
- * DATA 严格按 FIFO 发送，连接代次用于隔离重连前后的事件与队列状态。
+ * 逻辑 transfer 严格按 FIFO 发送，transfer 内的 DATA chunk 受窗口限制；
+ * 连接代次用于隔离重连前后的事件与队列状态。
  */
 export class WebSocketTransport implements Transport {
   private readonly url: string;
   private readonly socketFactory: WebSocketFactory | undefined;
   private readonly clock: ProtocolClock;
   private readonly onDiagnostic: ProtocolRuntimeOptions["onDiagnostic"];
+  private readonly onTrace: ProtocolTraceListener | undefined;
+  private readonly traceLevel: ProtocolTraceLevel;
+  private readonly traceChunksEnabled: boolean;
+  private readonly chunkWindowSize: number;
   private readonly stateListeners = new Set<TransportStateListener>();
   private readonly encoder = new TextEncoder();
 
@@ -153,9 +198,10 @@ export class WebSocketTransport implements Transport {
   // transferId 和接收高水位只在当前连接代次内有效，重连后从初始值重新开始。
   private nextTransferId = 1;
   private highestAcceptedTransferId = 0;
-  private highestAcceptedDigest: string | undefined;
+  private incomingTransfer: IncomingTransfer | undefined;
+  private completedTransfer: CompletedTransfer | undefined;
 
-  // queue 包含 active 项；同一时刻只有队首 DATA 可以发送或等待 ACK。
+  // queue 按 SessionMessage 保持 FIFO；active transfer 内部使用 chunk window。
   private queue: SendItem[] = [];
   private active: SendItem | undefined;
   private queuedBytes = 0;
@@ -169,6 +215,24 @@ export class WebSocketTransport implements Transport {
     this.socketFactory = options.socketFactory;
     this.clock = options.clock ?? systemClock;
     this.onDiagnostic = options.onDiagnostic;
+    this.onTrace = options.onTrace;
+    const traceLevel = options.traceLevel ?? "summary";
+    if (traceLevel !== "summary" && traceLevel !== "chunks") {
+      throw new RangeError('traceLevel must be either "summary" or "chunks".');
+    }
+    this.traceLevel = traceLevel;
+    this.traceChunksEnabled = this.onTrace !== undefined && traceLevel === "chunks";
+    const chunkWindowSize = options.chunkWindowSize ?? MAX_IN_FLIGHT_CHUNKS;
+    if (
+      !Number.isSafeInteger(chunkWindowSize) ||
+      chunkWindowSize < 1 ||
+      chunkWindowSize > MAX_CHUNKS_PER_TRANSFER
+    ) {
+      throw new RangeError(
+        `chunkWindowSize must be a safe integer from 1 to ${MAX_CHUNKS_PER_TRANSFER}.`,
+      );
+    }
+    this.chunkWindowSize = chunkWindowSize;
   }
 
   /**
@@ -385,29 +449,88 @@ export class WebSocketTransport implements Transport {
       );
     }
 
-    // 入队的是最终编码快照；ACK 超时重试始终发送相同内容，不受调用方后续修改影响。
-    let snapshot: string;
+    // 入队的是每个 chunk 的最终编码快照；重试始终发送相同内容，不受调用方后续修改影响。
+    let chunks: readonly EncodedChunk[];
+    let payloadByteLength: number;
     let byteLength: number;
+    let payload: string;
+    let messageSnapshot: SessionMessage;
     try {
-      const messageSnapshot = snapshotJsonValue(message);
-      if (messageSnapshot === undefined || !isSessionMessage(messageSnapshot)) {
+      const snapshot = snapshotJsonValue(message);
+      if (snapshot === undefined || !isSessionMessage(snapshot)) {
         throw new TypeError("Message is not a descriptor-safe SessionMessage.");
       }
-      const payload = JSON.stringify(messageSnapshot);
-      const frame: DataFrame = {
-        kind: "DATA",
-        transferId,
-        chunkIndex: 0,
-        chunkCount: 1,
-        payload,
-      };
-      snapshot = JSON.stringify(frame);
-      byteLength = this.encoder.encode(snapshot).byteLength;
+      messageSnapshot = snapshot;
+      payload = JSON.stringify(messageSnapshot);
     } catch (cause) {
       return Promise.reject(
         new SDKError(
           sdkErrorCodes.encodeError,
           "Session message could not be encoded safely.",
+          "not_sent",
+          { cause },
+        ),
+      );
+    }
+
+    payloadByteLength = this.encoder.encode(payload).byteLength;
+    // Encoding can run user-controlled getters/proxies and may cross a
+    // connection, cancellation, or deadline boundary. Re-check those states
+    // before returning a size error so the original terminal cause wins.
+    if (
+      this.stateValue !== "connected" ||
+      this.currentGeneration !== generation ||
+      this.binding?.socket !== socket ||
+      socket.readyState !== WEBSOCKET_OPEN
+    ) {
+      return Promise.reject(
+        this.notConnectedError("Transport changed connection while encoding DATA."),
+      );
+    }
+    if (isSignalAborted(sendOptions.signal)) {
+      return Promise.reject(new TransportSendCancelledError("not_sent"));
+    }
+    if (this.isDeadlineReached(sendOptions.deadlineAt)) {
+      return Promise.reject(this.deadlineError("not_sent"));
+    }
+    if (payloadByteLength > MAX_MESSAGE_BYTES) {
+      return Promise.reject(
+        new SDKError(
+          sdkErrorCodes.messageTooLarge,
+          `Encoded Session payload exceeds ${MAX_MESSAGE_BYTES} bytes.`,
+          "not_sent",
+        ),
+      );
+    }
+    // The final frame snapshots can only be larger than their inner payload.
+    // This lower-bound check avoids doing a full split when the queue is
+    // already certainly over budget; the exact snapshot sum is checked below.
+    if (
+      this.queue.length >= MAX_QUEUED_MESSAGES ||
+      this.queuedBytes + payloadByteLength > MAX_QUEUED_BYTES
+    ) {
+      return Promise.reject(
+        new SDKError(
+          sdkErrorCodes.transportQueueFull,
+          "Transport DATA queue is full.",
+          "not_sent",
+        ),
+      );
+    }
+    try {
+      const encoded = encodeDataChunks(
+        transferId,
+        payload,
+        this.encoder,
+        payloadByteLength,
+      );
+      chunks = encoded.chunks;
+      byteLength = encoded.byteLength;
+    } catch (cause) {
+      return Promise.reject(
+        new SDKError(
+          sdkErrorCodes.encodeError,
+          "Session message could not be split into DATA chunks safely.",
           "not_sent",
           { cause },
         ),
@@ -430,11 +553,15 @@ export class WebSocketTransport implements Transport {
     if (this.isDeadlineReached(sendOptions.deadlineAt)) {
       return Promise.reject(this.deadlineError("not_sent"));
     }
-    if (byteLength > MAX_MESSAGE_BYTES) {
+    if (
+      payloadByteLength > MAX_MESSAGE_BYTES ||
+      chunks.length > MAX_CHUNKS_PER_TRANSFER ||
+      chunks.some((chunk) => chunk.byteLength > MAX_MESSAGE_BYTES)
+    ) {
       return Promise.reject(
         new SDKError(
           sdkErrorCodes.messageTooLarge,
-          `Encoded DATA frame exceeds ${MAX_MESSAGE_BYTES} bytes.`,
+          `Encoded Session payload or DATA chunk exceeds ${MAX_MESSAGE_BYTES} bytes.`,
           "not_sent",
         ),
       );
@@ -457,21 +584,33 @@ export class WebSocketTransport implements Transport {
     const item: SendItem = {
       transferId,
       generation,
-      snapshot,
+      chunks,
       byteLength,
       options: sendOptions,
       deferred,
-      attempts: 0,
       delivery: "not_sent",
+      deliveryUnknownNotified: false,
       settled: false,
-      sending: false,
-      ackReceivedWhileSending: false,
-      ackTimer: undefined,
+      nextChunkIndex: 0,
+      inFlight: new Map(),
+      ackedChunks: 0,
       deadlineTimer: undefined,
       abortListener: undefined,
     };
     this.queue.push(item);
     this.queuedBytes += byteLength;
+    this.trace("transfer.queued", {
+      generation,
+      transferId,
+      messageType: messageSnapshot.type,
+      requestId: messageSnapshot.requestId,
+      payloadBytes: payloadByteLength,
+      chunkCount: chunks.length,
+      frameBytes: byteLength,
+      queueTransfers: this.queue.length,
+      queuedBytes: this.queuedBytes,
+      window: this.chunkWindowSize,
+    });
     this.installCancellation(item);
     if (!item.settled) {
       this.schedulePump();
@@ -623,7 +762,7 @@ export class WebSocketTransport implements Transport {
     switch (frame.kind) {
       case "DATA":
         if (this.stateValue === "connected") {
-          this.receiveData(generation, raw, frame);
+          this.receiveData(generation, frame);
         }
         break;
       case "ACK":
@@ -715,35 +854,163 @@ export class WebSocketTransport implements Transport {
   }
 
   /**
-   * 使用连接内高水位保证 DATA 至多交付一次：同 ID、同摘要只重发 ACK，
-   * 旧 ID 或同 ID 冲突帧直接丢弃。仅在 accept 正常返回后推进高水位并确认。
+   * 接收并重组一个 transfer。非最后 chunk 在可靠缓存后立即 ACK；最后一个
+   * chunk 只有在完整 payload 已交给 Session 后才 ACK。这样窗口可以前进，
+   * 同时 send() 的最终 resolve 仍然代表完整 SessionMessage 已交付。
    */
-  private receiveData(generation: number, raw: string, frame: DataFrame): void {
-    const digest = raw;
-    if (frame.transferId < this.highestAcceptedTransferId) {
+  private receiveData(generation: number, frame: DataFrame): void {
+    if (frame.chunkCount > MAX_CHUNKS_PER_TRANSFER) {
+      this.diagnostic("Dropped DATA with an excessive chunk count.");
       return;
     }
-    if (frame.transferId === this.highestAcceptedTransferId) {
-      if (digest === this.highestAcceptedDigest) {
-        this.sendControl(
-          { kind: "ACK", transferId: frame.transferId, chunkIndex: 0 },
+    const chunkBytes = this.encoder.encode(frame.payload).byteLength;
+    // 保留旧的单帧输入兼容性；真正的多 chunk transfer 每段必须符合测试尺寸。
+    if (
+      (frame.chunkCount > 1 && chunkBytes > CHUNK_PAYLOAD_BYTES) ||
+      chunkBytes > MAX_MESSAGE_BYTES
+    ) {
+      this.diagnostic("Dropped DATA with an oversized chunk payload.");
+      return;
+    }
+    if (this.traceChunksEnabled) {
+      this.trace("chunk.received", {
+        generation,
+        transferId: frame.transferId,
+        chunkIndex: frame.chunkIndex,
+        chunkCount: frame.chunkCount,
+        chunkBytes,
+      }, "chunks");
+    }
+
+    const completed = this.completedTransfer;
+    if (completed !== undefined && frame.transferId === completed.transferId) {
+      if (
+        frame.chunkCount !== completed.chunkCount ||
+        completed.chunks.get(frame.chunkIndex) !== frame.payload
+      ) {
+        this.diagnostic("Dropped conflicting DATA for the completed transfer.");
+        return;
+      }
+      if (this.traceChunksEnabled) {
+        this.trace("chunk.duplicate", {
           generation,
+          transferId: frame.transferId,
+          chunkIndex: frame.chunkIndex,
+          chunkCount: frame.chunkCount,
+          completed: true,
+        }, "chunks");
+      }
+      this.sendControl(
+        { kind: "ACK", transferId: frame.transferId, chunkIndex: frame.chunkIndex },
+        generation,
+        completed.chunkCount,
+      );
+      return;
+    }
+
+    if (frame.transferId <= this.highestAcceptedTransferId) {
+      return;
+    }
+
+    let incoming = this.incomingTransfer;
+    if (incoming === undefined || frame.transferId > incoming.transferId) {
+      incoming = {
+        transferId: frame.transferId,
+        chunkCount: frame.chunkCount,
+        chunks: new Map(),
+        totalPayloadBytes: 0,
+        delivering: false,
+      };
+      this.incomingTransfer = incoming;
+    }
+    if (
+      incoming.transferId !== frame.transferId ||
+      incoming.chunkCount !== frame.chunkCount
+    ) {
+      this.diagnostic("Dropped DATA with a conflicting transfer shape.");
+      return;
+    }
+    if (incoming.delivering) {
+      this.diagnostic("Ignored reentrant DATA while a transfer is being delivered.");
+      return;
+    }
+
+    const previous = incoming.chunks.get(frame.chunkIndex);
+    if (previous !== undefined) {
+      if (previous !== frame.payload) {
+        this.diagnostic("Dropped conflicting DATA for a partial transfer.");
+        return;
+      }
+      if (this.traceChunksEnabled) {
+        this.trace("chunk.duplicate", {
+          generation,
+          transferId: frame.transferId,
+          chunkIndex: frame.chunkIndex,
+          chunkCount: frame.chunkCount,
+          completed: false,
+        }, "chunks");
+      }
+      // The completing chunk is ACKed only after full delivery. Other duplicate
+      // chunks can be acknowledged immediately while reassembly is incomplete.
+      if (incoming.chunks.size < incoming.chunkCount && frame.chunkIndex < frame.chunkCount - 1) {
+        this.sendControl(
+          { kind: "ACK", transferId: frame.transferId, chunkIndex: frame.chunkIndex },
+          generation,
+          incoming.chunkCount,
         );
-      } else {
-        this.diagnostic("Dropped conflicting DATA for the current high-water ID.");
+        return;
+      }
+    } else {
+      incoming.chunks.set(frame.chunkIndex, frame.payload);
+      incoming.totalPayloadBytes += chunkBytes;
+      if (this.traceChunksEnabled) {
+        this.trace("chunk.cached", {
+          generation,
+          transferId: frame.transferId,
+          chunkIndex: frame.chunkIndex,
+          chunkCount: frame.chunkCount,
+          receivedChunks: incoming.chunks.size,
+          totalPayloadBytes: incoming.totalPayloadBytes,
+        }, "chunks");
+      }
+    }
+    if (incoming.totalPayloadBytes > MAX_MESSAGE_BYTES) {
+      this.diagnostic("Dropped DATA transfer whose reassembled payload is oversized.");
+      this.incomingTransfer = undefined;
+      return;
+    }
+
+    if (incoming.chunks.size < incoming.chunkCount) {
+      // Hold the final-chunk ACK until Session.accept has seen the reassembled
+      // message; this preserves the public Transport.send() delivery contract.
+      if (frame.chunkIndex < frame.chunkCount - 1) {
+        this.sendControl(
+          { kind: "ACK", transferId: frame.transferId, chunkIndex: frame.chunkIndex },
+          generation,
+          incoming.chunkCount,
+        );
       }
       return;
     }
 
+    const payload = Array.from({ length: incoming.chunkCount }, (_, index) =>
+      incoming.chunks.get(index) ?? ""
+    ).join("");
+    this.trace("transfer.reassembled", {
+      generation,
+      transferId: frame.transferId,
+      chunkCount: incoming.chunkCount,
+      payloadBytes: incoming.totalPayloadBytes,
+    });
     let message: unknown;
     try {
-      message = JSON.parse(frame.payload);
+      message = JSON.parse(payload);
     } catch (cause) {
-      this.diagnostic("Dropped DATA with malformed JSON payload.", cause);
+      this.diagnostic("Dropped reassembled DATA with malformed JSON payload.", cause);
       return;
     }
     if (!isJsonValue(message)) {
-      this.diagnostic("Dropped DATA whose payload is not a JSON value.");
+      this.diagnostic("Dropped reassembled DATA whose payload is not a JSON value.");
       return;
     }
 
@@ -752,27 +1019,63 @@ export class WebSocketTransport implements Transport {
       this.diagnostic("Dropped DATA because no Session receiver is bound.");
       return;
     }
+    const messageDetails = isSessionMessage(message)
+      ? {
+        messageType: message.type,
+        requestId: message.requestId,
+      }
+      : {
+        messageType: "invalid-session-message",
+        requestId: null,
+      };
+    this.trace("receiver.accept.start", {
+      generation,
+      transferId: frame.transferId,
+      ...messageDetails,
+    });
+    incoming.delivering = true;
     try {
       receiver.accept(message);
     } catch (cause) {
+      incoming.delivering = false;
       this.diagnostic("Transport receiver accept callback threw; DATA was not ACKed.", cause);
       return;
     }
+    incoming.delivering = false;
+    this.trace("receiver.accept.done", {
+      generation,
+      transferId: frame.transferId,
+      ...messageDetails,
+    });
 
     if (
       generation !== this.currentGeneration ||
       this.stateValue !== "connected" ||
-      this.binding?.generation !== generation
+      this.binding?.generation !== generation ||
+      this.incomingTransfer !== incoming ||
+      this.highestAcceptedTransferId >= frame.transferId
     ) {
       return;
     }
 
     this.highestAcceptedTransferId = frame.transferId;
-    this.highestAcceptedDigest = digest;
-    this.sendControl(
-      { kind: "ACK", transferId: frame.transferId, chunkIndex: 0 },
-      generation,
-    );
+    this.completedTransfer = {
+      transferId: frame.transferId,
+      chunkCount: incoming.chunkCount,
+      chunks: new Map(incoming.chunks),
+    };
+    this.incomingTransfer = undefined;
+    const completingChunks = new Set([
+      frame.chunkIndex,
+      frame.chunkCount - 1,
+    ]);
+    for (const chunkIndex of completingChunks) {
+      this.sendControl(
+        { kind: "ACK", transferId: frame.transferId, chunkIndex },
+        generation,
+        incoming.chunkCount,
+      );
+    }
   }
 
   private receiveAck(generation: number, frame: AckFrame): void {
@@ -786,16 +1089,52 @@ export class WebSocketTransport implements Transport {
       return;
     }
 
+    const chunk = item.inFlight.get(frame.chunkIndex);
+    if (chunk === undefined || chunk.settled) {
+      return;
+    }
+    if (this.traceChunksEnabled) {
+      this.trace("chunk.ack.received", {
+        generation,
+        transferId: frame.transferId,
+        chunkIndex: frame.chunkIndex,
+        chunkCount: item.chunks.length,
+        attempt: chunk.attempts,
+        acknowledgedChunks: item.ackedChunks + 1,
+      }, "chunks");
+    }
+
     // WebSocketLike 适配器可能在 send() 调用栈内同步触发 ACK，延迟完成以保持 active 一致。
-    if (item.sending) {
-      item.ackReceivedWhileSending = true;
+    if (chunk.sending) {
+      chunk.ackReceivedWhileSending = true;
       return;
     }
 
-    this.completeAck(item);
+    this.completeChunk(item, chunk);
   }
 
-  private completeAck(item: SendItem): void {
+  private completeChunk(item: SendItem, chunk: ChunkSendState): void {
+    if (item.settled || chunk.settled) {
+      return;
+    }
+    chunk.settled = true;
+    if (chunk.ackTimer !== undefined) {
+      this.clock.clearTimeout(chunk.ackTimer);
+      chunk.ackTimer = undefined;
+    }
+    item.inFlight.delete(chunk.chunk.chunkIndex);
+    item.ackedChunks += 1;
+    if (item.ackedChunks === item.chunks.length) {
+      this.completeItem(item);
+      return;
+    }
+    this.schedulePump();
+  }
+
+  private completeItem(item: SendItem): void {
+    if (item.settled) {
+      return;
+    }
     item.settled = true;
     this.clearItemResources(item);
     if (this.active === item) {
@@ -808,6 +1147,14 @@ export class WebSocketTransport implements Transport {
     }
     item.delivery = "delivered";
     this.notifyDelivery(item, "delivered");
+    this.trace("transfer.completed", {
+      generation: item.generation,
+      transferId: item.transferId,
+      chunkCount: item.chunks.length,
+      frameBytes: item.byteLength,
+      queueTransfers: this.queue.length,
+      queuedBytes: this.queuedBytes,
+    });
     item.deferred.resolve();
     this.schedulePump();
   }
@@ -872,15 +1219,26 @@ export class WebSocketTransport implements Transport {
   }
 
   private pump(): void {
-    if (
-      this.stateValue !== "connected" ||
-      this.active !== undefined ||
-      this.queue.length === 0
-    ) {
+    if (this.stateValue !== "connected") {
       return;
     }
-    const item = this.queue[0];
+
+    let item = this.active;
     if (item === undefined) {
+      item = this.queue[0];
+      if (item === undefined) {
+        return;
+      }
+      this.active = item;
+      this.trace("transfer.started", {
+        generation: item.generation,
+        transferId: item.transferId,
+        chunkCount: item.chunks.length,
+        window: this.chunkWindowSize,
+        queueTransfers: this.queue.length,
+      });
+    }
+    if (item.settled) {
       return;
     }
     if (item.generation !== this.currentGeneration) {
@@ -903,17 +1261,40 @@ export class WebSocketTransport implements Transport {
       return;
     }
 
-    this.active = item;
-    this.transmitActive(item);
+    while (
+      !item.settled &&
+      this.active === item &&
+      item.inFlight.size < this.chunkWindowSize &&
+      item.nextChunkIndex < item.chunks.length
+    ) {
+      const chunk = item.chunks[item.nextChunkIndex];
+      if (chunk === undefined) {
+        break;
+      }
+      item.nextChunkIndex += 1;
+      const state: ChunkSendState = {
+        chunk,
+        attempts: 0,
+        settled: false,
+        sending: false,
+        ackReceivedWhileSending: false,
+        ackTimer: undefined,
+      };
+      item.inFlight.set(chunk.chunkIndex, state);
+      this.transmitChunk(item, state);
+      // A synchronous ACK completes the chunk and schedules another pump. Do
+      // not recursively send the next chunk in the same call stack.
+      if (state.settled || item.settled) {
+        break;
+      }
+    }
   }
 
-  /**
-   * 每次超时都重发同一快照。本地 send 返回后交付状态只能确定为 unknown，
-   * 只有收到匹配 ACK 才能推进为 delivered。
-   */
-  private transmitActive(item: SendItem): void {
+  /** Send or retry one immutable chunk within the active transfer window. */
+  private transmitChunk(item: SendItem, chunk: ChunkSendState): void {
     if (
       item.settled ||
+      chunk.settled ||
       this.active !== item ||
       this.stateValue !== "connected" ||
       item.generation !== this.currentGeneration
@@ -935,12 +1316,34 @@ export class WebSocketTransport implements Transport {
       return;
     }
 
-    item.attempts += 1;
-    item.sending = true;
+    chunk.attempts += 1;
+    chunk.sending = true;
+    const wasNotSent = item.delivery === "not_sent";
+    // Mark the transfer before entering WebSocket.send. A synchronous adapter
+    // may deliver an ACK and/or disconnect reentrantly before send() returns;
+    // if the call ultimately throws without settling, the state is restored.
+    if (wasNotSent) {
+      item.delivery = "unknown";
+    }
+    if (this.traceChunksEnabled) {
+      this.trace("chunk.send", {
+        generation: item.generation,
+        transferId: item.transferId,
+        chunkIndex: chunk.chunk.chunkIndex,
+        chunkCount: item.chunks.length,
+        attempt: chunk.attempts,
+        frameBytes: chunk.chunk.byteLength,
+        inFlightChunks: item.inFlight.size,
+        window: this.chunkWindowSize,
+      }, "chunks");
+    }
     try {
-      socket.send(item.snapshot);
+      socket.send(chunk.chunk.snapshot);
     } catch (cause) {
-      item.sending = false;
+      chunk.sending = false;
+      if (!item.settled && wasNotSent) {
+        item.delivery = "not_sent";
+      }
       const delivery = item.delivery;
       this.failItem(
         item,
@@ -956,33 +1359,42 @@ export class WebSocketTransport implements Transport {
       }
       return;
     }
-    item.sending = false;
+    chunk.sending = false;
 
-    if (item.settled) {
+    if (item.settled || chunk.settled) {
+      // A synchronous close/abort can settle the item from inside send().
+      // The bytes were nevertheless handed to the adapter, so expose the
+      // uncertain boundary exactly once before returning.
+      if (wasNotSent && item.delivery === "unknown") {
+        this.notifyDelivery(item, "unknown");
+      }
       return;
     }
-    if (item.ackReceivedWhileSending) {
-      item.ackReceivedWhileSending = false;
-      this.completeAck(item);
-      return;
-    }
-    if (item.delivery === "not_sent") {
-      item.delivery = "unknown";
+    // A synchronous adapter can deliver the ACK from inside socket.send().
+    // The first successful send still crosses the public delivery boundary
+    // before the ACK can complete the transfer.
+    if (wasNotSent && !item.settled) {
       this.notifyDelivery(item, "unknown");
     }
-    if (item.settled) {
+    if (item.settled || chunk.settled) {
+      return;
+    }
+    if (chunk.ackReceivedWhileSending) {
+      chunk.ackReceivedWhileSending = false;
+      this.completeChunk(item, chunk);
       return;
     }
     try {
-      item.ackTimer = this.clock.setTimeout(() => {
+      chunk.ackTimer = this.clock.setTimeout(() => {
         if (
           item.settled ||
+          chunk.settled ||
           this.active !== item ||
           item.generation !== this.currentGeneration
         ) {
           return;
         }
-        item.ackTimer = undefined;
+        chunk.ackTimer = undefined;
         if (item.options.signal?.aborted === true) {
           this.failItem(item, new TransportSendCancelledError(item.delivery));
           return;
@@ -991,18 +1403,18 @@ export class WebSocketTransport implements Transport {
           this.failItem(item, this.deadlineError(item.delivery));
           return;
         }
-        if (item.attempts >= MAX_SEND_ATTEMPTS) {
+        if (chunk.attempts >= MAX_SEND_ATTEMPTS) {
           this.failItem(
             item,
             new SDKError(
               sdkErrorCodes.deliveryUnconfirmed,
-              `No ACK after ${MAX_SEND_ATTEMPTS} DATA attempts.`,
+              `No ACK after ${MAX_SEND_ATTEMPTS} DATA attempts for chunk ${chunk.chunk.chunkIndex}.`,
               "unknown",
             ),
           );
           return;
         }
-        this.transmitActive(item);
+        this.transmitChunk(item, chunk);
       }, ACK_TIMEOUT_MS);
     } catch (cause) {
       this.failItem(
@@ -1080,6 +1492,15 @@ export class WebSocketTransport implements Transport {
       this.active = undefined;
     }
     this.removeQueuedItem(item);
+    this.trace("transfer.failed", {
+      generation: item.generation,
+      transferId: item.transferId,
+      chunkCount: item.chunks.length,
+      delivery: item.delivery,
+      reason: traceErrorReason(error),
+      queueTransfers: this.queue.length,
+      queuedBytes: this.queuedBytes,
+    });
     item.deferred.reject(error);
     this.schedulePump();
   }
@@ -1096,10 +1517,14 @@ export class WebSocketTransport implements Transport {
   }
 
   private clearItemResources(item: SendItem): void {
-    if (item.ackTimer !== undefined) {
-      this.clock.clearTimeout(item.ackTimer);
-      item.ackTimer = undefined;
+    for (const chunk of item.inFlight.values()) {
+      if (chunk.ackTimer !== undefined) {
+        this.clock.clearTimeout(chunk.ackTimer);
+        chunk.ackTimer = undefined;
+      }
+      chunk.settled = true;
     }
+    item.inFlight.clear();
     if (item.deadlineTimer !== undefined) {
       this.clock.clearTimeout(item.deadlineTimer);
       item.deadlineTimer = undefined;
@@ -1146,6 +1571,17 @@ export class WebSocketTransport implements Transport {
     item: SendItem,
     delivery: Exclude<DeliveryState, "not_sent">,
   ): void {
+    if (delivery === "unknown") {
+      if (item.deliveryUnknownNotified) {
+        return;
+      }
+      item.deliveryUnknownNotified = true;
+    }
+    this.trace("transfer.delivery", {
+      generation: item.generation,
+      transferId: item.transferId,
+      delivery,
+    });
     try {
       item.options.onDeliveryChange?.(delivery);
     } catch (cause) {
@@ -1153,13 +1589,32 @@ export class WebSocketTransport implements Transport {
     }
   }
 
-  private sendControl(frame: TransportFrame, generation: number): boolean {
+  private sendControl(
+    frame: TransportFrame,
+    generation: number,
+    chunkCount?: number,
+  ): boolean {
     if (generation !== this.currentGeneration) {
       return false;
     }
     const socket = this.binding?.socket;
     if (socket === undefined || socket.readyState !== WEBSOCKET_OPEN) {
       return false;
+    }
+    if (frame.kind === "ACK") {
+      if (this.traceChunksEnabled) {
+        this.trace("ack.send", {
+          generation,
+          transferId: frame.transferId,
+          chunkIndex: frame.chunkIndex,
+          ...(chunkCount === undefined ? {} : { chunkCount }),
+        }, "chunks");
+      }
+    } else {
+      this.trace("control.send", {
+        generation,
+        kind: frame.kind,
+      });
     }
     try {
       socket.send(JSON.stringify(frame));
@@ -1241,7 +1696,8 @@ export class WebSocketTransport implements Transport {
     // 所有传输与去重状态均按连接隔离；递增 token 同时使已排队的旧 pump 失效。
     this.nextTransferId = 1;
     this.highestAcceptedTransferId = 0;
-    this.highestAcceptedDigest = undefined;
+    this.incomingTransfer = undefined;
+    this.completedTransfer = undefined;
     this.active = undefined;
     this.queue = [];
     this.queuedBytes = 0;
@@ -1313,6 +1769,10 @@ export class WebSocketTransport implements Transport {
   }
 
   private emitState(state: TransportState): void {
+    this.trace("state.changed", {
+      generation: this.currentGeneration,
+      state,
+    });
     for (const listener of [...this.stateListeners]) {
       try {
         listener(state);
@@ -1329,6 +1789,40 @@ export class WebSocketTransport implements Transport {
       // 诊断回调不能改变协议行为。
     }
   }
+
+  private trace(
+    event: string,
+    details: ProtocolTraceDetails,
+    level: ProtocolTraceLevel = "summary",
+  ): void {
+    if (
+      this.onTrace === undefined ||
+      (level === "chunks" && this.traceLevel !== "chunks")
+    ) {
+      return;
+    }
+    try {
+      queueProtocolTrace(this.onTrace, {
+        at: this.clock.now(),
+        layer: "transport",
+        event,
+        details,
+      });
+    } catch {
+      // A diagnostic/debug clock or event shape must never change transport state.
+    }
+  }
+}
+
+function traceErrorReason(error: unknown): string {
+  try {
+    if (error instanceof SDKError) {
+      return error.code;
+    }
+  } catch {
+    return "error";
+  }
+  return "error";
 }
 
 function createDeferred<T>(): Deferred<T> {
@@ -1385,8 +1879,10 @@ function parseTransportFrame(value: unknown): TransportFrame | undefined {
           "payload",
         ]) ||
         !isPositiveSafeInteger(value.transferId) ||
-        value.chunkIndex !== 0 ||
-        value.chunkCount !== 1 ||
+        !isChunkIndex(value.chunkIndex) ||
+        !isPositiveSafeInteger(value.chunkCount) ||
+        value.chunkCount > MAX_CHUNKS_PER_TRANSFER ||
+        value.chunkIndex >= value.chunkCount ||
         typeof value.payload !== "string"
       ) {
         return undefined;
@@ -1394,22 +1890,22 @@ function parseTransportFrame(value: unknown): TransportFrame | undefined {
       return {
         kind: "DATA",
         transferId: value.transferId,
-        chunkIndex: 0,
-        chunkCount: 1,
+        chunkIndex: value.chunkIndex,
+        chunkCount: value.chunkCount,
         payload: value.payload,
       };
     case "ACK":
       if (
         !hasOnlyKeys(value, ["kind", "transferId", "chunkIndex"]) ||
         !isPositiveSafeInteger(value.transferId) ||
-        value.chunkIndex !== 0
+        !isChunkIndex(value.chunkIndex)
       ) {
         return undefined;
       }
       return {
         kind: "ACK",
         transferId: value.transferId,
-        chunkIndex: 0,
+        chunkIndex: value.chunkIndex,
       };
     case "CLOSE":
       return hasOnlyKeys(value, ["kind"]) ? { kind: "CLOSE" } : undefined;
@@ -1418,6 +1914,72 @@ function parseTransportFrame(value: unknown): TransportFrame | undefined {
     default:
       return undefined;
   }
+}
+
+function encodeDataChunks(
+  transferId: number,
+  payload: string,
+  encoder: TextEncoder,
+  payloadByteLength = encoder.encode(payload).byteLength,
+): {
+  chunks: readonly EncodedChunk[];
+  payloadByteLength: number;
+  byteLength: number;
+} {
+  const pieces = splitUtf8(payload, encoder, CHUNK_PAYLOAD_BYTES);
+  const chunkCount = pieces.length;
+  const chunks = pieces.map((piece, chunkIndex) => {
+    const frame: DataFrame = {
+      kind: "DATA",
+      transferId,
+      chunkIndex,
+      chunkCount,
+      payload: piece,
+    };
+    const snapshot = JSON.stringify(frame);
+    return {
+      chunkIndex,
+      snapshot,
+      byteLength: encoder.encode(snapshot).byteLength,
+    };
+  });
+  return {
+    chunks,
+    payloadByteLength,
+    byteLength: chunks.reduce((total, chunk) => total + chunk.byteLength, 0),
+  };
+}
+
+/** Split by Unicode code point without ever cutting a UTF-8 sequence. */
+function splitUtf8(
+  value: string,
+  encoder: TextEncoder,
+  maxBytes: number,
+): string[] {
+  const pieces: string[] = [];
+  let current = "";
+  let currentBytes = 0;
+  for (const codePoint of Array.from(value)) {
+    const codePointBytes = encoder.encode(codePoint).byteLength;
+    if (codePointBytes > maxBytes) {
+      throw new RangeError("A Unicode code point exceeds the chunk payload limit.");
+    }
+    if (current.length > 0 && currentBytes + codePointBytes > maxBytes) {
+      pieces.push(current);
+      current = "";
+      currentBytes = 0;
+    }
+    current += codePoint;
+    currentBytes += codePointBytes;
+  }
+  if (current.length > 0 || pieces.length === 0) {
+    pieces.push(current);
+  }
+  return pieces;
+}
+
+function isChunkIndex(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,8 +1,8 @@
 # SDK Request/Response 协议 V1 设计与实现基线
 
-> 状态：V1 实现验收稿；协议行为与初始容量、时间常量已冻结  
+> 状态：V1 分片扩展验收稿；协议行为与测试容量、时间常量以当前实现为准
 > 范围：WebSocket Transport、双向 Session Request/Response、SDK Client  
-> 注意：本文与当前仓库实现一致；后续不兼容调整必须进入新协议版本。
+> 注意：多 Chunk 帧与旧的固定单 Chunk 接收端不兼容，客户端和服务端必须同步升级；本文与当前仓库实现一致。
 
 ## 阅读导航
 
@@ -35,7 +35,7 @@ V1 的核心交付语义是：
 
 - notify、topic、订阅、取消订阅、通知重放。
 - HTTP、蓝牙等其他 Transport 的具体实现。
-- 一个 WebSocket DATA 报文拆成多个 Chunk；V1 WebSocket 固定只有一个 Chunk。
+- 多个逻辑 transfer 并行发送、动态拥塞控制或跨连接恢复 partial transfer。
 - Session 自动重试 Request。
 - 用户主动取消请求。
 - 单次请求覆盖默认超时时间。
@@ -564,24 +564,24 @@ onDeliveryChange 只允许单向推进：
 
 ~~~text
 not_sent
-  → unknown    第一次 WebSocket.send 正常返回
-  → delivered  收到 Transport ACK
+  → unknown    第一个 chunk 的 WebSocket.send 正常返回
+  → delivered  当前 transfer 的全部 chunk 收到 Transport ACK
 ~~~
 
-Transport 在调用 WebSocket.send 前仍为 not_sent；WebSocket.send 同步抛错也保持 not_sent。调用正常返回后，即使稍后断线也只能判断为 unknown。收到匹配 ACK 时，Transport 必须先通知 delivered，再 resolve send。Session 收到匹配 Response 时也把该 Pending 视为 delivered，因为 Response 已证明 Request 到达并被远端 Session 处理。
+Transport 在发送第一个 chunk 前仍为 not_sent；WebSocket.send 同步抛错也保持 not_sent。任意 chunk 发送正常返回后，即使稍后断线也只能判断为 unknown。全部 chunk 收到匹配 ACK 时，Transport 必须先通知 delivered，再 resolve send。Session 收到匹配 Response 时也把该 Pending 视为 delivered，因为 Response 已证明 Request 到达并被远端 Session 处理。
 
 ## 15. Transport.send 的成功定义
 
 Transport.send 只有在满足以下全部条件后才能 resolve：
 
 1. 本端完成编码和准入。
-2. DATA 已通过 WebSocket 发出。
-3. 对端 Transport 收到完整 DATA。
-4. 对端 Transport 完成解码。
+2. 当前 transfer 的全部 DATA chunk 已通过 WebSocket 发出。
+3. 对端 Transport 收到并重组全部 chunk。
+4. 对端 Transport 完成完整 payload 解码。
 5. 对端 Transport 同步调用 Session.accept。
 6. Session.accept 正常返回。
-7. 对端 Transport 回 ACK。
-8. 本端收到匹配当前连接、当前 transferId、当前 Chunk 的 ACK。
+7. 对端 Transport 确认完成重组的 chunk，并补发所需 ACK。
+8. 本端收到匹配当前连接、当前 transferId 的全部 Chunk ACK。
 
 它不等待：
 
@@ -606,10 +606,13 @@ Transport.send 被调用时，必须立即：
 
 因此调用方在 send 之后修改原对象，不会改变已经排队的内容。
 
-每个具体 Transport 自己定义以下固定常量，不通过 Client/Session 动态配置：
+每个具体 Transport 自己定义以下协议常量；Client/Session 不参与分片和窗口控制：
 
 ~~~ts
 MAX_MESSAGE_BYTES
+CHUNK_PAYLOAD_BYTES
+MAX_CHUNKS_PER_TRANSFER
+MAX_IN_FLIGHT_CHUNKS
 MAX_QUEUED_MESSAGES
 MAX_QUEUED_BYTES
 ACK_TIMEOUT_MS
@@ -619,9 +622,9 @@ CLOSE_ACK_TIMEOUT_MS
 
 具体数值在实现前通过基准测试确定；在数值确定前，它们是 V1 唯一保留的实现参数空位。
 
-MAX_MESSAGE_BYTES 以最终 WebSocket DATA 文本帧的 UTF-8 字节数为准，包含外层帧、转义和多字节字符。MAX_QUEUED_BYTES 累计同一种最终发送快照。
+MAX_MESSAGE_BYTES 以每个最终 WebSocket DATA 文本帧的 UTF-8 字节数为准，包含外层帧、转义和多字节字符。CHUNK_PAYLOAD_BYTES 以 DATA.payload 的 UTF-8 字节数为准；MAX_QUEUED_BYTES 累计一个 transfer 的所有最终 chunk 快照。
 
-队列预算统计所有尚未进入终态的 DATA，包括当前正在等待 ACK 的消息和等待发送的消息。ACK、CLOSE、CLOSE_ACK 不进入 DATA 队列；V1 通过固定帧大小校验防止异常大的控制帧，不额外定义控制帧限流策略。
+队列预算统计所有尚未进入终态的逻辑 transfer，包括当前窗口内等待 ACK 的 chunk 和等待发送的 chunk。ACK、CLOSE、CLOSE_ACK 不进入 DATA 队列；Transport 另以 MAX_IN_FLIGHT_CHUNKS 限制 active transfer 的并行 chunk 数。
 
 超出限制时：
 
@@ -635,13 +638,20 @@ MAX_MESSAGE_BYTES 以最终 WebSocket DATA 文本帧的 UTF-8 字节数为准，
 
 ### 17.1 统一 Chunk 语义
 
-即使 WebSocket 能一次发送完整报文，V1 仍使用 Chunk 协议：
+Transport 先把完整的 Session JSON payload 按 Unicode code point 切分为多个
+UTF-8 chunk。默认每个 `DATA.payload` 不超过 `CHUNK_PAYLOAD_BYTES = 60`
+字节，适合测试 20 个普通汉字（20 × 3 字节）。切分不会破坏代理对或 UTF-8
+序列；重组后必须与原始 payload 保持一致。
 
-- chunkCount 固定为 1。
-- chunkIndex 固定为 0。
-- 每条 SessionMessage 对应一条 DATA。
+当前发送端始终遵守这个 60-byte 分片上限。为兼容早期固定单帧发送端，接收端
+对 `chunkCount === 1` 的 DATA 保留一个入站例外：其 `payload` 可以放宽到
+`MAX_MESSAGE_BYTES`；该例外不会改变新发送端的分片行为，也不能用于多 chunk
+transfer。
 
-这保持 Transport 规范一致，未来蓝牙 Transport 可以使用相同概念扩展为多个 Chunk。
+- `chunkCount` 为该 transfer 的总 chunk 数，至少为 1。
+- `chunkIndex` 从 0 开始，必须小于 `chunkCount`。
+- 一个 SessionMessage 对应一个 `transferId`，可以对应多个 DATA。
+- 一个 transfer 的 chunk 数不能超过 `MAX_CHUNKS_PER_TRANSFER`。
 
 ### 17.2 逻辑帧
 
@@ -650,14 +660,14 @@ type TransportFrame =
   | {
       kind: "DATA";
       transferId: number;
-      chunkIndex: 0;
-      chunkCount: 1;
+      chunkIndex: number;
+      chunkCount: number;
       payload: string;
     }
   | {
       kind: "ACK";
       transferId: number;
-      chunkIndex: 0;
+      chunkIndex: number;
     }
   | {
       kind: "CLOSE";
@@ -669,17 +679,20 @@ type TransportFrame =
 
 V1 WebSocket Codec 使用 UTF-8 JSON 文本：
 
-1. 先对 SessionMessage 执行 JSON.stringify，得到 payload。
-2. 将 payload 放入 DATA 逻辑帧。
-3. 再对 TransportFrame 执行 JSON.stringify，作为 WebSocket 文本帧。
+1. 先对 SessionMessage 执行 JSON.stringify，得到完整 payload。
+2. 按 CHUNK_PAYLOAD_BYTES 切分 payload。
+3. 将每个片段放入带相同 transferId/chunkCount 的 DATA 逻辑帧。
+4. 再对 TransportFrame 执行 JSON.stringify，作为 WebSocket 文本帧。
 
-队列保存第 3 步的最终字符串及其 UTF-8 字节数。MAX_MESSAGE_BYTES 和 MAX_QUEUED_BYTES 都以这个快照为统计对象。重试必须复用完全相同的最终字符串，不能重新读取或重新编码调用方对象。
+队列保存第 4 步的每个最终字符串及其 UTF-8 字节数。MAX_MESSAGE_BYTES 约束单个
+chunk frame，MAX_QUEUED_BYTES 统计整个 transfer 的快照总和。重试必须复用完全
+相同的最终字符串，不能重新读取或重新编码调用方对象。
 
-双层 JSON 是 V1 的明确取舍：优先保证 Codec 边界、快照语义和未来多 Chunk 扩展清晰；后续可在不改变 Session API 的前提下切换为二进制帧。
+双层 JSON 是 V1 的明确取舍：优先保证 Codec 边界、快照语义和多 Chunk 重组边界清晰；后续可在不改变 Session API 的前提下切换为二进制帧。
 
 ### 17.3 入站限制
 
-接收端必须先按原始 WebSocket 文本帧的 UTF-8 字节数执行 MAX_MESSAGE_BYTES 检查，再解析 TransportFrame。DATA payload 必须能解析为合法 JsonValue；随后 Transport 调用 Session.accept，由 Session 检查 SessionMessage 结构。可解析但不是合法 SessionMessage 的 JSON 仍会被交给 Session，并在 accept 正常返回后 ACK。
+接收端必须先按原始 WebSocket 文本帧的 UTF-8 字节数执行 MAX_MESSAGE_BYTES 检查，再解析 TransportFrame。多 chunk DATA 的每个片段不得超过 CHUNK_PAYLOAD_BYTES；`chunkCount === 1` 可按上一节的兼容例外放宽。DATA 片段先在 Transport 内按 transfer 重组；完整 payload 必须能解析为合法 JsonValue，随后 Transport 才调用 Session.accept，由 Session 检查 SessionMessage 结构。可解析但不是合法 SessionMessage 的 JSON 仍会被交给 Session，并在 accept 正常返回后确认最后一个 chunk。
 
 超限、无法解析或不符合 TransportFrame 结构的入站帧：
 
@@ -711,9 +724,11 @@ Transport 内部维护递增的 connection generation。它不需要出现在 V1
 
 这防止旧 WebSocket 迟到的 open、message、close 或 ACK 污染新连接。
 
-## 19. FIFO 调度
+## 19. FIFO 与 Chunk 窗口
 
-DATA 使用严格消息级 FIFO：
+逻辑 transfer 使用严格消息级 FIFO；单个 transfer 内默认允许最多
+`MAX_IN_FLIGHT_CHUNKS` 个 chunk 同时等待 ACK。`chunkWindowSize` 可以为链路或测试
+覆盖这个默认值，但仍受 `MAX_CHUNKS_PER_TRANSFER` 约束：
 
 ~~~text
 A 入队 → B 入队 → C 入队
@@ -729,12 +744,13 @@ A 入队 → B 入队 → C 入队
 
 规则：
 
-- 同一时间只有一条 DATA 处于发送/等待 ACK 状态。
-- 一条消息到达成功、失败或内部取消终态后，才调度下一条。
+- 同一时间只有队首逻辑 transfer 处于发送/等待 ACK 状态。
+- 队首 transfer 内，窗口初始发送最多 MAX_IN_FLIGHT_CHUNKS 个 chunk；每收到一个匹配 ACK，补发一个新的 chunk。
+- 一条逻辑消息的全部 chunk 到达成功、失败或内部取消终态后，才调度下一条消息。
 - 下一次 FIFO pump 必须通过 microtask 异步调度，不能在 resolve、reject 或 Abort 的同一调用栈里直接发送下一条。
 - A 因 ACK 重试耗尽而失败，不连带失败 B、C；只要 WebSocket 仍连接，就继续发送。
 - 如果 WebSocket 实际断开，当前消息和全部排队消息都失败。
-- Request 和 Response 共用同一个 FIFO。
+- Request 和 Response 共用同一个 FIFO；窗口只在单个 transfer 内生效。
 - V1 不给 Response 更高优先级。
 - ACK、CLOSE、CLOSE_ACK 是控制帧，绕过 DATA FIFO，避免死锁。
 
@@ -742,15 +758,15 @@ A 入队 → B 入队 → C 入队
 
 ### 20.1 发送端
 
-对当前 DATA：
+对当前 transfer 的每个 chunk：
 
 1. 检查 signal 和 deadlineAt；已取消或过期则不发送。
-2. 发送最终编码快照。
-3. 启动 ACK_TIMEOUT_MS。
-4. 收到匹配当前 generation、active transferId 和 chunkIndex 的 ACK：清理 timer，resolve send，调度下一条。
-5. 收到不匹配的 ACK 或当前没有 active DATA：静默忽略。
-6. 超时：如果尚有尝试次数，重新检查 signal/deadlineAt，再发送完全相同的快照并重新计时。
-7. 达到 MAX_SEND_ATTEMPTS：以 DELIVERY_UNCONFIRMED reject，然后调度下一条。
+2. 发送该 chunk 的最终编码快照，并启动 ACK_TIMEOUT_MS。
+3. 收到匹配当前 generation、transferId 和 chunkIndex 的 ACK：清理该 chunk timer，释放一个窗口槽位。
+4. 收到不匹配的 ACK 或当前没有对应 in-flight chunk：静默忽略。
+5. 超时：如果尚有尝试次数，重新检查 signal/deadlineAt，再发送完全相同的 chunk 快照并重新计时。
+6. 任意 chunk 达到 MAX_SEND_ATTEMPTS：整个 transfer 以 DELIVERY_UNCONFIRMED reject，然后调度下一条消息。
+7. 只有全部 chunk ACK 收齐后，才将 Transport.send resolve，并推进到下一条消息。
 
 MAX_SEND_ATTEMPTS 包含第一次发送。
 
@@ -758,44 +774,43 @@ MAX_SEND_ATTEMPTS 包含第一次发送。
 
 收到 DATA：
 
-1. 校验帧和 Chunk 字段。
-2. 按 20.4 节检查当前 connection generation 的 high-water 和摘要。
-3. 合法的 high-water 重复帧：不再次交给 Session，立即重发 ACK。
-4. 低于 high-water 或同 ID 不同摘要：丢弃，且不 ACK。
-5. 高于 high-water：解析 payload 并同步调用 Session.accept。
-6. accept 正常返回后，更新 high-water 与摘要。
-7. 发送 ACK。
+1. 校验帧和 Chunk 字段，并限制单 chunk 和 transfer 总大小。
+2. 将片段放入当前 transfer 的重组表；同 index 同内容的重复片段不重复存储。
+3. 尚未完成重组时，已可靠缓存的非最后 chunk 可以立即 ACK，以推进发送窗口；最后 chunk 暂不 ACK。
+4. 所有 chunk 齐全后按 index 拼接 payload，解析并同步调用 Session.accept。
+5. accept 正常返回后记录当前 transfer 的逐 chunk 内容，并 ACK 本次完成重组的 chunk 与此前保留的末 chunk；更早丢失的 ACK 在对应 chunk 重传时补回。
+6. 后续命中已完成 transfer 的重复 chunk 只重发对应 ACK，不再次交给 Session。
 
-“先交上层、后记已收、再 ACK”保证 ACK 表示完整报文已经交给 Session。
+“先完整重组并交上层、后确认最后 chunk”保证 Transport.send 的最终 resolve 仍表示完整报文已交给 Session。
 
 ### 20.3 ACK 丢失
 
 ~~~text
 发送端                         接收端
-  │ DATA transferId=7            │
+  │ DATA transferId=7 chunk=2    │
   ├──────────────────────────────►│
   │                               │ Session.accept（只执行一次）
-  │         ACK 7 丢失            │
+  │         ACK 7/2 丢失          │
   │◄───────────────x──────────────┤
   │ timeout                       │
-  │ DATA transferId=7（相同字节） │
+  │ DATA 7/2（相同字节）          │
   ├──────────────────────────────►│
   │                               │ 命中去重，不再 accept
-  │             ACK 7             │
+  │             ACK 7/2           │
   │◄──────────────────────────────┤
   │ send resolve                  │
 ~~~
 
 ### 20.4 去重记录
 
-V1 同一方向只有一个 active DATA，发送端严格 FIFO，WebSocket 又保证同一连接内帧有序。因此接收端只需维护当前 connection generation 的 highestAcceptedTransferId，以及该 high-water DATA 最终帧的稳定摘要：
+同一方向只有一个 active transfer，transfer 内允许窗口化发送 chunk。接收端维护当前 partial transfer，以及最后一个已完成 transfer 的逐 chunk 内容：
 
-- transferId 大于 highest：这是新的 DATA；交给 Session，成功后推进 highest 并 ACK。允许出现空洞，因为较小 ID 可能已在发送端失败。
-- transferId 等于 highest、摘要相同：这是当前 high-water DATA 的重复；不得再次交给 Session，立即重发 ACK。
-- transferId 等于 highest、摘要不同：协议违规；丢弃、不 ACK，并记录诊断。
-- transferId 小于 highest：这是已经终止的旧帧或空洞 ID；丢弃且不 ACK。
+- transferId 大于 highest：建立或继续 partial transfer；全部 chunk 齐全且 accept 成功后推进 highest。
+- transferId 等于已完成 transfer、chunk 内容相同：不得再次交给 Session，立即重发对应 ACK。
+- 同 transferId、同 index 内容不同或 chunkCount 冲突：协议违规；丢弃、不 ACK，并记录诊断。
+- transferId 小于 highest：这是已经终止的旧 transfer；丢弃且不 ACK。
 
-发送端一旦开始更高 transferId，就不会再合法重试更低 ID；连接内有序性保证旧帧不会越过新帧迟到。只有等于 highest 且摘要相同的帧才能获得重复 ACK，保证每个 ACK 仍然表示该 transfer 已交给 Session。这个高水位策略既满足最后一个 Chunk ACK 丢失时的去重/重 ACK，又不会让去重内存随长连接无限增长。
+发送端一旦开始更高 transferId，就不会再合法重试更低 ID；接收端只保留一个 partial transfer 和最后一个 completed transfer，避免去重内存随长连接无限增长。
 
 ## 21. 内部取消
 
@@ -994,11 +1009,11 @@ Response 使用与 Request 完全相同的 Transport DATA/ACK 机制。
 1. 一个 Session 请求最多 settle 一次。
 2. Pending 在调用 Transport.send 前已经存在。
 3. settle 先清 Map/timer，再调用用户回调。
-4. Transport ACK 只在完整报文已同步交给 Session 后发送。
+4. 中间 chunk ACK 只表示该片段已可靠缓存；最后一个未确认 chunk 只有在完整报文已同步交给 Session 后才 ACK。
 5. 同一 connection generation、同一 transferId 最多向 Session 交付一次。
-6. transferId 等于当前 high-water 且最终帧摘要相同的重复 DATA 必须重发 ACK；低 ID 或摘要冲突不 ACK。
-7. DATA 重试复用同一个 transferId 和完全相同的编码字节。
-8. DATA 严格 FIFO；一条失败不阻塞后续消息。
+6. transferId 等于当前 completed transfer 且对应 chunk 内容相同的重复 DATA 必须重发 ACK；低 ID 或摘要冲突不 ACK。
+7. DATA chunk 重试复用同一个 transferId、chunkIndex 和完全相同的编码字节。
+8. 逻辑 transfer 严格 FIFO，chunk 受窗口限制；一条失败不阻塞后续消息。
 9. 链路断开会失败当前和全部排队 DATA，不跨连接恢复。
 10. Session 不自动重发请求。
 11. 端到端超时从 request 调用时开始。
@@ -1030,17 +1045,17 @@ Response 使用与 Request 完全相同的 Transport DATA/ACK 机制。
 | 编号 | 场景 | 预期 |
 | --- | --- | --- |
 | TR-01 | send 后修改原对象 | 对端收到编码时的快照 |
-| TR-02 | WebSocket DATA | chunkIndex=0、chunkCount=1 |
-| TR-03 | 单条消息边界（含中文、emoji、引号转义） | 按最终 DATA UTF-8 字节计数；等于上限成功，超过上限 MESSAGE_TOO_LARGE |
-| TR-04 | 队列条数/字节边界 | 满时立即 TRANSPORT_QUEUE_FULL |
+| TR-02 | 5000 个汉字拆分/重组 | 完整 Session JSON 为 15,074 bytes，拆成 252 chunks，只 accept 一次 |
+| TR-03 | Chunk 边界（含中文、emoji、引号转义） | 每段 payload <= 60 UTF-8 bytes，不切断码点；完整 payload 超限 MESSAGE_TOO_LARGE |
+| TR-04 | 队列条数/字节边界 | 按逻辑 transfer 计数，252 chunks 仍只占一条；满时立即 TRANSPORT_QUEUE_FULL |
 | TR-05 | 未连接 send | TRANSPORT_NOT_CONNECTED，且不入队 |
-| TR-06 | 正常 DATA/ACK | 远端 accept 后 send resolve |
+| TR-06 | 正常 DATA/ACK | 完整重组并 accept、全部 chunk ACK 后 send resolve |
 | TR-07 | ACK 先于 accept 的错误实现 | 测试应能捕获，规范实现不得发生 |
-| TR-08 | ACK 丢失一次 | 相同 ID/字节重试，对端只 accept 一次 |
-| TR-09 | 当前 high-water、同摘要的重复 DATA | 不重复 accept，并再次 ACK |
-| TR-10 | 旧连接、错误 ID、无 active DATA 时的 ACK | 全部忽略，不改变 FIFO |
+| TR-08 | 中间 Chunk ACK 丢失 | 只以相同字节重试对应 chunk，对端只 accept 一次 |
+| TR-09 | completed transfer 的同内容重复 chunk | 不重复 accept，并再次 ACK |
+| TR-10 | 旧连接、错误 ID、无对应 in-flight chunk 时的 ACK | 全部忽略，不改变窗口/FIFO |
 | TR-11 | 重试耗尽 | A 为 DELIVERY_UNCONFIRMED |
-| TR-12 | A 失败后有 B/C | B、C 仍按顺序发送 |
+| TR-12 | Chunk window | 初始最多发送窗口大小；每个 ACK 只补一个槽位 |
 | TR-13 | 多条正常消息 | 严格 A、B、C FIFO |
 | TR-14 | 控制帧与满 DATA 队列 | ACK/CLOSE 不被 DATA 队列阻塞 |
 | TR-15 | 内部 signal 取消排队项 | 移除该项并继续后续项 |
@@ -1051,8 +1066,8 @@ Response 使用与 Request 完全相同的 Transport DATA/ACK 机制。
 | TR-20 | 正常 CLOSE/CLOSE_ACK | 绕过队列并完成清理 |
 | TR-21 | CLOSE_ACK 丢失 | 固定超时后仍完成本地关闭 |
 | TR-22 | 同时/重复 close | closing generation 与原 timer 保持有效；幂等、无死锁、无重复通知 |
-| TR-23 | high-water 重复、空洞低 ID、同 ID 不同摘要 | 相同 high-water 重 ACK；低 ID 或冲突摘要不交付、不 ACK |
-| TR-24 | 外层 TransportFrame 非法、payload 不是合法 JSON 或原始帧超限 | 丢弃、不 ACK、不关闭连接 |
+| TR-23 | completed chunk 重复、空洞低 ID、同 index 不同内容 | 相同 completed chunk 重 ACK；低 ID 或冲突内容不交付、不 ACK |
+| TR-24 | 外层 TransportFrame 非法、重组 payload 非法或原始帧超限 | 丢弃、不 ACK、不关闭连接 |
 | TR-25 | 嵌套 undefined/function/symbol/NaN/±Infinity | 编码前拒绝，ENCODE_ERROR、not_sent |
 | TR-26 | 编码过程跨过 Session deadline | 不入队、不发送，由 Session 映射 REQUEST_TIMEOUT |
 | TR-27 | ACK 重试前跨过 Session deadline | 不再重试，释放 FIFO |
@@ -1174,8 +1189,8 @@ V1 完成后再评估：
 - 本地立即取消订阅、后台控制报文。
 - 通知不可靠、不重放的具体语义。
 - HTTP Transport。
-- 蓝牙 Transport 和真正的多 Chunk 拆分/重组。
-- Chunk 并行、窗口和拥塞控制。
+- 蓝牙 Transport 和不同链路上的分片编码适配。
+- 更复杂的拥塞控制和跨 transfer 并行窗口。
 - Handler 并发上限。
 - PendingMap 上限。
 - Response 优先级或独立队列。
@@ -1183,7 +1198,7 @@ V1 完成后再评估：
 - 跨连接恢复、重放或业务幂等支持。
 - 协议版本与能力协商。
 - 认证、授权、限流、加密和压缩。
-- 指标、Tracing、结构化日志和诊断采样。
+- 生产级指标、分布式 Tracing、日志持久化和诊断采样。
 
 ## 30. V1 实现常量
 
@@ -1192,12 +1207,65 @@ V1 的初始实现基线使用以下固定值：
 | 常量 | 数值 | 含义 |
 | --- | ---: | --- |
 | DEFAULT_REQUEST_TIMEOUT_MS | 30,000 ms | SDK/Session 默认端到端请求超时 |
-| MAX_MESSAGE_BYTES | 256 KiB | 编码后完整 WebSocket DATA 帧的 UTF-8 上限 |
-| MAX_QUEUED_MESSAGES | 128 | 每个 Transport 连接允许排队的 DATA 数量上限 |
+| CHUNK_PAYLOAD_BYTES | 60 bytes | 新发送端每个 DATA.payload 的 UTF-8 上限，约 20 个普通汉字；单 chunk 入站兼容例外见 17.1 |
+| MAX_CHUNKS_PER_TRANSFER | 4,600 | 单个重组 transfer 的 chunk 数上限（按最坏码点边界保守计算） |
+| MAX_IN_FLIGHT_CHUNKS | 4（默认） | active transfer 同时等待 ACK 的默认 chunk 数；可用 `chunkWindowSize` 覆盖 |
+| MAX_MESSAGE_BYTES | 256 KiB | 单个编码后 WebSocket DATA 帧及完整 payload 的 UTF-8 上限 |
+| MAX_QUEUED_MESSAGES | 128 | 每个 Transport 连接允许排队的逻辑 transfer 数量上限 |
 | MAX_QUEUED_BYTES | 4 MiB | active 与 queued DATA 编码快照的总字节上限 |
 | ACK_TIMEOUT_MS | 2,000 ms | 每次 DATA 发送后等待 Transport ACK 的时间 |
 | MAX_SEND_ATTEMPTS | 3 | 同一 DATA 的最大发送次数（包含首次发送） |
 | CLOSE_ACK_TIMEOUT_MS | 2,000 ms | 主动关闭时等待 CLOSE_ACK 的固定时间 |
 | DEFAULT_WEBSOCKET_PATH | /ws | 应用默认 WebSocket 接入路径 |
 
-调用者只能在 `new Client` 时通过 `requestTimeoutMs` 覆盖默认端到端超时。Transport 容量、重试和关闭常量不通过 Client/Session 动态配置；后续若依据压测调整，应同步更新实现、测试与本文档。
+调用者只能在 `new Client` 时通过 `requestTimeoutMs` 覆盖默认端到端超时；
+`WebSocketTransport` 可通过 `chunkWindowSize` 在测试或链路适配时覆盖并行窗口，
+其默认值仍由 `MAX_IN_FLIGHT_CHUNKS` 提供。其他容量、重试和关闭常量若依据压测
+调整，应同步更新实现、测试与本文档。
+
+## 31. 开发流程追踪
+
+`ProtocolRuntimeOptions` 提供独立于 `onDiagnostic` 的结构化开发追踪：
+
+~~~ts
+type ProtocolTraceLevel = "summary" | "chunks";
+
+type ProtocolTraceEvent = {
+  at: number;
+  layer: "transport" | "session";
+  event: string;
+  details: Readonly<Record<string, string | number | boolean | null>>;
+};
+
+type ProtocolRuntimeOptions = {
+  onTrace?: (event: ProtocolTraceEvent) => void | PromiseLike<void>;
+  traceLevel?: ProtocolTraceLevel;
+};
+~~~
+
+- `summary`：记录 Pending、transfer 入队/重组/完成、Session accept、Handler、Response 和结算。
+- `chunks`：在 summary 基础上记录每个 chunk 的发送尝试、缓存、ACK 和窗口推进。
+- 未提供 `onTrace` 时不产生追踪事件；应用的两个环境开关默认关闭。
+- 追踪事件通过微任务异步投递；回调同步抛错或返回 rejected Promise 都不会影响协议状态。
+- 事件不包含 Session payload、DATA snapshot、输入正文或 Handler 返回数据。
+
+仓库开发环境可同时打开双端 summary：
+
+~~~bash
+PROTOCOL_DEBUG=summary VITE_PROTOCOL_DEBUG=summary pnpm dev
+~~~
+
+检查 5000 汉字对应的 252 个 chunk 时将两项改为 `chunks`。Server 日志输出到终端，
+Client 日志输出到浏览器开发者控制台；`createConsoleProtocolTracer(label)` 会加入
+端点标签与单调日志序号。控制台输出使用中文说明，内部从 0 开始的 `chunkIndex`
+显示为从 1 开始的 `1/N` 编号；稳定事件码仍保留在方括号中，便于过滤：
+
+~~~text
+[协议][客户端/运行-1][传输层][chunk.send] 尝试发送 chunk 1/3：传输ID=1，第1次尝试
+[协议][服务端/连接-1][传输层][chunk.received] 收到 chunk 1/3：传输ID=1，内容=60B
+[协议][服务端/连接-1][传输层][ack.send] 尝试发送 chunk 1/3 的 ACK：传输ID=1
+[协议][客户端/运行-1][传输层][chunk.ack.received] 收到 chunk 1/3 的 ACK：传输ID=1，已确认=1/3
+~~~
+
+`chunk.send` 与 `ack.send` 在底层 `WebSocket.send()` 调用前记录，因此准确含义是
+“尝试发送”；只有 `chunk.ack.received` 能证明发送端已经收到了对应 ACK。

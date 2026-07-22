@@ -3,7 +3,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "env": ["VITE_PROTOCOL_DEBUG"]
     },
     "check": {
       "dependsOn": ["^build"],
@@ -17,13 +18,25 @@
       "dependsOn": ["^build"],
       "cache": false,
       "persistent": true,
-      "env": ["HOST", "PORT"]
+      "env": [
+        "HOST",
+        "PORT",
+        "INPUT_MODE",
+        "PROTOCOL_DEBUG",
+        "VITE_PROTOCOL_DEBUG"
+      ]
     },
     "start": {
       "dependsOn": ["build", "@remote-copy/client#build"],
       "cache": false,
       "persistent": true,
-      "env": ["HOST", "PORT"]
+      "env": [
+        "HOST",
+        "PORT",
+        "INPUT_MODE",
+        "PROTOCOL_DEBUG",
+        "VITE_PROTOCOL_DEBUG"
+      ]
     }
   }
 }

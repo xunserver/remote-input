@@ -49,6 +49,24 @@ function parseFrame(raw) {
   return JSON.parse(raw);
 }
 
+function dataFrames(socket, transferId) {
+  return socket.sent
+    .map(parseFrame)
+    .filter(
+      (frame) => frame.kind === "DATA" &&
+        (transferId === undefined || frame.transferId === transferId),
+    );
+}
+
+function reassemble(frames) {
+  return JSON.parse(
+    [...frames]
+      .sort((a, b) => a.chunkIndex - b.chunkIndex)
+      .map((frame) => frame.payload)
+      .join(""),
+  );
+}
+
 function assertSDKError(result, code, delivery) {
   assert.equal(result.status, "rejected");
   assert.ok(result.error instanceof SDKError);
@@ -93,6 +111,49 @@ test("two Sessions can originate requestId 1 simultaneously over one full-duplex
   assert.equal(clock.pendingTimerCount, 0);
 });
 
+test("summary trace follows Pending, Handler, Response, and settlement without payloads", async () => {
+  const clock = new FakeClock();
+  const pair = new FakeWebSocketPair({ clock });
+  const events = [];
+  const traceOptions = {
+    clock,
+    traceLevel: "summary",
+    onTrace: (event) => events.push(event),
+  };
+  const leftTransport = WebSocketTransport.fromSocket(pair.client, traceOptions);
+  const rightTransport = WebSocketTransport.fromSocket(pair.server, traceOptions);
+  const left = new Session(leftTransport, traceOptions);
+  const right = new Session(rightTransport, traceOptions);
+  right.registerHandler("trace-work", () => ({ done: true }));
+
+  const result = left.request("trace-work", { text: "session-private-marker" });
+  await drain(clock);
+  assert.deepEqual(await result, { done: true });
+  await drain(clock);
+
+  const names = events.map((event) => `${event.layer}.${event.event}`);
+  const expectedOrder = [
+    "session.request.pending",
+    "transport.transfer.queued",
+    "transport.transfer.reassembled",
+    "session.request.received",
+    "session.handler.started",
+    "session.response.send",
+    "session.response.received",
+    "session.request.resolved",
+  ];
+  let previousIndex = -1;
+  for (const name of expectedOrder) {
+    const index = names.indexOf(name);
+    assert.ok(index > previousIndex, `${name} should follow the previous trace event`);
+    previousIndex = index;
+  }
+  assert.equal(names.some((name) => name.includes("chunk.")), false);
+  assert.equal(JSON.stringify(events).includes("session-private-marker"), false);
+
+  await closeAll(clock, left, right);
+});
+
 test("lost Request and Response ACKs never duplicate Handler execution or request settlement", async () => {
   const clock = new FakeClock();
   const pair = new FakeWebSocketPair({ clock });
@@ -107,8 +168,20 @@ test("lost Request and Response ACKs never duplicate Handler execution or reques
     handlerCalls += 1;
     return { done: true };
   });
-  pair.dropNext({ kind: "ACK", direction: "server-to-client" });
-  pair.dropNext({ kind: "ACK", direction: "client-to-server" });
+  const droppedAcks = {
+    "server-to-client": 0,
+    "client-to-server": 0,
+  };
+  pair.setInterceptor((packet) => {
+    if (
+      packet.kind === "ACK" &&
+      droppedAcks[packet.direction] < 2
+    ) {
+      droppedAcks[packet.direction] += 1;
+      return { drop: true };
+    }
+    return undefined;
+  });
 
   const result = left.request("work", null);
   void result.then(
@@ -122,11 +195,15 @@ test("lost Request and Response ACKs never duplicate Handler execution or reques
 
   clock.advanceBy(ACK_TIMEOUT_MS);
   await drain(clock);
-  const responseFrames = pair.server.sent.filter(
-    (raw) => parseFrame(raw).kind === "DATA",
-  );
-  assert.equal(responseFrames.length, 2);
-  assert.equal(responseFrames[0], responseFrames[1]);
+  const responseFrames = dataFrames(pair.server);
+  const byChunk = new Map();
+  for (const frame of responseFrames) {
+    const frames = byChunk.get(frame.chunkIndex) ?? [];
+    frames.push(JSON.stringify(frame));
+    byChunk.set(frame.chunkIndex, frames);
+  }
+  assert.ok([...byChunk.values()].some((frames) => frames.length === 2));
+  assert.ok([...byChunk.values()].every((frames) => new Set(frames).size === 1));
   assert.equal(handlerCalls, 1);
   assert.equal(settlements, 1);
   assert.equal(clock.pendingTimerCount, 0);
@@ -164,8 +241,8 @@ test("request timeout never cancels an already-running remote Handler", async ()
   await drain(clock);
   assert.equal(handlerCompleted, true);
   assert.equal(
-    pair.server.sent.filter((raw) => parseFrame(raw).kind === "DATA").length,
-    1,
+    dataFrames(pair.server).length,
+    2,
     "the remote Session still sends the late Response",
   );
   assert.equal(clock.pendingTimerCount, 0);
@@ -258,15 +335,9 @@ test("disconnect reports delivered, unknown, and not_sent precisely, then reconn
   const afterReconnect = left.request("echo", { fresh: true });
   await drain(clock);
   assert.deepEqual(await afterReconnect, { fresh: true });
-  const newData = secondPair.client.sent.find(
-    (raw) => parseFrame(raw).kind === "DATA",
-  );
-  assert.ok(newData);
-  assert.equal(parseFrame(newData).transferId, 1);
-  assert.equal(
-    JSON.parse(parseFrame(newData).payload).requestId,
-    4,
-  );
+  const newData = dataFrames(secondPair.client, 1);
+  assert.ok(newData.length >= 1);
+  assert.equal(reassemble(newData).requestId, 4);
 
   await closeAll(clock, left, right1, right2);
   assert.equal(clock.pendingTimerCount, 0);

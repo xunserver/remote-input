@@ -679,6 +679,40 @@ test("SE-22/23: a failed error Response is diagnosed once and never recurses", a
   assert.match(diagnostics[0].message, /failed to send/i);
 });
 
+test("trace error formatting does not inspect hostile Error properties", async () => {
+  const clock = new FakeClock();
+  const events = [];
+  const transport = new MemoryTransport();
+  const hostile = new Error("private transport detail");
+  Object.defineProperty(hostile, "name", {
+    configurable: true,
+    get() {
+      throw new Error("name getter must not run");
+    },
+  });
+  transport.sendImpl = (message) => {
+    if (message.type === "response") {
+      return Promise.reject(hostile);
+    }
+    return Promise.resolve();
+  };
+  const session = new Session(transport, {
+    clock,
+    traceLevel: "summary",
+    onTrace: (event) => events.push(event),
+  });
+  session.registerHandler("work", () => "done");
+
+  transport.accept({ type: "request", requestId: 1, method: "work", payload: null });
+  await drain(clock);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const failed = events.find((event) => event.event === "response.sendFailed");
+  assert.ok(failed);
+  assert.equal(failed.details.reason, "error");
+  await session.close();
+});
+
 test("SE-26: a handler from an old peerEpoch finishes but cannot respond on reconnect", async () => {
   const clock = new FakeClock();
   const transport = new MemoryTransport();

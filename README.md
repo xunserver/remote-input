@@ -4,8 +4,9 @@
 
 ## 当前状态
 
-- V1 WebSocket Transport、双向 Session Request/Response 和 SDK Client 已实现。
+- V1 WebSocket Transport、双向 Session Request/Response 和 SDK Client 已实现；Transport 支持 UTF-8 分片重组、逐 chunk ACK/重试和窗口发送。
 - apps/client 与 apps/server 已迁移到原生 WebSocket `/ws` 接入，不再使用 Socket.IO 协议。
+- Server 默认只打印收到的文字；仅在显式启用 `INPUT_MODE=paste` 后写入剪贴板并执行系统粘贴。
 - [SDK Request/Response 协议 V1 设计](docs/sdk-protocol-v1.md) 是当前实现依据。
 - V1 只实现 WebSocket Transport 和双向 Request/Response，不实现旧版 Socket.IO、通知订阅或心跳协议。
 
@@ -67,22 +68,56 @@ pnpm dlx shadcn-vue@latest add @shadcn/button
 pnpm check
 pnpm build
 pnpm start
+INPUT_MODE=paste pnpm start
 pnpm dev:server
 pnpm dev:client
 ```
+
+查看一条输入从 Session Pending、Transport 分片、窗口 ACK、服务端 Handler 到
+Response 结算的开发日志：
+
+```bash
+PROTOCOL_DEBUG=summary VITE_PROTOCOL_DEBUG=summary pnpm dev
+```
+
+需要逐个观察 chunk、重试和窗口补位时：
+
+```bash
+PROTOCOL_DEBUG=chunks VITE_PROTOCOL_DEBUG=chunks pnpm dev
+```
+
+`chunks` 模式会使用从 1 开始的编号输出中文日志，例如：
+
+```text
+[协议][客户端/运行-1][传输层][chunk.send] 尝试发送 chunk 1/3：传输ID=1，第1次尝试
+[协议][服务端/连接-1][传输层][chunk.received] 收到 chunk 1/3：传输ID=1，内容=60B
+[协议][服务端/连接-1][传输层][ack.send] 尝试发送 chunk 1/3 的 ACK：传输ID=1
+[协议][客户端/运行-1][传输层][chunk.ack.received] 收到 chunk 1/3 的 ACK：传输ID=1，已确认=1/3
+```
+
+其中 `chunk.send` 和 `ack.send` 表示进入底层 `WebSocket.send()` 的发送尝试；
+`chunk.ack.received` 才表示发送端确实收到了该 chunk 的 ACK。
+
+`PROTOCOL_DEBUG` 控制 Server 终端，`VITE_PROTOCOL_DEBUG` 控制浏览器开发者控制台。
+协议追踪日志只包含 generation、requestId、transferId、chunk 序号、字节数和状态，
+不会打印 Session payload、输入正文或 Handler 返回数据。两项默认均为关闭。
 
 默认端口：
 
 - 后端：http://localhost:17888
 - Vite：http://localhost:5173
 
-触发粘贴依赖当前机器的前台焦点窗口。发送前请先把光标放到需要输入的位置。
+Server 的输入模式由 `INPUT_MODE` 控制：
+
+- `print`：默认值，只把收到的文字打印到标准输出，不修改剪贴板，也不模拟粘贴按键。
+- `paste`：先写入系统剪贴板，再向当前前台窗口模拟粘贴。发送前请先把光标放到需要输入的位置。
 
 ## V1 安全边界
 
 V1 协议没有实现认证、授权或 WebSocket Origin 校验，服务端默认监听
 `0.0.0.0`。请只在可信网络中运行，或通过 `HOST=127.0.0.1`、防火墙及反向
-代理限制访问；任何能连到 `/ws` 的客户端都可以请求本机执行粘贴。
+代理限制访问；在 `paste` 模式下，任何能连到 `/ws` 的客户端都可以请求本机执行粘贴。
 
 浏览器会把最近 20 条输入（包括失败项）以明文保存到 `localStorage`。不要
 发送密码、一次性验证码等敏感内容；共享设备使用后请在页面中清空历史。
+默认的 `print` 模式还会把输入明文写入 Server 标准输出，请同时留意终端和日志采集系统。

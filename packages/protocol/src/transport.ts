@@ -2,6 +2,10 @@ import type { ProtocolClock } from "./clock.js";
 import type { DeliveryState, SDKError } from "./errors.js";
 import type { JsonValue } from "./json.js";
 import type { SessionMessage } from "./messages.js";
+import type {
+  ProtocolTraceLevel,
+  ProtocolTraceListener,
+} from "./trace.js";
 
 /**
  * 传输生命周期。意外断线回到 idle，允许建立新连接；
@@ -26,7 +30,8 @@ export interface TransportSendOptions {
 }
 
 /**
- * accept 必须同步完成，Transport 仅在其正常返回后才向对端发送 ACK。
+ * accept 必须同步完成。分片 Transport 可以先确认已可靠缓存的中间 chunk，
+ * 但必须在 accept 正常返回后才确认使整条 send 完成的最后未确认 chunk。
  * disconnected 表示可恢复断线；localClosed/peerClosed 表示会话进入关闭终态。
  */
 export interface TransportReceiver {
@@ -40,7 +45,7 @@ export interface Transport {
   bind(receiver: TransportReceiver): void;
   unbind(receiver: TransportReceiver): void;
   connect(): Promise<void>;
-  /** Promise 仅在收到对端 Transport ACK 后完成，本地发送成功不等于对端已收到。 */
+  /** Promise 仅在全部 chunk 收到对端 ACK 后完成，本地发送成功不等于对端已收到。 */
   send(
     message: SessionMessage,
     options?: TransportSendOptions,
@@ -51,4 +56,8 @@ export interface Transport {
 export interface ProtocolRuntimeOptions {
   clock?: ProtocolClock;
   onDiagnostic?: (message: string, cause?: unknown) => void;
+  /** Optional structured development trace. Disabled when no listener is supplied. */
+  onTrace?: ProtocolTraceListener;
+  /** `summary` omits per-chunk events; `chunks` exposes window and ACK flow. */
+  traceLevel?: ProtocolTraceLevel;
 }

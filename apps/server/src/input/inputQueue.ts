@@ -1,5 +1,3 @@
-import { writeClipboardAndPaste } from "../os/clipboard.js";
-
 type InputJob = {
   text: string;
   resolve: () => void;
@@ -21,9 +19,7 @@ export class InputQueue {
   private readonly queue: InputJob[] = [];
   private processing = false;
 
-  constructor(
-    private readonly processor: InputProcessor = writeClipboardAndPaste,
-  ) {}
+  constructor(private readonly processor: InputProcessor) {}
 
   enqueue(text: string): Promise<void> {
     // 执行中的任务已移出数组；这里限制的是等待任务数，不包含当前任务。

@@ -17,6 +17,12 @@ import {
   type ResponseMessage,
   type SuccessResponseMessage,
 } from "./messages.js";
+import {
+  queueProtocolTrace,
+  type ProtocolTraceDetails,
+  type ProtocolTraceLevel,
+  type ProtocolTraceListener,
+} from "./trace.js";
 import type {
   ProtocolRuntimeOptions,
   Transport,
@@ -88,6 +94,8 @@ export class Session implements TransportReceiver {
   readonly #clock: ProtocolClock;
   readonly #requestTimeoutMs: number;
   readonly #onDiagnostic: (message: string, cause?: unknown) => void;
+  readonly #onTrace: ProtocolTraceListener | undefined;
+  readonly #traceLevel: ProtocolTraceLevel;
   readonly #pending = new Map<number, PendingRequest>();
   readonly #handlers = new Map<string, HandlerRegistration>();
 
@@ -108,6 +116,12 @@ export class Session implements TransportReceiver {
     this.#clock = options.clock ?? systemClock;
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#onDiagnostic = options.onDiagnostic ?? (() => undefined);
+    this.#onTrace = options.onTrace;
+    const traceLevel = options.traceLevel ?? "summary";
+    if (traceLevel !== "summary" && traceLevel !== "chunks") {
+      throw new RangeError('traceLevel must be either "summary" or "chunks".');
+    }
+    this.#traceLevel = traceLevel;
 
     this.#transport.bind(this);
   }
@@ -150,6 +164,12 @@ export class Session implements TransportReceiver {
         deliveryState: "not_sent",
         terminal: undefined,
         controller,
+      });
+      this.#trace("request.pending", {
+        requestId,
+        pendingCount: this.#pending.size,
+        deadlineAt,
+        peerEpoch: this.#peerEpoch,
       });
 
       let sendPromise: Promise<void>;
@@ -238,6 +258,12 @@ export class Session implements TransportReceiver {
 
     // 断连不关闭 Session，但会使旧连接上尚未完成的 handler 失效。
     this.#peerEpoch += 1;
+    this.#trace("transport.disconnected", {
+      peerEpoch: this.#peerEpoch,
+      pendingCount: this.#pending.size,
+      errorCode: error.code,
+      delivery: error.delivery,
+    });
     // 限定本轮清理范围，避免稍后的微任务误伤断连后新建的请求。
     const pendingAtDisconnect = [...this.#pending.keys()];
     const disconnectedAt = this.#clock.now();
@@ -288,6 +314,10 @@ export class Session implements TransportReceiver {
 
     this.#closed = true;
     this.#peerEpoch += 1;
+    this.#trace("session.close", {
+      peerEpoch: this.#peerEpoch,
+      pendingCount: this.#pending.size,
+    });
     this.#handlers.clear();
     this.#transport.unbind(this);
 
@@ -354,6 +384,12 @@ export class Session implements TransportReceiver {
 
   #acceptResponse(message: ResponseMessage): void {
     const pending = this.#pending.get(message.requestId);
+    this.#trace("response.received", {
+      requestId: message.requestId,
+      ok: message.ok,
+      matchedPending: pending !== undefined,
+      pendingCount: this.#pending.size,
+    });
     if (pending === undefined) {
       return;
     }
@@ -387,6 +423,11 @@ export class Session implements TransportReceiver {
 
   #acceptRequest(message: RequestMessage): void {
     const registration = this.#handlers.get(message.method);
+    this.#trace("request.received", {
+      requestId: message.requestId,
+      handlerRegistered: registration !== undefined,
+      peerEpoch: this.#peerEpoch,
+    });
     if (registration === undefined) {
       return;
     }
@@ -398,6 +439,10 @@ export class Session implements TransportReceiver {
       requestId: message.requestId,
       method: message.method,
     };
+    this.#trace("handler.scheduled", {
+      requestId: context.requestId,
+      peerEpoch,
+    });
 
     // 异步启动用户代码，使 accept() 保持同步且不同请求可以并发处理。
     this.#queueMicrotask(() => {
@@ -412,6 +457,10 @@ export class Session implements TransportReceiver {
     peerEpoch: number,
   ): Promise<void> {
     let response: SuccessResponseMessage | ErrorResponseMessage;
+    this.#trace("handler.started", {
+      requestId: context.requestId,
+      peerEpoch,
+    });
 
     try {
       const result = await handler(payload, context);
@@ -471,9 +520,33 @@ export class Session implements TransportReceiver {
       return;
     }
 
+    this.#trace("handler.completed", {
+      requestId: context.requestId,
+      ok: response.ok,
+      errorCode: response.ok ? null : response.error.code,
+      peerEpoch,
+    });
+    this.#trace("response.send", {
+      requestId: context.requestId,
+      ok: response.ok,
+      errorCode: response.ok ? null : response.error.code,
+      peerEpoch,
+    });
+
     try {
       await this.#transport.send(response);
+      this.#trace("response.sent", {
+        requestId: context.requestId,
+        ok: response.ok,
+        peerEpoch,
+      });
     } catch (error) {
+      this.#trace("response.sendFailed", {
+        requestId: context.requestId,
+        ok: response.ok,
+        reason: traceSessionErrorReason(error),
+        peerEpoch,
+      });
       // 响应发送失败只做诊断，避免递归尝试发送新的错误响应。
       this.#diagnose("Session failed to send a handler response.", error);
     }
@@ -543,7 +616,15 @@ export class Session implements TransportReceiver {
 
   #settleResolve(requestId: number, value: JsonValue): void {
     const pending = this.#takePending(requestId);
-    pending?.resolve(value);
+    if (pending === undefined) {
+      return;
+    }
+    this.#trace("request.resolved", {
+      requestId,
+      delivery: pending.deliveryState,
+      pendingCount: this.#pending.size,
+    });
+    pending.resolve(value);
   }
 
   #settleReject(
@@ -557,7 +638,16 @@ export class Session implements TransportReceiver {
 
     const error = createError(pending);
     const taken = this.#takePending(requestId);
-    taken?.reject(error);
+    if (taken === undefined) {
+      return;
+    }
+    this.#trace("request.rejected", {
+      requestId,
+      errorCode: error.code,
+      delivery: error.delivery,
+      pendingCount: this.#pending.size,
+    });
+    taken.reject(error);
   }
 
   #takePending(requestId: number): PendingRequest | undefined {
@@ -579,7 +669,13 @@ export class Session implements TransportReceiver {
       pending !== undefined &&
       deliveryRank[delivery] > deliveryRank[pending.deliveryState]
     ) {
+      const previous = pending.deliveryState;
       pending.deliveryState = delivery;
+      this.#trace("request.delivery", {
+        requestId,
+        previous,
+        delivery,
+      });
     }
   }
 
@@ -590,6 +686,11 @@ export class Session implements TransportReceiver {
 
     this.#closed = true;
     this.#peerEpoch += 1;
+    this.#trace("transport.closed", {
+      peerEpoch: this.#peerEpoch,
+      pendingCount: this.#pending.size,
+      reason: message,
+    });
     this.#handlers.clear();
     this.#transport.unbind(this);
 
@@ -717,6 +818,29 @@ export class Session implements TransportReceiver {
     }
   }
 
+  #trace(
+    event: string,
+    details: ProtocolTraceDetails,
+    level: ProtocolTraceLevel = "summary",
+  ): void {
+    if (
+      this.#onTrace === undefined ||
+      (level === "chunks" && this.#traceLevel !== "chunks")
+    ) {
+      return;
+    }
+    try {
+      queueProtocolTrace(this.#onTrace, {
+        at: this.#clock.now(),
+        layer: "session",
+        event,
+        details,
+      });
+    } catch {
+      // A diagnostic/debug clock or event shape must never change Session state.
+    }
+  }
+
   #diagnose(message: string, cause?: unknown): void {
     try {
       if (cause === undefined) {
@@ -728,4 +852,15 @@ export class Session implements TransportReceiver {
       // 诊断回调绝不能影响协议状态。
     }
   }
+}
+
+function traceSessionErrorReason(error: unknown): string {
+  try {
+    if (isSDKError(error)) {
+      return error.code;
+    }
+  } catch {
+    return "error";
+  }
+  return "error";
 }

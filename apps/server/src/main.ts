@@ -1,13 +1,14 @@
 import http from "node:http";
 import { getConfig } from "./config.js";
 import { createStaticHandler } from "./http/staticServer.js";
+import { createInputProcessor } from "./input/inputProcessor.js";
 import { InputQueue } from "./input/inputQueue.js";
 import { getLanAddresses } from "./network.js";
 import { RemoteWebSocketServer } from "./websocket/protocol-server.js";
 
 const config = getConfig();
-// 所有客户端共享同一队列，避免剪贴板写入和系统粘贴操作相互穿插。
-const inputQueue = new InputQueue();
+// 所有客户端共享同一队列，避免输入处理相互穿插。
+const inputQueue = new InputQueue(createInputProcessor(config.inputMode));
 let protocolServer: RemoteWebSocketServer;
 
 const staticHandler = createStaticHandler(config, () => protocolServer.getClientCount());
@@ -19,10 +20,24 @@ const server = http.createServer((req, res) => {
   });
 });
 
-protocolServer = new RemoteWebSocketServer({ server, inputQueue });
+protocolServer = new RemoteWebSocketServer({
+  server,
+  inputQueue,
+  ...(config.protocolTraceLevel === undefined
+    ? {}
+    : { protocolTraceLevel: config.protocolTraceLevel }),
+});
 
 server.listen(config.port, config.host, () => {
   console.log(`Remote input server is running on port ${config.port}.`);
+  console.log(
+    config.inputMode === "paste"
+      ? "Input mode: paste (clipboard writes and system paste are enabled)."
+      : "Input mode: print (received text is only printed).",
+  );
+  if (config.protocolTraceLevel !== undefined) {
+    console.log(`Protocol trace: ${config.protocolTraceLevel}.`);
+  }
   console.log(`Local:   http://localhost:${config.port}`);
   for (const address of getLanAddresses()) {
     console.log(`LAN:     http://${address}:${config.port}`);

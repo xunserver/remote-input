@@ -1,8 +1,10 @@
 import type http from "node:http";
 import {
+  createConsoleProtocolTracer,
   Session,
   WebSocketTransport,
   type JsonValue,
+  type ProtocolTraceLevel,
   type TransportState,
 } from "@remote-copy/protocol";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -19,6 +21,7 @@ type RemoteClient = {
 export type RemoteWebSocketServerOptions = {
   server: http.Server;
   inputQueue: InputQueue;
+  protocolTraceLevel?: ProtocolTraceLevel;
 };
 
 /** 为每个 WebSocket 创建独立会话，并通过共享输入队列串行化系统副作用。 */
@@ -27,6 +30,7 @@ export class RemoteWebSocketServer {
   private readonly clients = new Set<RemoteClient>();
   private closePromise: Promise<void> | undefined;
   private closing = false;
+  private nextClientId = 1;
 
   constructor(private readonly options: RemoteWebSocketServerOptions) {
     this.webSocketServer = new WebSocketServer({
@@ -51,8 +55,19 @@ export class RemoteWebSocketServer {
       return;
     }
 
-    const transport = WebSocketTransport.fromSocket(socket);
-    const session = new Session(transport);
+    const clientId = this.nextClientId++;
+    const traceLevel = this.options.protocolTraceLevel;
+    const onTrace = traceLevel === undefined
+      ? undefined
+      : createConsoleProtocolTracer(`服务端/连接-${clientId}`);
+    const transport = WebSocketTransport.fromSocket(socket, {
+      ...(onTrace === undefined ? {} : { onTrace }),
+      ...(traceLevel === undefined ? {} : { traceLevel }),
+    });
+    const session = new Session(transport, {
+      ...(onTrace === undefined ? {} : { onTrace }),
+      ...(traceLevel === undefined ? {} : { traceLevel }),
+    });
     // subscribe() 会同步回放当前状态，回调可能在返回取消函数前移除客户端；
     // 先放入空清理函数，订阅返回后再补偿释放真实监听器。
     const client: RemoteClient = {
@@ -74,7 +89,7 @@ export class RemoteWebSocketServer {
 
     session.registerHandler("sendText", async (payload) => {
       const text = getText(payload);
-      // 必须等共享队列完成后再响应，避免把“已入队”误报为对端已完成粘贴。
+      // 必须等共享队列完成后再响应，避免把“已入队”误报为对端已处理。
       await this.options.inputQueue.enqueue(text);
       return null;
     });

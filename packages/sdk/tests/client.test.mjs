@@ -64,6 +64,26 @@ test("sendText maps to the documented request shape", async () => {
   });
 });
 
+test("Client forwards summary trace options to its Session without input content", async () => {
+  const transport = new TestTransport();
+  const events = [];
+  const client = new Client({
+    transport,
+    traceLevel: "summary",
+    onTrace: (event) => events.push(event),
+  });
+
+  await client.sendText("sdk-private-marker");
+  await Promise.resolve();
+  await Promise.resolve();
+
+  const names = events.map((event) => event.event);
+  assert.ok(names.includes("request.pending"));
+  assert.ok(names.includes("response.received"));
+  assert.ok(names.includes("request.resolved"));
+  assert.equal(JSON.stringify(events).includes("sdk-private-marker"), false);
+});
+
 test("request timeout configuration rejects invalid values", () => {
   for (const requestTimeoutMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
     assert.throws(
