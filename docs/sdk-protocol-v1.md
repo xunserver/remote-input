@@ -639,11 +639,12 @@ MAX_MESSAGE_BYTES 以每个最终 WebSocket DATA 文本帧的 UTF-8 字节数为
 ### 17.1 统一 Chunk 语义
 
 Transport 先把完整的 Session JSON payload 按 Unicode code point 切分为多个
-UTF-8 chunk。默认每个 `DATA.payload` 不超过 `CHUNK_PAYLOAD_BYTES = 60`
-字节，适合测试 20 个普通汉字（20 × 3 字节）。切分不会破坏代理对或 UTF-8
-序列；重组后必须与原始 payload 保持一致。
+UTF-8 chunk。默认每个 `DATA.payload` 不超过
+`CHUNK_PAYLOAD_BYTES = 64 * 1024` 字节（64 KiB）。切分不会破坏代理对或
+UTF-8 序列；重组后必须与原始 payload 保持一致。15,074 字节的 5000 汉字
+`sendText` Session 报文会放在一个 chunk 中。
 
-当前发送端始终遵守这个 60-byte 分片上限。为兼容早期固定单帧发送端，接收端
+当前发送端始终遵守这个 64 KiB 分片上限。为兼容早期固定单帧发送端，接收端
 对 `chunkCount === 1` 的 DATA 保留一个入站例外：其 `payload` 可以放宽到
 `MAX_MESSAGE_BYTES`；该例外不会改变新发送端的分片行为，也不能用于多 chunk
 transfer。
@@ -1045,9 +1046,9 @@ Response 使用与 Request 完全相同的 Transport DATA/ACK 机制。
 | 编号 | 场景 | 预期 |
 | --- | --- | --- |
 | TR-01 | send 后修改原对象 | 对端收到编码时的快照 |
-| TR-02 | 5000 个汉字拆分/重组 | 完整 Session JSON 为 15,074 bytes，拆成 252 chunks，只 accept 一次 |
-| TR-03 | Chunk 边界（含中文、emoji、引号转义） | 每段 payload <= 60 UTF-8 bytes，不切断码点；完整 payload 超限 MESSAGE_TOO_LARGE |
-| TR-04 | 队列条数/字节边界 | 按逻辑 transfer 计数，252 chunks 仍只占一条；满时立即 TRANSPORT_QUEUE_FULL |
+| TR-02 | 5000 个汉字传输 | 完整 Session JSON 为 15,074 bytes，使用 1 个 64 KiB chunk，只 accept 一次 |
+| TR-03 | Chunk 边界（含中文、emoji、引号转义） | 每段 payload <= 64 KiB，不切断码点；完整 payload 超限 MESSAGE_TOO_LARGE |
+| TR-04 | 队列条数/字节边界 | 按逻辑 transfer 计数，多 chunk transfer 仍只占一条；满时立即 TRANSPORT_QUEUE_FULL |
 | TR-05 | 未连接 send | TRANSPORT_NOT_CONNECTED，且不入队 |
 | TR-06 | 正常 DATA/ACK | 完整重组并 accept、全部 chunk ACK 后 send resolve |
 | TR-07 | ACK 先于 accept 的错误实现 | 测试应能捕获，规范实现不得发生 |
@@ -1207,8 +1208,8 @@ V1 的初始实现基线使用以下固定值：
 | 常量 | 数值 | 含义 |
 | --- | ---: | --- |
 | DEFAULT_REQUEST_TIMEOUT_MS | 30,000 ms | SDK/Session 默认端到端请求超时 |
-| CHUNK_PAYLOAD_BYTES | 60 bytes | 新发送端每个 DATA.payload 的 UTF-8 上限，约 20 个普通汉字；单 chunk 入站兼容例外见 17.1 |
-| MAX_CHUNKS_PER_TRANSFER | 4,600 | 单个重组 transfer 的 chunk 数上限（按最坏码点边界保守计算） |
+| CHUNK_PAYLOAD_BYTES | 64 KiB | 新发送端每个 DATA.payload 的 UTF-8 上限；单 chunk 入站兼容例外见 17.1 |
+| MAX_CHUNKS_PER_TRANSFER | 5 | 单个重组 transfer 的保守 chunk 数上限；覆盖 UTF-8 码点边界最多浪费 3 字节的情况 |
 | MAX_IN_FLIGHT_CHUNKS | 4（默认） | active transfer 同时等待 ACK 的默认 chunk 数；可用 `chunkWindowSize` 覆盖 |
 | MAX_MESSAGE_BYTES | 256 KiB | 单个编码后 WebSocket DATA 帧及完整 payload 的 UTF-8 上限 |
 | MAX_QUEUED_MESSAGES | 128 | 每个 Transport 连接允许排队的逻辑 transfer 数量上限 |
@@ -1252,17 +1253,17 @@ type ProtocolRuntimeOptions = {
 仓库开发环境可同时打开双端 summary：
 
 ~~~bash
-PROTOCOL_DEBUG=summary VITE_PROTOCOL_DEBUG=summary pnpm dev
+INPUT_MODE=dev PROTOCOL_DEBUG=summary VITE_PROTOCOL_DEBUG=summary pnpm dev
 ~~~
 
-检查 5000 汉字对应的 252 个 chunk 时将两项改为 `chunks`。Server 日志输出到终端，
+检查超过 64 KiB 的多 chunk 报文时将两项改为 `chunks`。Server 日志输出到终端，
 Client 日志输出到浏览器开发者控制台；`createConsoleProtocolTracer(label)` 会加入
 端点标签与单调日志序号。控制台输出使用中文说明，内部从 0 开始的 `chunkIndex`
 显示为从 1 开始的 `1/N` 编号；稳定事件码仍保留在方括号中，便于过滤：
 
 ~~~text
 [协议][客户端/运行-1][传输层][chunk.send] 尝试发送 chunk 1/3：传输ID=1，第1次尝试
-[协议][服务端/连接-1][传输层][chunk.received] 收到 chunk 1/3：传输ID=1，内容=60B
+[协议][服务端/连接-1][传输层][chunk.received] 收到 chunk 1/3：传输ID=1，内容=65536B
 [协议][服务端/连接-1][传输层][ack.send] 尝试发送 chunk 1/3 的 ACK：传输ID=1
 [协议][客户端/运行-1][传输层][chunk.ack.received] 收到 chunk 1/3 的 ACK：传输ID=1，已确认=1/3
 ~~~

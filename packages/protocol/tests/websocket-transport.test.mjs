@@ -71,18 +71,34 @@ function encodedDataFrame(transferId, message) {
 function chunkPayload(payload, maxBytes = CHUNK_PAYLOAD_BYTES) {
   const chunks = [];
   let current = "";
+  let currentBytes = 0;
   for (const codePoint of Array.from(payload)) {
-    if (
-      current &&
-      textEncoder.encode(current + codePoint).byteLength > maxBytes
-    ) {
+    const codePointBytes = textEncoder.encode(codePoint).byteLength;
+    if (current && currentBytes + codePointBytes > maxBytes) {
       chunks.push(current);
       current = "";
+      currentBytes = 0;
     }
     current += codePoint;
+    currentBytes += codePointBytes;
   }
   if (current || chunks.length === 0) chunks.push(current);
   return chunks;
+}
+
+function asciiTextSpanningChunks(chunkCount) {
+  return "x".repeat(CHUNK_PAYLOAD_BYTES * (chunkCount - 1));
+}
+
+function maxSizedUnicodeMessage(requestId = 1) {
+  const emptyMessage = request(requestId, { text: "" });
+  const contentBytes =
+    MAX_MESSAGE_BYTES - textEncoder.encode(JSON.stringify(emptyMessage)).byteLength;
+  const emojiCount = Math.floor(contentBytes / 4);
+  const trailingAsciiBytes = contentBytes - emojiCount * 4;
+  return request(requestId, {
+    text: `${"🙂".repeat(emojiCount)}${"x".repeat(trailingAsciiBytes)}`,
+  });
 }
 
 function observe(promise) {
@@ -167,6 +183,11 @@ test("chunk window configuration requires a positive safe integer", () => {
   );
 });
 
+test("default chunk payload is 64 KiB with a conservative five-chunk bound", () => {
+  assert.equal(CHUNK_PAYLOAD_BYTES, 64 * 1024);
+  assert.equal(MAX_CHUNKS_PER_TRANSFER, 5);
+});
+
 test("TR-01/TR-02/TR-06 snapshots immediately and completes ACKs after accept", async () => {
   const { clock, pair, left, right } = connectedPair();
   const accepted = [];
@@ -189,7 +210,8 @@ test("TR-01/TR-02/TR-06 snapshots immediately and completes ACKs after accept", 
     }
   });
 
-  const payload = { text: "原始🙂", nested: { value: 1 } };
+  const padding = "x".repeat(CHUNK_PAYLOAD_BYTES);
+  const payload = { text: "原始🙂", nested: { value: 1 }, padding };
   const sending = left.send(request(1, payload), {
     onDeliveryChange: (delivery) => deliveries.push(delivery),
   });
@@ -198,7 +220,9 @@ test("TR-01/TR-02/TR-06 snapshots immediately and completes ACKs after accept", 
   await flush(clock);
   await sending;
 
-  assert.deepEqual(accepted, [request(1, { text: "原始🙂", nested: { value: 1 } })]);
+  assert.deepEqual(accepted, [
+    request(1, { text: "原始🙂", nested: { value: 1 }, padding }),
+  ]);
   const data = pair.client.sent
     .map(frame)
     .filter((candidate) => candidate.kind === "DATA");
@@ -222,7 +246,7 @@ test("TR-01/TR-02/TR-06 snapshots immediately and completes ACKs after accept", 
   assert.deepEqual(deliveries, ["unknown", "delivered"]);
 });
 
-test("TR-02 5000 CJK characters reassemble into 252 chunks", async () => {
+test("TR-02 5000 CJK characters fit in one 64 KiB chunk", async () => {
   const { clock, pair, left, right } = connectedPair({ chunkWindowSize: MAX_IN_FLIGHT_CHUNKS });
   const accepted = [];
   right.bind(receiver({ accept: (message) => accepted.push(message) }));
@@ -240,15 +264,15 @@ test("TR-02 5000 CJK characters reassemble into 252 chunks", async () => {
   const data = pair.client.sent
     .map(frame)
     .filter((candidate) => candidate.kind === "DATA");
-  assert.equal(data.length, 252);
+  assert.equal(data.length, 1);
   assert.equal(new Set(data.map((candidate) => candidate.transferId)).size, 1);
   assert.deepEqual(
     [...new Set(data.map((candidate) => candidate.chunkCount))],
-    [252],
+    [1],
   );
   assert.deepEqual(
     data.map((candidate) => candidate.chunkIndex).sort((a, b) => a - b),
-    Array.from({ length: 252 }, (_, index) => index),
+    [0],
   );
   assert.ok(
     data.every(
@@ -258,7 +282,7 @@ test("TR-02 5000 CJK characters reassemble into 252 chunks", async () => {
   assert.deepEqual(accepted, [message]);
 });
 
-test("chunk trace exposes all 252 window events without payload content", async () => {
+test("chunk trace exposes every multi-chunk window event without payload content", async () => {
   const events = [];
   const receiverEvents = [];
   const { clock, left, right } = connectedPair({
@@ -273,8 +297,11 @@ test("chunk trace exposes all 252 window events without payload content", async 
   });
   left.bind(receiver());
   right.bind(receiver());
+  const privateMarker = "private-chunk-content-marker";
   const message = {
-    ...request(1, { text: "汉".repeat(5000) }),
+    ...request(1, {
+      text: `${privateMarker}${asciiTextSpanningChunks(3)}`,
+    }),
     method: "sendText",
   };
 
@@ -287,17 +314,21 @@ test("chunk trace exposes all 252 window events without payload content", async 
   const acknowledged = events.filter(
     (event) => event.event === "chunk.ack.received",
   );
-  assert.equal(sent.length, 252);
-  assert.equal(acknowledged.length, 252);
+  const expectedChunks = sent[0]?.details.chunkCount;
+  assert.equal(expectedChunks, 3);
+  assert.equal(sent.length, expectedChunks);
+  assert.equal(acknowledged.length, expectedChunks);
   const sentAcks = receiverEvents.filter((event) => event.event === "ack.send");
-  assert.equal(sentAcks.length, 252);
-  assert.ok(sentAcks.every((event) => event.details.chunkCount === 252));
+  assert.equal(sentAcks.length, expectedChunks);
+  assert.ok(
+    sentAcks.every((event) => event.details.chunkCount === expectedChunks),
+  );
   assert.equal(sent[0].details.chunkIndex, 0);
-  assert.equal(sent.at(-1).details.chunkIndex, 251);
+  assert.equal(sent.at(-1).details.chunkIndex, expectedChunks - 1);
   assert.ok(events.every((event) => Object.isFrozen(event)));
   assert.ok(events.every((event) => Object.isFrozen(event.details)));
-  assert.equal(JSON.stringify(events).includes("汉"), false);
-  assert.equal(JSON.stringify(receiverEvents).includes("汉"), false);
+  assert.equal(JSON.stringify(events).includes(privateMarker), false);
+  assert.equal(JSON.stringify(receiverEvents).includes(privateMarker), false);
 
   const firstReceived = receiverEvents.findIndex(
     (event) => event.event === "chunk.received" && event.details.chunkIndex === 0,
@@ -311,7 +342,9 @@ test("chunk trace exposes all 252 window events without payload content", async 
   assert.ok(firstReceived < firstCached && firstCached < firstAck);
 
   const lastReceived = receiverEvents.findIndex(
-    (event) => event.event === "chunk.received" && event.details.chunkIndex === 251,
+    (event) =>
+      event.event === "chunk.received" &&
+      event.details.chunkIndex === expectedChunks - 1,
   );
   const reassembled = receiverEvents.findIndex(
     (event) => event.event === "transfer.reassembled",
@@ -320,7 +353,9 @@ test("chunk trace exposes all 252 window events without payload content", async 
     (event) => event.event === "receiver.accept.done",
   );
   const lastAck = receiverEvents.findIndex(
-    (event) => event.event === "ack.send" && event.details.chunkIndex === 251,
+    (event) =>
+      event.event === "ack.send" &&
+      event.details.chunkIndex === expectedChunks - 1,
   );
   assert.ok(lastReceived < reassembled && reassembled < accepted && accepted < lastAck);
 });
@@ -392,24 +427,12 @@ test("near-limit mixed Unicode payload stays within the conservative chunk bound
   right.bind(receiver({ accept: (message) => accepted.push(message) }));
   left.bind(receiver());
 
-  // Nineteen 3-byte code points followed by a 4-byte code point repeatedly
-  // exercises the splitter's worst legal boundary slack.
-  const unit = `${"汉".repeat(19)}🙂`;
-  let low = 0;
-  let high = 40_000;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    const candidate = request(1, { text: unit.repeat(middle) });
-    if (textEncoder.encode(JSON.stringify(candidate)).byteLength <= MAX_MESSAGE_BYTES) {
-      low = middle;
-    } else {
-      high = middle - 1;
-    }
-  }
-  const message = request(1, { text: unit.repeat(low) });
+  // The ASCII JSON prefix does not align with four-byte emoji boundaries.
+  // A maximum-sized payload therefore exercises the fifth,
+  // conservative chunk slot without exceeding the 256 KiB message limit.
+  const message = maxSizedUnicodeMessage();
   const payloadBytes = textEncoder.encode(JSON.stringify(message)).byteLength;
-  assert.ok(payloadBytes <= MAX_MESSAGE_BYTES);
-  assert.ok(payloadBytes > MAX_MESSAGE_BYTES - 1_000);
+  assert.equal(payloadBytes, MAX_MESSAGE_BYTES);
 
   const sending = left.send(message);
   await flush(clock);
@@ -417,8 +440,7 @@ test("near-limit mixed Unicode payload stays within the conservative chunk bound
   const data = pair.client.sent
     .map(frame)
     .filter((candidate) => candidate.kind === "DATA");
-  assert.ok(data.length > Math.ceil(MAX_MESSAGE_BYTES / CHUNK_PAYLOAD_BYTES));
-  assert.ok(data.length <= MAX_CHUNKS_PER_TRANSFER);
+  assert.equal(data.length, MAX_CHUNKS_PER_TRANSFER);
   assert.deepEqual(accepted, [message]);
 });
 
@@ -428,7 +450,7 @@ test("chunking preserves emoji, supplementary CJK, escapes, and control characte
   right.bind(receiver({ accept: (message) => accepted.push(message) }));
   left.bind(receiver());
   const message = request(1, {
-    text: "汉🙂𠀀\"\\\n".repeat(40),
+    text: "汉🙂𠀀\"\\\n".repeat(10_000),
   });
 
   const sending = left.send(message);
@@ -452,7 +474,7 @@ test("out-of-order chunks reassemble once and completed duplicates are re-ACKed"
   const { clock, pair, left } = connectedPair();
   const accepted = [];
   left.bind(receiver({ accept: (message) => accepted.push(message) }));
-  const message = request(1, { text: "汉".repeat(30) });
+  const message = request(1, { text: asciiTextSpanningChunks(3) });
   const payloadChunks = chunkPayload(JSON.stringify(message));
   assert.ok(payloadChunks.length >= 3);
   const frames = payloadChunks.map((payload, chunkIndex) => JSON.stringify({
@@ -493,7 +515,9 @@ test("TR-07 synchronous DATA/ACK still reports unknown before delivered", async 
   });
   await flush(clock);
   await sending;
-  assert.deepEqual(order, ["unknown", "accept", "delivered"]);
+  // A synchronous adapter can deliver to the peer before socket.send()
+  // returns. The public delivery observer still advances monotonically.
+  assert.deepEqual(order, ["accept", "unknown", "delivered"]);
 });
 
 test("synchronous disconnect during socket.send reports an unknown delivery", async () => {
@@ -546,7 +570,7 @@ test("TR-03 every encoded chunk stays below the outer frame limit", async () => 
   const { clock, pair, left, right } = connectedPair();
   left.bind(receiver());
   right.bind(receiver());
-  const message = request(1, { text: "汉".repeat(5000) });
+  const message = maxSizedUnicodeMessage();
 
   const sending = left.send(message);
   await flush(clock);
@@ -592,12 +616,13 @@ test("TR-04 MAX_QUEUED_BYTES rejects before the logical transfer count", async (
   left.bind(receiver());
   right.bind(receiver());
 
-  // One 200 KiB payload expands to roughly 460 KiB of immutable DATA frame
-  // snapshots, so the 4 MiB byte budget is reached well before 128 transfers.
+  // One 200 KiB payload now has only four DATA frame snapshots. Their combined
+  // size remains slightly above 200 KiB, so the byte budget still wins before
+  // the 128-transfer count limit.
   const text = "x".repeat(200_000);
   const pending = [];
   let overflow;
-  const probeLimit = Math.min(MAX_QUEUED_MESSAGES, 20);
+  const probeLimit = Math.min(MAX_QUEUED_MESSAGES, 32);
   for (let requestId = 1; requestId <= probeLimit; requestId += 1) {
     let queueError;
     const raw = left.send(request(requestId, { text }));
@@ -616,7 +641,7 @@ test("TR-04 MAX_QUEUED_BYTES rejects before the logical transfer count", async (
 
   assert.ok(overflow, "the byte budget should reject before the message count");
   assert.ok(pending.length < MAX_QUEUED_MESSAGES);
-  assert.ok((pending.length - 1) * 400_000 < MAX_QUEUED_BYTES);
+  assert.ok((pending.length - 1) * 200_000 < MAX_QUEUED_BYTES);
 
   const closing = left.close();
   await flush(clock);
@@ -635,7 +660,9 @@ test("TR-12 chunk window sends only its configured number of chunks", async () =
       : undefined,
   );
 
-  const sending = left.send(request(1, { text: "汉".repeat(30) }));
+  const sending = left.send(
+    request(1, { text: asciiTextSpanningChunks(3) }),
+  );
   await flush(clock);
   const initial = pair.client.sent.filter((raw) => frame(raw).kind === "DATA");
   assert.equal(initial.length, 2);
@@ -672,11 +699,8 @@ test("TR-12 long transfer advances exactly one chunk per matching ACK", async ()
       : undefined,
   );
 
-  const message = {
-    ...request(1, { text: "汉".repeat(5000) }),
-    method: "sendText",
-  };
-  const totalChunks = 252;
+  const message = maxSizedUnicodeMessage();
+  const totalChunks = MAX_CHUNKS_PER_TRANSFER;
   const sending = left.send(message);
   await flush(clock);
   const dataCount = () =>
@@ -923,7 +947,7 @@ test("partial chunk conflicts are dropped; legacy single-frame input remains acc
   const accepted = [];
   left.bind(receiver({ accept: (message) => accepted.push(message) }));
 
-  const message = request(1, { text: "汉".repeat(30) });
+  const message = request(1, { text: asciiTextSpanningChunks(3) });
   const pieces = chunkPayload(JSON.stringify(message));
   assert.ok(pieces.length >= 3);
   const makeChunk = (chunkIndex, chunkCount = pieces.length, payload = pieces[chunkIndex]) =>
@@ -944,7 +968,9 @@ test("partial chunk conflicts are dropped; legacy single-frame input remains acc
   await flush(clock);
   assert.deepEqual(accepted, [message]);
 
-  const legacy = request(2, { text: "x".repeat(100) });
+  const legacy = request(2, {
+    text: "x".repeat(CHUNK_PAYLOAD_BYTES + 100),
+  });
   assert.ok(textEncoder.encode(JSON.stringify(legacy)).byteLength > CHUNK_PAYLOAD_BYTES);
   pair.server.send(dataFrame(11, legacy));
   await flush(clock);
@@ -1044,7 +1070,7 @@ test("TR-16 active AbortSignal stops remaining chunks and B continues", async ()
   );
   const controller = new AbortController();
   const a = observe(
-    left.send(request(1, { text: "汉".repeat(5000) }), {
+    left.send(request(1, { text: asciiTextSpanningChunks(3) }), {
       signal: controller.signal,
     }),
   );

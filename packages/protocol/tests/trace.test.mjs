@@ -37,7 +37,7 @@ test("console protocol tracer prints ordered Chinese summary markers", () => {
       at: 11,
       layer: "transport",
       event: "transfer.queued",
-      details: { transferId: 1, chunkCount: 252 },
+      details: { transferId: 1, chunkCount: 5 },
     });
   } finally {
     console.log = originalLog;
@@ -45,7 +45,7 @@ test("console protocol tracer prints ordered Chinese summary markers", () => {
 
   assert.deepEqual(lines, [
     "[协议][客户端/运行-1][0001][t=10][会话层][request.pending] 请求已加入 PendingMap：请求ID=1，Pending数量=1",
-    "[协议][客户端/运行-1][0002][t=11][传输层][transfer.queued] 消息进入发送队列：传输ID=1，chunk总数=252",
+    "[协议][客户端/运行-1][0002][t=11][传输层][transfer.queued] 消息进入发送队列：传输ID=1，chunk总数=5",
   ]);
   assert.ok(lines.every((line) => !line.includes("payload")));
 });

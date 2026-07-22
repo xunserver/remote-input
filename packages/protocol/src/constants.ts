@@ -1,16 +1,12 @@
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 export const MAX_MESSAGE_BYTES = 256 * 1024;
 
-/**
- * Test-sized UTF-8 payload chunk: twenty ordinary CJK characters are 20 * 3
- * bytes.  This is the inner Session JSON payload limit, not the outer frame
- * limit below.
- */
-export const CHUNK_PAYLOAD_BYTES = 60;
+/** Default UTF-8 byte limit for one DATA.payload chunk (64 KiB). */
+export const CHUNK_PAYLOAD_BYTES = 64 * 1024;
 /**
  * Maximum number of chunks permitted for one reassembled Session payload. The
  * splitter is code-point safe and can leave up to three bytes unused at a
- * boundary, so the bound uses a conservative 57-byte effective chunk.
+ * boundary, so the bound uses a conservative effective chunk size.
  */
 export const MAX_CHUNKS_PER_TRANSFER = Math.ceil(
   MAX_MESSAGE_BYTES / (CHUNK_PAYLOAD_BYTES - 3),

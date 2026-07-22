@@ -33,7 +33,7 @@ server.listen(config.port, config.host, () => {
   console.log(
     config.inputMode === "paste"
       ? "Input mode: paste (clipboard writes and system paste are enabled)."
-      : "Input mode: print (received text is only printed).",
+      : "Input mode: dev (received text is only printed).",
   );
   if (config.protocolTraceLevel !== undefined) {
     console.log(`Protocol trace: ${config.protocolTraceLevel}.`);

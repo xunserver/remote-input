@@ -1,12 +1,12 @@
 import { writeClipboardAndPaste } from "../os/clipboard.js";
 import type { InputProcessor } from "./inputQueue.js";
 
-export type InputMode = "print" | "paste";
+export type InputMode = "paste" | "dev";
 
 type InputLogger = (message: string) => void;
 
 export function createInputProcessor(mode: InputMode): InputProcessor {
-  return mode === "paste" ? writeClipboardAndPaste : printReceivedText;
+  return mode === "dev" ? printReceivedText : writeClipboardAndPaste;
 }
 
 export function printReceivedText(

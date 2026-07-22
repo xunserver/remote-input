@@ -26,9 +26,9 @@ export function getConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 }
 
 function getInputMode(value: string | undefined): InputMode {
-  const mode = value ?? "print";
-  if (mode === "print" || mode === "paste") {
+  const mode = value ?? "paste";
+  if (mode === "paste" || mode === "dev") {
     return mode;
   }
-  throw new Error(`INPUT_MODE must be "print" or "paste"; received ${JSON.stringify(value)}.`);
+  throw new Error(`INPUT_MODE must be "paste" or "dev"; received ${JSON.stringify(value)}.`);
 }

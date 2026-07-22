@@ -53,7 +53,7 @@ test("sendText responds only after globally serialized input processing complete
   assert.deepEqual(startedTexts, ["first", "second"]);
 });
 
-test("sendText reassembles a 5000-character input exactly once", async (context) => {
+test("sendText transfers a 5000-character input exactly once", async (context) => {
   const processed = [];
   const input = "汉".repeat(5000);
   const fixture = await createServerFixture(

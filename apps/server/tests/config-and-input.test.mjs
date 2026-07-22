@@ -7,11 +7,11 @@ import {
 } from "../dist/input/inputProcessor.js";
 import { writeClipboardAndPaste } from "../dist/os/clipboard.js";
 
-test("server defaults to print mode and accepts explicit paste mode", () => {
-  assert.equal(getConfig({}).inputMode, "print");
+test("server defaults to paste mode and accepts explicit dev mode", () => {
+  assert.equal(getConfig({}).inputMode, "paste");
   assert.equal(getConfig({}).protocolTraceLevel, undefined);
-  assert.equal(getConfig({ INPUT_MODE: "print" }).inputMode, "print");
   assert.equal(getConfig({ INPUT_MODE: "paste" }).inputMode, "paste");
+  assert.equal(getConfig({ INPUT_MODE: "dev" }).inputMode, "dev");
 });
 
 test("server protocol trace is explicit and validates its level", () => {
@@ -26,16 +26,16 @@ test("server protocol trace is explicit and validates its level", () => {
 });
 
 test("server rejects invalid input modes", () => {
-  for (const inputMode of ["", "log", "true", "PASTE"]) {
+  for (const inputMode of ["", "print", "log", "true", "PASTE"]) {
     assert.throws(
       () => getConfig({ INPUT_MODE: inputMode }),
-      /INPUT_MODE must be "print" or "paste"/,
+      /INPUT_MODE must be "paste" or "dev"/,
     );
   }
 });
 
-test("input mode selects printing unless real paste is explicitly enabled", () => {
-  assert.equal(createInputProcessor("print"), printReceivedText);
+test("dev mode prints while paste mode performs real paste", () => {
+  assert.equal(createInputProcessor("dev"), printReceivedText);
   assert.equal(createInputProcessor("paste"), writeClipboardAndPaste);
 });
 
