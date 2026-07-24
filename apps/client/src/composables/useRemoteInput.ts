@@ -1,8 +1,7 @@
-import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
+import { computed, onUnmounted, ref, watch, type Ref } from "vue";
 import {
-  createConsoleProtocolTracer,
-  parseProtocolTraceLevel,
-  WebSocketTransport,
+  getWebBluetoothSupport,
+  WebBluetoothTransport,
   type TransportState,
 } from "@remote-copy/protocol";
 import { Client, isSDKError, sdkErrorCodes } from "@remote-copy/sdk";
@@ -13,12 +12,6 @@ import {
   type OperationStatus,
   type ServerInfo,
 } from "@/types/remote-input";
-import {
-  buildWebSocketUrl,
-  connectionStorageKey,
-  getConfigFromUrl,
-  getDefaultConnectionConfig,
-} from "@/utils/connection";
 import { loadHistory, maxHistoryItems, saveHistory } from "@/utils/history";
 
 type InitialConnection = {
@@ -35,28 +28,15 @@ type Runtime = {
   infoAbortController: AbortController | null;
   markedConnected: boolean;
   seenConnected: boolean;
-  transport: WebSocketTransport;
+  transport: WebBluetoothTransport;
   unsubscribe: () => void;
   url: string;
 };
 
-type ServerSnapshot = {
-  clients: number;
-  info: ServerInfo;
-};
-
-const protocolTraceLevel = parseProtocolTraceLevel(
-  import.meta.env.VITE_PROTOCOL_DEBUG,
-);
-
 function getInitialConnection(): InitialConnection {
-  const savedUrl = readStoredConnection();
-  const fallbackUrl = buildWebSocketUrl(getDefaultConnectionConfig());
-  const config = getConfigFromUrl(savedUrl || fallbackUrl);
-
   return {
-    savedUrl,
-    url: buildWebSocketUrl(config),
+    savedUrl: null,
+    url: "bluetooth://esp32-s3",
   };
 }
 
@@ -85,43 +65,9 @@ export function useRemoteInput() {
   const showConnectionDialog = computed(
     () => !hasConnectionConfig.value || settingsOpen.value,
   );
-  const deviceName = computed(() =>
-    connectionState.value === "ready" ? "Remote Copy Server" : "",
-  );
+  const deviceName = computed(() => connectionState.value === "ready" ? "Remote Copy ESP32-S3" : "");
 
   watch(history, saveHistory, { immediate: true, flush: "sync" });
-
-  async function refreshServerInfo(
-    targetRuntime: Runtime,
-    connectionEpoch: number,
-    signal: AbortSignal,
-  ): Promise<void> {
-    try {
-      const response = await fetch(buildInfoUrl(targetRuntime.url), {
-        cache: "no-store",
-        signal,
-      });
-      if (!response.ok) {
-        return;
-      }
-      const snapshot = parseServerSnapshot(await response.json());
-      // abort 无法撤回已经结算的 Promise，提交结果前仍需核对 Runtime 和连接代次。
-      if (
-        !snapshot ||
-        signal.aborted ||
-        runtime !== targetRuntime ||
-        generation !== targetRuntime.generation ||
-        targetRuntime.connectionEpoch !== connectionEpoch ||
-        targetRuntime.transport.state !== "connected"
-      ) {
-        return;
-      }
-      serverInfo.value = snapshot.info;
-      clientCount.value = snapshot.clients;
-    } catch {
-      // /api/info 仅提供展示元数据，失败不应影响协议连接。
-    }
-  }
 
   function markConnected(
     targetRuntime: Runtime,
@@ -145,11 +91,8 @@ export function useRemoteInput() {
     lastError.value = "";
     hasConnectionConfig.value = true;
     settingsOpen.value = false;
-    storeConnection(targetRuntime.url);
-    targetRuntime.infoAbortController?.abort();
-    const controller = new AbortController();
-    targetRuntime.infoAbortController = controller;
-    void refreshServerInfo(targetRuntime, connectionEpoch, controller.signal);
+    serverInfo.value = null;
+    clientCount.value = 0;
   }
 
   function startTransport(targetRuntime: Runtime): void {
@@ -184,7 +127,15 @@ export function useRemoteInput() {
       });
   }
 
-  function connect(url: string): void {
+  function connect(_url?: string): void {
+    const support = getWebBluetoothSupport();
+    if (!support.supported) {
+      connectionState.value = "error";
+      lastError.value = support.reason === "insecure_context"
+        ? "网页蓝牙需要 HTTPS 或 localhost 安全上下文。"
+        : "当前浏览器不支持 Web Bluetooth，请使用支持该功能的 Chromium 浏览器。";
+      return;
+    }
     const previous = runtime;
     const runtimeGeneration = ++generation;
     // 先废弃旧 Runtime 再异步关闭，确保旧监听器和 Promise 无法回写新连接。
@@ -195,27 +146,16 @@ export function useRemoteInput() {
       void previous.client.close().catch(() => undefined);
     }
 
+    const url = "bluetooth://esp32-s3";
     connectionUrl.value = url;
     lastError.value = "";
     serverInfo.value = null;
     clientCount.value = 0;
 
     try {
-      const onTrace = protocolTraceLevel === undefined
-        ? undefined
-        : createConsoleProtocolTracer(`客户端/运行-${runtimeGeneration}`);
-      const transport = new WebSocketTransport(url, {
-        ...(onTrace === undefined ? {} : { onTrace }),
-        ...(protocolTraceLevel === undefined
-          ? {}
-          : { traceLevel: protocolTraceLevel }),
-      });
+      const transport = new WebBluetoothTransport();
       const client = new Client({
         transport,
-        ...(onTrace === undefined ? {} : { onTrace }),
-        ...(protocolTraceLevel === undefined
-          ? {}
-          : { traceLevel: protocolTraceLevel }),
       });
       const nextRuntime: Runtime = {
         client,
@@ -368,12 +308,6 @@ export function useRemoteInput() {
     }
   }
 
-  onMounted(() => {
-    if (initialConnection.savedUrl) {
-      connect(initialConnection.url);
-    }
-  });
-
   onUnmounted(() => {
     const targetRuntime = runtime;
     // 卸载时先废弃 generation，屏蔽尚未结算的连接和元数据回调。
@@ -440,63 +374,11 @@ function createOperationId(): string {
   return String(Date.now()) + "-" + Math.random().toString(16).slice(2);
 }
 
-function buildInfoUrl(webSocketUrl: string): string {
-  const url = new URL(webSocketUrl);
-  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
-  url.pathname = "/api/info";
-  url.search = "";
-  url.hash = "";
-  return url.toString();
-}
-
-function readStoredConnection(): string | null {
-  try {
-    return localStorage.getItem(connectionStorageKey);
-  } catch {
-    return null;
-  }
-}
-
-function storeConnection(url: string): void {
-  try {
-    localStorage.setItem(connectionStorageKey, url);
-  } catch {
-    // 连接配置持久化是可选能力，失败不能改变实时连接状态。
-  }
-}
-
-function parseServerSnapshot(value: unknown): ServerSnapshot | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const snapshot = value as Record<string, unknown>;
-  if (
-    typeof snapshot.port !== "number" ||
-    !Number.isInteger(snapshot.port) ||
-    snapshot.port < 1 ||
-    snapshot.port > 65535 ||
-    typeof snapshot.clients !== "number" ||
-    !Number.isInteger(snapshot.clients) ||
-    snapshot.clients < 0 ||
-    !Array.isArray(snapshot.lanAddresses) ||
-    !snapshot.lanAddresses.every((address) => typeof address === "string")
-  ) {
-    return null;
-  }
-  return {
-    clients: snapshot.clients,
-    info: {
-      port: snapshot.port,
-      lanAddresses: snapshot.lanAddresses,
-    },
-  };
-}
-
 function formatConnectionError(error: unknown): string {
   if (isSDKError(error)) {
     return formatRequestError(error);
   }
-  return "无法连接到服务器，请检查 IP、端口和服务状态。";
+  return "无法连接到 ESP32-S3，请确认蓝牙已开启并重新选择设备。";
 }
 
 function formatRequestError(error: unknown): string {

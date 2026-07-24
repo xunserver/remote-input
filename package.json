@@ -27,5 +27,8 @@
   "devDependencies": {
     "turbo": "^2.6.3",
     "typescript": "^7.0.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["node-hid"]
   }
 }

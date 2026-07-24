@@ -9,9 +9,11 @@
   },
   "files": [],
   "references": [
+    { "path": "./apps/agent" },
     { "path": "./apps/server" },
     { "path": "./apps/client" },
     { "path": "./packages/protocol" },
+    { "path": "./packages/device-protocol" },
     { "path": "./packages/sdk" }
   ]
 }

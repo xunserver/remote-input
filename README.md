@@ -4,6 +4,7 @@
 
 ## 当前状态
 
+- V2 Web Bluetooth -> ESP32-S3 -> USB vendor HID -> desktop agent 链路已加入；设计、UUID、framing 与构建方式见 [V2 架构](docs/v2-ble-hid-architecture.md)。固件基线为 ESP-IDF 6.x。
 - V1 WebSocket Transport、双向 Session Request/Response 和 SDK Client 已实现；Transport 支持 UTF-8 分片重组、逐 chunk ACK/重试和窗口发送。
 - apps/client 与 apps/server 已迁移到原生 WebSocket `/ws` 接入，不再使用 Socket.IO 协议。
 - Server 默认写入剪贴板并执行系统粘贴；只有显式设置 `INPUT_MODE=dev` 才仅打印收到的文字。

@@ -1,0 +1,2 @@
+# Remote Copy ESP32-S3 vendor-defined HID interface (VID 303a, PID 4002).
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4002", TAG+="uaccess"

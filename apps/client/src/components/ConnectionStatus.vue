@@ -55,7 +55,7 @@ const statusMessage = computed(
         )
       : isReady.value
         ? ""
-        : "连接服务器后即可开始发送"),
+        : "连接 ESP32-S3 后即可开始发送"),
 );
 
 function getPeerEndpoint(

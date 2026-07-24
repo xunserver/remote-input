@@ -15,6 +15,31 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  apps/agent:
+    dependencies:
+      '@remote-copy/device-protocol':
+        specifier: workspace:*
+        version: link:../../packages/device-protocol
+      '@remote-copy/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      clipboardy:
+        specifier: ^5.3.1
+        version: 5.3.1
+      node-hid:
+        specifier: ^3.2.0
+        version: 3.4.0
+    devDependencies:
+      '@remote-copy/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.1
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   apps/client:
     dependencies:
       '@lucide/vue':
@@ -92,7 +117,17 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/device-protocol:
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/protocol:
+    dependencies:
+      '@remote-copy/device-protocol':
+        specifier: workspace:*
+        version: link:../device-protocol
     devDependencies:
       typescript:
         specifier: ^7.0.2
@@ -843,6 +878,15 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
+  node-addon-api@8.9.0:
+    resolution: {integrity: sha512-ekZMeaaIzSQTSpr7X2X3iJM7lTzgnx8ahAG9pJfT/7+14mlEM8ZYQ9cgCDvSSRbReFK0oHli3WrZdCiRsgAT9Q==}
+    engines: {node: ^18 || ^20 || >= 21}
+
+  node-hid@3.4.0:
+    resolution: {integrity: sha512-Br7EO3bJARAJBdtcsGzF/Vs5TjfbkaMdglqLQ+Rk9GOGgVqv5DxYUVH5znLerJU+OfBWw8sd552Ujcprz1bG9g==}
+    engines: {node: '>=10.16'}
+    hasBin: true
+
   npm-run-path@4.0.1:
     resolution: {integrity: sha512-S48WzZW777zhNIrn7gxOlISNAqi9ZC/uQFnRdbeIHhZhCA6UqpkOT8T1G7BvfdgP4Er8gF4sUbaS0i7QvIfCWw==}
     engines: {node: '>=8'}
@@ -879,6 +923,11 @@ packages:
   picomatch@4.0.5:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
+
+  pkg-prebuilds@1.1.0:
+    resolution: {integrity: sha512-jyai+KTQ2OwbN6iRYw88XbYOMgtpoSYJpjYebx7d9ihqz3txNi3ucsBt3va0iVWe6svSlaqpijMHFF/eJCMZzg==}
+    engines: {node: '>= 14.15.0'}
+    hasBin: true
 
   postcss@8.5.18:
     resolution: {integrity: sha512-xdB1oSLHbz1vRWgCDalrCqEFTWzFlhqFC5tIHLMOSUIjhm3XXQ1qrFy8S/ESr1JYRRXqM3c1QFiMZUJdUTqyMQ==}
@@ -1704,6 +1753,13 @@ snapshots:
 
   nanoid@3.3.16: {}
 
+  node-addon-api@8.9.0: {}
+
+  node-hid@3.4.0:
+    dependencies:
+      node-addon-api: 8.9.0
+      pkg-prebuilds: 1.1.0
+
   npm-run-path@4.0.1:
     dependencies:
       path-key: 3.1.1
@@ -1730,6 +1786,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.5: {}
+
+  pkg-prebuilds@1.1.0: {}
 
   postcss@8.5.18:
     dependencies:

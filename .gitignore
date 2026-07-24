@@ -2,3 +2,7 @@ node_modules
 dist
 .turbo
 /public
+firmware/esp32s3/build/
+firmware/esp32s3/managed_components/
+firmware/esp32s3/sdkconfig
+firmware/esp32s3/sdkconfig.old

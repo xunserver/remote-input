@@ -1,0 +1,27 @@
+{
+  "name": "@remote-copy/agent",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "pnpm run build && node --test tests/*.test.mjs",
+    "start": "node dist/main.js",
+    "dev": "pnpm run build && node dist/main.js",
+    "install:user": "pnpm run build && node scripts/user-service.mjs install",
+    "uninstall:user": "node scripts/user-service.mjs uninstall"
+  },
+  "dependencies": {
+    "@remote-copy/device-protocol": "workspace:*",
+    "@remote-copy/protocol": "workspace:*",
+    "clipboardy": "^5.3.1",
+    "node-hid": "^3.2.0"
+  },
+  "devDependencies": {
+    "@remote-copy/sdk": "workspace:*",
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2"
+  }
+}
