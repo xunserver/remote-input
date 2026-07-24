@@ -6,7 +6,7 @@ import {
   WebBluetoothTransport,
 } from "@remote-copy/protocol";
 import { Client } from "@remote-copy/sdk";
-import { RelayAgent } from "@remote-copy/agent-sdk";
+import { RelayAgent } from "@remote-copy/web-agent-sdk";
 
 class NotificationCharacteristic {
   listeners = new Set();

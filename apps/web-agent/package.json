@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@lucide/vue": "^1.25.0",
-    "@remote-copy/agent-sdk": "workspace:*",
+    "@remote-copy/web-agent-sdk": "workspace:*",
     "vue": "^3.5.40"
   },
   "devDependencies": {

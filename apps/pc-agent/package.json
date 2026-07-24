@@ -1,5 +1,5 @@
 {
-  "name": "@remote-copy/agent",
+  "name": "@remote-copy/pc-agent",
   "version": "2.0.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "uninstall:user": "node scripts/user-service.mjs uninstall"
   },
   "dependencies": {
-    "@remote-copy/agent-sdk": "workspace:*",
+    "@remote-copy/web-agent-sdk": "workspace:*",
     "@remote-copy/device-protocol": "workspace:*",
     "@remote-copy/protocol": "workspace:*",
     "clipboardy": "^5.3.1",

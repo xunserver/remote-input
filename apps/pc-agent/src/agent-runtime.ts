@@ -2,7 +2,7 @@ import {
   RelayAgent,
   type HidChannel,
   type TextProcessor,
-} from "@remote-copy/agent-sdk";
+} from "@remote-copy/web-agent-sdk";
 
 export interface ReconnectableHidChannel extends HidChannel {
   onError(listener: (error: unknown) => void): void;

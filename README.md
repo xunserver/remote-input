@@ -4,8 +4,8 @@
 
 ## 当前状态
 
-- V2 Web Bluetooth -> ESP32-S3 -> USB vendor HID -> desktop agent 链路已加入；设计、UUID、framing 与构建方式见 [V2 架构](docs/v2-ble-hid-architecture.md)。固件基线为 ESP-IDF 6.x。
-- 不能运行桌面 agent 的电脑可使用 Chrome/Edge 打开 `/receive/`，通过 WebHID 接收并显示文字；协议核心位于 `packages/agent-sdk`。
+- V2 Web Bluetooth -> ESP32-S3 -> USB vendor HID -> PC agent 链路已加入；设计、UUID、framing 与构建方式见 [V2 架构](docs/v2-ble-hid-architecture.md)。固件基线为 ESP-IDF 6.x。
+- 不能运行 PC agent 的电脑可使用 Chrome/Edge 打开 `/receive/`，通过 WebHID 接收并显示文字；协议核心位于 `packages/web-agent-sdk`。
 - V1 WebSocket Transport、双向 Session Request/Response 和 SDK Client 已实现；Transport 支持 UTF-8 分片重组、逐 chunk ACK/重试和窗口发送。
 - apps/client 与 apps/server 已迁移到原生 WebSocket `/ws` 接入，不再使用 Socket.IO 协议。
 - Server 默认写入剪贴板并执行系统粘贴；只有显式设置 `INPUT_MODE=dev` 才仅打印收到的文字。
@@ -17,12 +17,14 @@
 ```text
 apps/
   client/                  Vite + Vue 3 + Tailwind v4 + shadcn-vue 前端应用
+  pc-agent/                Node.js + HID 的 PC agent
   server/                  Node.js + TypeScript 后端应用
+  web-agent/               Vite + Vue 3 的 WebHID agent
 
 packages/
   protocol/                Session、Transport 契约与 WebSocket Transport
   sdk/                     面向应用的 Client 和类型化方法
-  agent-sdk/               HID Session 请求处理与 WebHID agent
+  web-agent-sdk/           HID Session 请求处理与 WebHID agent
 
 apps/client/dist/          client 的 Vite 构建输出
 apps/server/dist/public/   随 server 构建产物打包的网页静态文件

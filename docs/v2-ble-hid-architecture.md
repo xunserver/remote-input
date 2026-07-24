@@ -10,14 +10,14 @@ Web Client / SDK Session
   -> BLE GATT write
   -> ESP32-S3 relay
   -> USB vendor-defined HID input report
-  -> Desktop Agent
+  -> PC Agent
   -> clipboard + system paste
   -> Session response over HID output report
   -> ESP32-S3 BLE notification
   -> Web Client / SDK Session
 ```
 
-网页到 ESP32-S3 是 BLE transport；ESP32-S3 到 agent 是 USB HID transport。ESP32-S3
+网页到 ESP32-S3 是 BLE transport；ESP32-S3 到 PC agent 是 USB HID transport。ESP32-S3
 不解析 Session JSON，也不模拟普通键盘字符。使用 vendor-defined HID 是为了可靠传输
 UTF-8、中文、emoji 和控制字符，避免受键盘布局、输入法与 Unicode 支持影响。
 
@@ -51,42 +51,42 @@ response 为准。
 | 16 | 0..48 | payload |
 
 USB 使用无 report ID 的 64 字节 vendor HID report。短 frame 在 USB 线上补零到 64 字节，
-payload length 确定有效边界。`node-hid` 写 API 要求数组第一个字节为 report ID，因此 agent
+payload length 确定有效边界。`node-hid` 写 API 要求数组第一个字节为 report ID，因此 PC agent
 写出时额外前置 `0`；这个字节不在线上传输。
 
-## Agent
+## PC Agent
 
 默认 VID/PID 是 `303a:4002`，可用 `REMOTE_COPY_VID` 和 `REMOTE_COPY_PID` 覆盖。
 
 ```bash
-pnpm --filter @remote-copy/agent build
-INPUT_MODE=dev pnpm --filter @remote-copy/agent start
-pnpm --filter @remote-copy/agent start
+pnpm --filter @remote-copy/pc-agent build
+INPUT_MODE=dev pnpm --filter @remote-copy/pc-agent start
+pnpm --filter @remote-copy/pc-agent start
 ```
 
 `INPUT_MODE=dev` 只打印重组后的文本。默认模式写入系统剪贴板并模拟粘贴。Linux 需要
 `xdotool`（X11）或 `wtype`（Wayland），并可能需要为 HID 设备配置 udev 权限。
 
-开发工作区可以把 agent 安装为当前用户的登录启动项，不需要以 root 身份运行 agent：
+开发工作区可以把 PC agent 安装为当前用户的登录启动项，不需要以 root 身份运行：
 
 ```bash
-pnpm --filter @remote-copy/agent install:user
-pnpm --filter @remote-copy/agent uninstall:user
+pnpm --filter @remote-copy/pc-agent install:user
+pnpm --filter @remote-copy/pc-agent uninstall:user
 ```
 
 - Linux 使用 `systemd --user`。首次安装需将
-  `apps/agent/assets/99-remote-copy.rules` 复制到 `/etc/udev/rules.d/`，执行
+  `apps/pc-agent/assets/99-remote-copy.rules` 复制到 `/etc/udev/rules.d/`，执行
   `sudo udevadm control --reload-rules && sudo udevadm trigger` 后重新插拔设备。
   使用 `systemctl --user status remote-copy-agent` 和
   `journalctl --user -u remote-copy-agent -f` 查看运行状态与日志。
 - macOS 使用 `~/Library/LaunchAgents/com.remote-copy.agent.plist`；首次粘贴时需要在
-  “隐私与安全性 -> 辅助功能”中允许实际运行 agent 的 Node 程序。
+  “隐私与安全性 -> 辅助功能”中允许实际运行 PC agent 的 Node 程序。
   日志位于 `~/Library/Logs/RemoteCopy/`。
 - Windows 使用当前用户的 `Run` 启动项和隐藏 PowerShell launcher；卸载命令会删除启动项
-  并终止已安装 launcher 对应的 agent 进程。
+  并终止已安装 launcher 对应的 PC agent 进程。
 
 这些安装项引用当前工作区的 `dist/main.js` 和 Node 可执行文件，移动或删除工作区前应先
-运行 `uninstall:user`。agent 在设备未插入时保持等待，USB 拔插后会自动重新发现 HID。
+运行 `uninstall:user`。PC agent 在设备未插入时保持等待，USB 拔插后会自动重新发现 HID。
 
 ### WebHID agent
 
@@ -101,12 +101,12 @@ pnpm --filter @remote-copy/web-agent dev
 安全上下文可用。首次选择设备必须由用户点击“连接设备”触发，浏览器授权过的设备会在
 再次打开页面时自动恢复连接。
 
-页面只负责展示、复制和清空。`@remote-copy/agent-sdk` 的 `WebHidAgent` 负责设备筛选、
+页面只负责展示、复制和清空。`@remote-copy/web-agent-sdk` 的 `WebHidAgent` 负责设备筛选、
 HID report 监听、Relay frame 重组、UTF-8/Session 请求解析、串行调用 `onText`，并在处理
 完成后通过 HID output report 回写 Session response：
 
 ```ts
-import { WebHidAgent } from "@remote-copy/agent-sdk";
+import { WebHidAgent } from "@remote-copy/web-agent-sdk";
 
 const agent = new WebHidAgent({
   onText(text) {

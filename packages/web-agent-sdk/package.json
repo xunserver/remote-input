@@ -1,5 +1,5 @@
 {
-  "name": "@remote-copy/agent-sdk",
+  "name": "@remote-copy/web-agent-sdk",
   "version": "1.0.0",
   "private": true,
   "type": "module",

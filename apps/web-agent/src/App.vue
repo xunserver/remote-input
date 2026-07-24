@@ -15,7 +15,7 @@ import {
   getWebHidSupport,
   type HidDeviceLike,
   type WebHidAgentState,
-} from "@remote-copy/agent-sdk";
+} from "@remote-copy/web-agent-sdk";
 
 const state = ref<WebHidAgentState>("idle");
 const deviceName = ref("");
