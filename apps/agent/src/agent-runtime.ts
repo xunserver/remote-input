@@ -1,7 +1,12 @@
-import { RelayAgent, type HidChannel, type TextProcessor } from "./relay-agent.js";
+import {
+  RelayAgent,
+  type HidChannel,
+  type TextProcessor,
+} from "@remote-copy/agent-sdk";
 
 export interface ReconnectableHidChannel extends HidChannel {
   onError(listener: (error: unknown) => void): void;
+  close(): void;
 }
 
 export interface HidConnector {
@@ -49,6 +54,7 @@ export async function runAgentRuntime(options: AgentRuntimeOptions): Promise<voi
     const agent = new RelayAgent(channel, options.processText, onError);
     await Promise.race([disconnected, waitForAbort(options.signal)]);
     agent.close();
+    channel.close();
     if (!options.signal.aborted) {
       log("Remote Copy ESP32-S3 disconnected; reconnecting...");
       await abortableDelay(retryMs, options.signal);

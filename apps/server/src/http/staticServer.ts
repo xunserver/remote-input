@@ -39,7 +39,11 @@ export function createStaticHandler(config: AppConfig, getClientCount: () => num
       return;
     }
 
-    const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
+    const pathname = url.pathname === "/"
+      ? "/index.html"
+      : url.pathname === "/receive" || url.pathname === "/receive/"
+        ? "/receive/index.html"
+        : url.pathname;
     const safePath = path.normalize(pathname).replace(/^(\.\.[/\\])+/, "");
     const filePath = path.join(config.publicDir, safePath);
 

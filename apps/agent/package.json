@@ -14,6 +14,7 @@
     "uninstall:user": "node scripts/user-service.mjs uninstall"
   },
   "dependencies": {
+    "@remote-copy/agent-sdk": "workspace:*",
     "@remote-copy/device-protocol": "workspace:*",
     "@remote-copy/protocol": "workspace:*",
     "clipboardy": "^5.3.1",

@@ -1,0 +1,28 @@
+{
+  "name": "@remote-copy/agent-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test --test-timeout=10000 tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@remote-copy/device-protocol": "workspace:*",
+    "@remote-copy/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

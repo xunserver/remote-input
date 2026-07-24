@@ -16,9 +16,13 @@ const connector: HidConnector = {
     if (!descriptor?.path) return null;
     const device = new HID(descriptor.path);
     const channel: ReconnectableHidChannel = {
-      onData(listener) { device.on("data", (data) => listener(new Uint8Array(data))); },
+      onData(listener) {
+        const handler = (data: Buffer) => listener(new Uint8Array(data));
+        device.on("data", handler);
+        return () => device.off("data", handler);
+      },
       onError(listener) { device.once("error", listener); },
-      write(report) { device.write(report); },
+      write(report) { device.write([0, ...report]); },
       close() { try { device.close(); } catch { /* Device may already be gone. */ } },
     };
     return channel;

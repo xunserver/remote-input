@@ -88,6 +88,39 @@ pnpm --filter @remote-copy/agent uninstall:user
 这些安装项引用当前工作区的 `dist/main.js` 和 Node 可执行文件，移动或删除工作区前应先
 运行 `uninstall:user`。agent 在设备未插入时保持等待，USB 拔插后会自动重新发现 HID。
 
+### WebHID agent
+
+目标电脑不能运行桌面 agent 时，可以使用桌面版 Chrome 或 Edge 打开 WebHID 接收页：
+
+```bash
+pnpm --filter @remote-copy/web-agent dev
+```
+
+开发地址为 `http://localhost:5174`。执行完整服务端构建后也可从
+`http://localhost:17888/receive/` 打开。部署到其他主机时必须使用 HTTPS；WebHID 只在
+安全上下文可用。首次选择设备必须由用户点击“连接设备”触发，浏览器授权过的设备会在
+再次打开页面时自动恢复连接。
+
+页面只负责展示、复制和清空。`@remote-copy/agent-sdk` 的 `WebHidAgent` 负责设备筛选、
+HID report 监听、Relay frame 重组、UTF-8/Session 请求解析、串行调用 `onText`，并在处理
+完成后通过 HID output report 回写 Session response：
+
+```ts
+import { WebHidAgent } from "@remote-copy/agent-sdk";
+
+const agent = new WebHidAgent({
+  onText(text) {
+    console.log(text);
+  },
+});
+
+await agent.connect(); // 必须从用户点击事件调用
+```
+
+`connectAuthorized()` 可恢复已授权设备而不弹出选择框，`disconnect()` 主动断开当前设备，
+`close()` 同时释放设备和全局 WebHID 监听器。默认只接受固件 VID/PID `303a:4002` 以及
+vendor usage page `ff00`、usage `01`。
+
 ## ESP-IDF 6.x
 
 固件位于 `firmware/esp32s3`，要求 ESP-IDF `>=6.0.0 <7.0.0`，并通过 Component

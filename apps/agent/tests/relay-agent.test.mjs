@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HID_PAYLOAD_BYTES, RelayReassembler, decodeRelayFrame, encodeRelayFrame, splitRelayMessage } from "@remote-copy/device-protocol";
-import { RelayAgent } from "../dist/relay-agent.js";
+import { RelayAgent } from "@remote-copy/agent-sdk";
 
-class FakeHid { listeners=[]; writes=[]; onData(fn){this.listeners.push(fn)} write(report){this.writes.push(report)} close(){} emit(report){for(const fn of this.listeners)fn(report)} }
+class FakeHid { listeners=[]; writes=[]; onData(fn){this.listeners.push(fn); return ()=>{this.listeners=this.listeners.filter(listener=>listener!==fn)}} write(report){this.writes.push(report)} emit(report){for(const fn of this.listeners)fn(report)} }
 test("agent reconstructs UTF-8, processes it, and returns a Session response", async () => {
   const hid = new FakeHid(); const received=[];
   new RelayAgent(hid, async text => received.push(text), error => { throw error; });
@@ -14,6 +14,6 @@ test("agent reconstructs UTF-8, processes it, and returns a Session response", a
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(received,["中文🙂"]);
   const reassembler=new RelayReassembler(); let response;
-  for(const report of hid.writes) response=reassembler.accept(decodeRelayFrame(Uint8Array.from(report).subarray(1)))??response;
+  for(const report of hid.writes) response=reassembler.accept(decodeRelayFrame(report))??response;
   assert.deepEqual(JSON.parse(new TextDecoder().decode(response)),{type:"response",requestId:9,ok:true,data:{pasted:true}});
 });

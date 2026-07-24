@@ -6,7 +6,7 @@ import {
   WebBluetoothTransport,
 } from "@remote-copy/protocol";
 import { Client } from "@remote-copy/sdk";
-import { RelayAgent } from "../dist/relay-agent.js";
+import { RelayAgent } from "@remote-copy/agent-sdk";
 
 class NotificationCharacteristic {
   listeners = new Set();
@@ -35,9 +35,8 @@ class SimulatedEspRelay {
     },
   };
   hid = {
-    onData: (listener) => { this.hidDataListener = listener; },
-    write: (nodeHidReport) => {
-      const wireReport = Uint8Array.from(nodeHidReport).subarray(1);
+    onData: (listener) => { this.hidDataListener = listener; return () => { this.hidDataListener = () => {}; }; },
+    write: (wireReport) => {
       const payloadLength = wireReport[12] | (wireReport[13] << 8);
       this.notify.emit(wireReport.slice(0, 16 + payloadLength));
     },

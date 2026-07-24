@@ -12,8 +12,10 @@
     { "path": "./apps/agent" },
     { "path": "./apps/server" },
     { "path": "./apps/client" },
+    { "path": "./apps/web-agent" },
     { "path": "./packages/protocol" },
     { "path": "./packages/device-protocol" },
-    { "path": "./packages/sdk" }
+    { "path": "./packages/sdk" },
+    { "path": "./packages/agent-sdk" }
   ]
 }

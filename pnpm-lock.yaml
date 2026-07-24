@@ -17,6 +17,9 @@ importers:
 
   apps/agent:
     dependencies:
+      '@remote-copy/agent-sdk':
+        specifier: workspace:*
+        version: link:../../packages/agent-sdk
       '@remote-copy/device-protocol':
         specifier: workspace:*
         version: link:../../packages/device-protocol
@@ -107,12 +110,53 @@ importers:
       '@remote-copy/client':
         specifier: workspace:*
         version: link:../client
+      '@remote-copy/web-agent':
+        specifier: workspace:*
+        version: link:../web-agent
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  apps/web-agent:
+    dependencies:
+      '@lucide/vue':
+        specifier: ^1.25.0
+        version: 1.25.0(vue@3.5.40(typescript@6.0.3))
+      '@remote-copy/agent-sdk':
+        specifier: workspace:*
+        version: link:../../packages/agent-sdk
+      vue:
+        specifier: ^3.5.40
+        version: 3.5.40(typescript@6.0.3)
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^6.0.8
+        version: 6.0.8(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))(vue@3.5.40(typescript@6.0.3))
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^8.1.4
+        version: 8.1.4(@types/node@26.1.1)(jiti@2.7.0)
+      vue-tsc:
+        specifier: ^3.3.7
+        version: 3.3.7(typescript@6.0.3)
+
+  packages/agent-sdk:
+    dependencies:
+      '@remote-copy/device-protocol':
+        specifier: workspace:*
+        version: link:../device-protocol
+      '@remote-copy/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
