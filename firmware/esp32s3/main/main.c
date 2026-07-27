@@ -55,11 +55,18 @@ static int gatt_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_ga
     return xQueueSend(relay_queue, &item, 0) == pdTRUE ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
 }
 
+static int gatt_notify_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    (void)conn_handle; (void)attr_handle; (void)ctxt; (void)arg;
+    // NimBLE requires an access callback even for notify-only characteristics.
+    // Notifications are sent directly with ble_gatts_notify_custom().
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 static const struct ble_gatt_svc_def gatt_services[] = {
     { .type = BLE_GATT_SVC_TYPE_PRIMARY, .uuid = &service_uuid.u,
       .characteristics = (struct ble_gatt_chr_def[]) {
         { .uuid = &write_uuid.u, .access_cb = gatt_access, .flags = BLE_GATT_CHR_F_WRITE },
-        { .uuid = &notify_uuid.u, .val_handle = &notify_value_handle, .flags = BLE_GATT_CHR_F_NOTIFY },
+        { .uuid = &notify_uuid.u, .access_cb = gatt_notify_access, .val_handle = &notify_value_handle, .flags = BLE_GATT_CHR_F_NOTIFY },
         { 0 }
       }
     },
