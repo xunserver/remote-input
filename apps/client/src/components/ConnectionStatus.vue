@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import {
   Activity,
+  Bluetooth,
   CheckCircle2,
   Keyboard,
   RefreshCw,
@@ -21,12 +22,14 @@ import { cn } from "@shadcn/utils";
 import {
   connectionLabel,
   statusLabel,
+  type ConnectionMethod,
   type ConnectionState,
   type OperationStatus,
   type ServerInfo,
 } from "@/types/remote-input";
 
 type ConnectionStatusProps = {
+  connectionMethod: ConnectionMethod;
   connectionState: ConnectionState;
   connectionUrl: string;
   serverInfo: ServerInfo | null;
@@ -42,7 +45,9 @@ const props = defineProps<ConnectionStatusProps>();
 
 const isReady = computed(() => props.connectionState === "ready");
 const peerEndpoint = computed(() =>
-  getPeerEndpoint(props.connectionUrl, props.serverInfo),
+  props.connectionMethod === "bluetooth"
+    ? "蓝牙直连"
+    : getPeerEndpoint(props.connectionUrl, props.serverInfo),
 );
 const statusMessage = computed(
   () =>
@@ -55,7 +60,9 @@ const statusMessage = computed(
         )
       : isReady.value
         ? ""
-        : "连接 ESP32-S3 后即可开始发送"),
+        : props.connectionMethod === "bluetooth"
+          ? "连接 ESP32-S3 后即可开始发送"
+          : "连接服务器后即可开始发送"),
 );
 
 function getPeerEndpoint(
@@ -168,7 +175,13 @@ function getPeerEndpoint(
           <div
             class="flex min-w-0 items-center gap-2 rounded-lg bg-background px-3 py-2 shadow-xs ring-1 ring-border/70"
           >
+            <Bluetooth
+              v-if="props.connectionMethod === 'bluetooth'"
+              class="shrink-0"
+              aria-hidden="true"
+            />
             <Users
+              v-else
               aria-hidden="true"
               :class="
                 cn(
@@ -178,9 +191,19 @@ function getPeerEndpoint(
               "
             />
             <div class="flex min-w-0 flex-col">
-              <span class="text-xs text-muted-foreground">在线客户端</span>
+              <span class="text-xs text-muted-foreground">
+                {{
+                  props.connectionMethod === "bluetooth"
+                    ? "连接方式"
+                    : "在线客户端"
+                }}
+              </span>
               <span class="truncate text-sm font-medium">
-                {{ props.clientCount }} 个
+                {{
+                  props.connectionMethod === "bluetooth"
+                    ? "蓝牙直连"
+                    : `${props.clientCount} 个`
+                }}
               </span>
             </div>
           </div>

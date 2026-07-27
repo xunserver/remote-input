@@ -1,23 +1,38 @@
-import { computed, onUnmounted, ref, watch, type Ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import {
+  createConsoleProtocolTracer,
   getWebBluetoothSupport,
+  parseProtocolTraceLevel,
   WebBluetoothTransport,
+  WebSocketTransport,
   type TransportState,
 } from "@remote-copy/protocol";
 import { Client, isSDKError, sdkErrorCodes } from "@remote-copy/sdk";
 import {
   isInputBusy,
+  type ConnectionMethod,
   type ConnectionState,
   type HistoryItem,
   type OperationStatus,
   type ServerInfo,
 } from "@/types/remote-input";
+import {
+  buildWebSocketUrl,
+  connectionMethodStorageKey,
+  connectionStorageKey,
+  getConfigFromUrl,
+  getDefaultConnectionConfig,
+} from "@/utils/connection";
 import { loadHistory, maxHistoryItems, saveHistory } from "@/utils/history";
 
 type InitialConnection = {
+  method: ConnectionMethod;
   savedUrl: string | null;
   url: string;
+  webSocketUrl: string;
 };
+
+type ConnectionTransport = WebBluetoothTransport | WebSocketTransport;
 
 type Runtime = {
   client: Client;
@@ -27,25 +42,51 @@ type Runtime = {
   generation: number;
   infoAbortController: AbortController | null;
   markedConnected: boolean;
+  method: ConnectionMethod;
   seenConnected: boolean;
-  transport: WebBluetoothTransport;
+  transport: ConnectionTransport;
   unsubscribe: () => void;
   url: string;
 };
 
+type ServerSnapshot = {
+  clients: number;
+  info: ServerInfo;
+};
+
+const bluetoothUrl = "bluetooth://esp32-s3";
+const protocolTraceLevel = parseProtocolTraceLevel(
+  import.meta.env.VITE_PROTOCOL_DEBUG,
+);
+
 function getInitialConnection(): InitialConnection {
+  const savedUrl = readStoredConnection();
+  const savedMethod = readStoredConnectionMethod();
+  const fallbackUrl = buildWebSocketUrl(getDefaultConnectionConfig());
+  const method = savedMethod ?? (savedUrl ? "websocket" : "bluetooth");
+  const webSocketUrl = buildWebSocketUrl(
+    getConfigFromUrl(savedUrl || fallbackUrl),
+  );
+
   return {
-    savedUrl: null,
-    url: "bluetooth://esp32-s3",
+    method,
+    savedUrl,
+    url: method === "bluetooth" ? bluetoothUrl : webSocketUrl,
+    webSocketUrl,
   };
 }
 
 /** 统一管理连接生命周期、远端输入请求及其展示状态。 */
 export function useRemoteInput() {
   const initialConnection = getInitialConnection();
+  const connectionMethod = ref<ConnectionMethod>(initialConnection.method);
   const connectionUrl = ref(initialConnection.url);
+  const webSocketUrl = ref(initialConnection.webSocketUrl);
   const connectionState = ref<ConnectionState>("idle");
-  const hasConnectionConfig = ref(Boolean(initialConnection.savedUrl));
+  const hasConnectionConfig = ref(
+    initialConnection.method === "websocket" &&
+      Boolean(initialConnection.savedUrl),
+  );
   const settingsOpen = ref(false);
   const history = ref<HistoryItem[]>(loadHistory());
   const currentOperation = ref<OperationStatus | null>(null);
@@ -65,9 +106,47 @@ export function useRemoteInput() {
   const showConnectionDialog = computed(
     () => !hasConnectionConfig.value || settingsOpen.value,
   );
-  const deviceName = computed(() => connectionState.value === "ready" ? "Remote Copy ESP32-S3" : "");
+  const deviceName = computed(() => {
+    if (connectionState.value !== "ready") {
+      return "";
+    }
+    return connectionMethod.value === "bluetooth"
+      ? "Remote Copy ESP32-S3"
+      : "Remote Copy Server";
+  });
 
   watch(history, saveHistory, { immediate: true, flush: "sync" });
+
+  async function refreshServerInfo(
+    targetRuntime: Runtime,
+    connectionEpoch: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    try {
+      const response = await fetch(buildInfoUrl(targetRuntime.url), {
+        cache: "no-store",
+        signal,
+      });
+      if (!response.ok) {
+        return;
+      }
+      const snapshot = parseServerSnapshot(await response.json());
+      if (
+        !snapshot ||
+        signal.aborted ||
+        runtime !== targetRuntime ||
+        generation !== targetRuntime.generation ||
+        targetRuntime.connectionEpoch !== connectionEpoch ||
+        targetRuntime.transport.state !== "connected"
+      ) {
+        return;
+      }
+      serverInfo.value = snapshot.info;
+      clientCount.value = snapshot.clients;
+    } catch {
+      // /api/info 只用于 WebSocket 服务端信息展示，失败不影响协议连接。
+    }
+  }
 
   function markConnected(
     targetRuntime: Runtime,
@@ -93,6 +172,13 @@ export function useRemoteInput() {
     settingsOpen.value = false;
     serverInfo.value = null;
     clientCount.value = 0;
+    storeConnectionMethod(targetRuntime.method);
+    if (targetRuntime.method === "websocket") {
+      storeConnection(targetRuntime.url);
+      const controller = new AbortController();
+      targetRuntime.infoAbortController = controller;
+      void refreshServerInfo(targetRuntime, connectionEpoch, controller.signal);
+    }
   }
 
   function startTransport(targetRuntime: Runtime): void {
@@ -123,19 +209,21 @@ export function useRemoteInput() {
           return;
         }
         connectionState.value = "error";
-        lastError.value = formatConnectionError(error);
+        lastError.value = formatConnectionError(error, targetRuntime.method);
       });
   }
 
-  function connect(_url?: string): void {
-    const support = getWebBluetoothSupport();
-    if (!support.supported) {
-      connectionState.value = "error";
-      lastError.value = support.reason === "insecure_context"
-        ? "网页蓝牙需要 HTTPS 或 localhost 安全上下文。"
-        : "当前浏览器不支持 Web Bluetooth，请使用支持该功能的 Chromium 浏览器。";
-      return;
+  function connect(method: ConnectionMethod, requestedUrl?: string): void {
+    if (method === "bluetooth") {
+      const support = getWebBluetoothSupport();
+      if (!support.supported) {
+        lastError.value = support.reason === "insecure_context"
+          ? "网页蓝牙需要 HTTPS 或 localhost 安全上下文。"
+          : "当前浏览器不支持 Web Bluetooth，请使用支持该功能的 Chromium 浏览器。";
+        return;
+      }
     }
+
     const previous = runtime;
     const runtimeGeneration = ++generation;
     // 先废弃旧 Runtime 再异步关闭，确保旧监听器和 Promise 无法回写新连接。
@@ -146,16 +234,37 @@ export function useRemoteInput() {
       void previous.client.close().catch(() => undefined);
     }
 
-    const url = "bluetooth://esp32-s3";
+    const url = method === "bluetooth"
+      ? bluetoothUrl
+      : requestedUrl || webSocketUrl.value;
+    connectionMethod.value = method;
     connectionUrl.value = url;
+    if (method === "websocket") {
+      webSocketUrl.value = url;
+    }
     lastError.value = "";
     serverInfo.value = null;
     clientCount.value = 0;
 
     try {
-      const transport = new WebBluetoothTransport();
+      const onTrace =
+        method === "websocket" && protocolTraceLevel !== undefined
+          ? createConsoleProtocolTracer(`客户端/运行-${runtimeGeneration}`)
+          : undefined;
+      const transport: ConnectionTransport = method === "bluetooth"
+        ? new WebBluetoothTransport()
+        : new WebSocketTransport(url, {
+            ...(onTrace === undefined ? {} : { onTrace }),
+            ...(protocolTraceLevel === undefined
+              ? {}
+              : { traceLevel: protocolTraceLevel }),
+          });
       const client = new Client({
         transport,
+        ...(onTrace === undefined ? {} : { onTrace }),
+        ...(protocolTraceLevel === undefined
+          ? {}
+          : { traceLevel: protocolTraceLevel }),
       });
       const nextRuntime: Runtime = {
         client,
@@ -163,6 +272,7 @@ export function useRemoteInput() {
         generation: runtimeGeneration,
         infoAbortController: null,
         markedConnected: false,
+        method,
         seenConnected: false,
         transport,
         unsubscribe: () => {},
@@ -196,7 +306,7 @@ export function useRemoteInput() {
             : "error";
           lastError.value = nextRuntime.seenConnected
             ? "连接已断开，请重新连接。"
-            : "无法连接到服务器，请检查 IP、端口和服务状态。";
+            : initialConnectionError(nextRuntime.method);
           clientCount.value = 0;
           return;
         }
@@ -213,7 +323,7 @@ export function useRemoteInput() {
     } catch (error) {
       runtime = null;
       connectionState.value = "error";
-      lastError.value = formatConnectionError(error);
+      lastError.value = formatConnectionError(error, method);
     }
   }
 
@@ -225,7 +335,7 @@ export function useRemoteInput() {
       targetRuntime.transport.state === "closing" ||
       targetRuntime.transport.state === "closed"
     ) {
-      connect(connectionUrl.value);
+      connect(connectionMethod.value, connectionUrl.value);
       return;
     }
     if (
@@ -236,6 +346,15 @@ export function useRemoteInput() {
     }
     startTransport(targetRuntime);
   }
+
+  onMounted(() => {
+    if (
+      initialConnection.method === "websocket" &&
+      initialConnection.savedUrl
+    ) {
+      connect("websocket", initialConnection.url);
+    }
+  });
 
   async function sendInput(text: string): Promise<boolean> {
     const targetRuntime = runtime;
@@ -321,8 +440,10 @@ export function useRemoteInput() {
   });
 
   return {
+    connectionMethod,
     connectionState,
     connectionUrl,
+    webSocketUrl,
     hasConnectionConfig,
     showConnectionDialog,
     deviceName,
@@ -374,11 +495,95 @@ function createOperationId(): string {
   return String(Date.now()) + "-" + Math.random().toString(16).slice(2);
 }
 
-function formatConnectionError(error: unknown): string {
+function buildInfoUrl(webSocketUrl: string): string {
+  const url = new URL(webSocketUrl);
+  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+  url.pathname = "/api/info";
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+function readStoredConnection(): string | null {
+  try {
+    return localStorage.getItem(connectionStorageKey);
+  } catch {
+    return null;
+  }
+}
+
+function readStoredConnectionMethod(): ConnectionMethod | null {
+  try {
+    const value = localStorage.getItem(connectionMethodStorageKey);
+    return value === "bluetooth" || value === "websocket" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeConnection(url: string): void {
+  try {
+    localStorage.setItem(connectionStorageKey, url);
+  } catch {
+    // 连接配置持久化是可选能力，失败不能改变实时连接状态。
+  }
+}
+
+function storeConnectionMethod(method: ConnectionMethod): void {
+  try {
+    localStorage.setItem(connectionMethodStorageKey, method);
+  } catch {
+    // 连接方式持久化是可选能力，失败不能改变实时连接状态。
+  }
+}
+
+function parseServerSnapshot(value: unknown): ServerSnapshot | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const snapshot = value as Record<string, unknown>;
+  if (
+    typeof snapshot.port !== "number" ||
+    !Number.isInteger(snapshot.port) ||
+    snapshot.port < 1 ||
+    snapshot.port > 65535 ||
+    typeof snapshot.clients !== "number" ||
+    !Number.isInteger(snapshot.clients) ||
+    snapshot.clients < 0 ||
+    !Array.isArray(snapshot.lanAddresses) ||
+    !snapshot.lanAddresses.every((address) => typeof address === "string")
+  ) {
+    return null;
+  }
+  return {
+    clients: snapshot.clients,
+    info: {
+      port: snapshot.port,
+      lanAddresses: snapshot.lanAddresses,
+    },
+  };
+}
+
+function initialConnectionError(method: ConnectionMethod): string {
+  return method === "bluetooth"
+    ? "无法连接到 ESP32-S3，请确认蓝牙已开启并重新选择设备。"
+    : "无法连接到服务器，请检查 IP、端口和服务状态。";
+}
+
+function formatConnectionError(
+  error: unknown,
+  method: ConnectionMethod,
+): string {
   if (isSDKError(error)) {
+    if (
+      method === "bluetooth" &&
+      error.code === sdkErrorCodes.transportNotConnected
+    ) {
+      return initialConnectionError(method);
+    }
     return formatRequestError(error);
   }
-  return "无法连接到 ESP32-S3，请确认蓝牙已开启并重新选择设备。";
+  return initialConnectionError(method);
 }
 
 function formatRequestError(error: unknown): string {

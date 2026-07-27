@@ -5,6 +5,8 @@ export type ConnectionState =
   | "disconnected"
   | "error";
 
+export type ConnectionMethod = "bluetooth" | "websocket";
+
 export type OperationState = "processing" | "succeeded" | "failed";
 
 export type OperationStatus = {
