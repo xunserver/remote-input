@@ -23,6 +23,8 @@
         "PORT",
         "INPUT_MODE",
         "PROTOCOL_DEBUG",
+        "REMOTE_COPY_VID",
+        "REMOTE_COPY_PID",
         "VITE_PROTOCOL_DEBUG"
       ]
     },
@@ -35,8 +37,17 @@
         "PORT",
         "INPUT_MODE",
         "PROTOCOL_DEBUG",
+        "REMOTE_COPY_VID",
+        "REMOTE_COPY_PID",
         "VITE_PROTOCOL_DEBUG"
       ]
+    },
+    "install:user": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "uninstall:user": {
+      "cache": false
     }
   }
 }

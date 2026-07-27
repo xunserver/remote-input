@@ -5,12 +5,12 @@
   "type": "module",
   "main": "./dist/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-public.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "pnpm run build && node --test tests/*.test.mjs",
+    "test": "node --test --test-timeout=10000 tests/*.test.mjs",
     "start": "node dist/main.js",
-    "dev": "pnpm run build && node dist/main.js",
-    "install:user": "pnpm run build && node scripts/user-service.mjs install",
+    "dev": "node dist/main.js",
+    "install:user": "node scripts/user-service.mjs install",
     "uninstall:user": "node scripts/user-service.mjs uninstall"
   },
   "dependencies": {
@@ -18,11 +18,16 @@
     "@remote-copy/device-protocol": "workspace:*",
     "@remote-copy/protocol": "workspace:*",
     "clipboardy": "^5.3.1",
-    "node-hid": "^3.2.0"
+    "node-hid": "^3.2.0",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
+    "@remote-copy/client": "workspace:*",
+    "@remote-copy/receiver": "workspace:*",
     "@remote-copy/sdk": "workspace:*",
+    "@remote-copy/web-agent": "workspace:*",
     "@types/node": "^26.1.1",
+    "@types/ws": "^8.18.1",
     "typescript": "^7.0.2"
   }
 }

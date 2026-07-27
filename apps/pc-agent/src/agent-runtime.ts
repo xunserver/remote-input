@@ -5,6 +5,7 @@ import {
 } from "@remote-copy/web-agent-sdk";
 
 export interface ReconnectableHidChannel extends HidChannel {
+  deviceName?: string;
   onError(listener: (error: unknown) => void): void;
   close(): void;
 }
@@ -20,6 +21,10 @@ export interface AgentRuntimeOptions {
   retryMs?: number;
   log?: (message: string) => void;
   onError?: (error: unknown) => void;
+  onStateChange?: (
+    state: "waiting" | "connected" | "disconnected",
+    deviceName?: string,
+  ) => void;
 }
 
 /** Keeps the user-session agent alive across device absence and USB reconnects. */
@@ -39,6 +44,7 @@ export async function runAgentRuntime(options: AgentRuntimeOptions): Promise<voi
     if (!channel) {
       if (!waitingLogged) {
         log("Waiting for the Remote Copy ESP32-S3 HID device...");
+        options.onStateChange?.("waiting");
         waitingLogged = true;
       }
       await abortableDelay(retryMs, options.signal);
@@ -47,6 +53,7 @@ export async function runAgentRuntime(options: AgentRuntimeOptions): Promise<voi
 
     waitingLogged = false;
     log("Remote Copy ESP32-S3 connected.");
+    options.onStateChange?.("connected", channel.deviceName);
     const disconnected = new Promise<void>((resolve) => channel?.onError((error) => {
       onError(error);
       resolve();
@@ -57,6 +64,7 @@ export async function runAgentRuntime(options: AgentRuntimeOptions): Promise<voi
     channel.close();
     if (!options.signal.aborted) {
       log("Remote Copy ESP32-S3 disconnected; reconnecting...");
+      options.onStateChange?.("disconnected");
       await abortableDelay(retryMs, options.signal);
     }
   }

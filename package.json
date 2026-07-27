@@ -9,17 +9,22 @@
     "test": "turbo run test",
     "dev": "turbo run dev",
     "dev:client": "turbo run dev --filter=@remote-copy/client",
+    "dev:receiver": "turbo run dev --filter=@remote-copy/receiver",
     "dev:web-agent": "turbo run dev --filter=@remote-copy/web-agent",
-    "dev:server": "turbo run dev --filter=@remote-copy/server",
-    "start": "turbo run start --filter=@remote-copy/server",
+    "dev:pc-agent": "turbo run dev --filter=@remote-copy/pc-agent",
+    "start": "turbo run start --filter=@remote-copy/pc-agent",
+    "install:user": "turbo run install:user --filter=@remote-copy/pc-agent",
+    "uninstall:user": "turbo run uninstall:user --filter=@remote-copy/pc-agent",
     "build:client": "turbo run build --filter=@remote-copy/client",
-    "build:server": "turbo run build --filter=@remote-copy/server",
+    "build:receiver": "turbo run build --filter=@remote-copy/receiver",
+    "build:pc-agent": "turbo run build --filter=@remote-copy/pc-agent",
     "build:protocol": "turbo run build --filter=@remote-copy/protocol",
     "build:sdk": "turbo run build --filter=@remote-copy/sdk",
     "build:web-agent-sdk": "turbo run build --filter=@remote-copy/web-agent-sdk",
     "build:web-agent": "turbo run build --filter=@remote-copy/web-agent",
     "check:client": "turbo run check --filter=@remote-copy/client",
-    "check:server": "turbo run check --filter=@remote-copy/server",
+    "check:receiver": "turbo run check --filter=@remote-copy/receiver",
+    "check:pc-agent": "turbo run check --filter=@remote-copy/pc-agent",
     "check:protocol": "turbo run check --filter=@remote-copy/protocol",
     "check:sdk": "turbo run check --filter=@remote-copy/sdk",
     "check:web-agent-sdk": "turbo run check --filter=@remote-copy/web-agent-sdk",
@@ -27,14 +32,11 @@
     "test:protocol": "turbo run test --filter=@remote-copy/protocol",
     "test:sdk": "turbo run test --filter=@remote-copy/sdk",
     "test:web-agent-sdk": "turbo run test --filter=@remote-copy/web-agent-sdk",
-    "test:server": "turbo run test --filter=@remote-copy/server"
+    "test:pc-agent": "turbo run test --filter=@remote-copy/pc-agent"
   },
   "packageManager": "pnpm@10.0.0",
   "devDependencies": {
     "turbo": "^2.6.3",
     "typescript": "^7.0.2"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["node-hid"]
   }
 }

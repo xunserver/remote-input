@@ -1,0 +1,21 @@
+{
+  "name": "@remote-copy/receiver",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build --config vite.config.ts",
+    "check": "vue-tsc --noEmit -p tsconfig.json",
+    "dev": "vite --config vite.config.ts --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.25.0",
+    "vue": "^3.5.40"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.8",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.4",
+    "vue-tsc": "^3.3.7"
+  }
+}

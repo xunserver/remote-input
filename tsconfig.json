@@ -10,8 +10,8 @@
   "files": [],
   "references": [
     { "path": "./apps/pc-agent" },
-    { "path": "./apps/server" },
     { "path": "./apps/client" },
+    { "path": "./apps/receiver" },
     { "path": "./apps/web-agent" },
     { "path": "./packages/protocol" },
     { "path": "./packages/device-protocol" },

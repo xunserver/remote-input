@@ -8,7 +8,8 @@ import {
   type TransportState,
 } from "@remote-copy/protocol";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { InputQueue } from "../input/inputQueue.js";
+import type { AcceptText } from "../input/input-service.js";
+import type { RuntimeStatusStore } from "../status/runtime-status.js";
 
 export const protocolWebSocketPath = "/ws";
 
@@ -20,11 +21,12 @@ type RemoteClient = {
 
 export type RemoteWebSocketServerOptions = {
   server: http.Server;
-  inputQueue: InputQueue;
+  acceptText: AcceptText;
+  runtimeStatus: RuntimeStatusStore;
   protocolTraceLevel?: ProtocolTraceLevel;
 };
 
-/** 为每个 WebSocket 创建独立会话，并通过共享输入队列串行化系统副作用。 */
+/** Creates one protocol session per socket and delegates input to the shared service. */
 export class RemoteWebSocketServer {
   private readonly webSocketServer: WebSocketServer;
   private readonly clients = new Set<RemoteClient>();
@@ -59,7 +61,7 @@ export class RemoteWebSocketServer {
     const traceLevel = this.options.protocolTraceLevel;
     const onTrace = traceLevel === undefined
       ? undefined
-      : createConsoleProtocolTracer(`服务端/连接-${clientId}`);
+      : createConsoleProtocolTracer(`PC代理/WS连接-${clientId}`);
     const transport = WebSocketTransport.fromSocket(socket, {
       ...(onTrace === undefined ? {} : { onTrace }),
       ...(traceLevel === undefined ? {} : { traceLevel }),
@@ -68,29 +70,22 @@ export class RemoteWebSocketServer {
       ...(onTrace === undefined ? {} : { onTrace }),
       ...(traceLevel === undefined ? {} : { traceLevel }),
     });
-    // subscribe() 会同步回放当前状态，回调可能在返回取消函数前移除客户端；
-    // 先放入空清理函数，订阅返回后再补偿释放真实监听器。
     const client: RemoteClient = {
       session,
       transport,
       unsubscribe: () => {},
     };
     this.clients.add(client);
+    this.publishClientCount();
 
     const unsubscribe = transport.subscribe((state: TransportState) => {
-      if (state === "idle" || state === "closed") {
-        this.removeClient(client);
-      }
+      if (state === "idle" || state === "closed") this.removeClient(client);
     });
     client.unsubscribe = unsubscribe;
-    if (!this.clients.has(client)) {
-      unsubscribe();
-    }
+    if (!this.clients.has(client)) unsubscribe();
 
     session.registerHandler("sendText", async (payload) => {
-      const text = getText(payload);
-      // 必须等共享队列完成后再响应，避免把“已入队”误报为对端已处理。
-      await this.options.inputQueue.enqueue(text);
+      await this.options.acceptText("websocket", getText(payload));
       return null;
     });
 
@@ -100,43 +95,37 @@ export class RemoteWebSocketServer {
   }
 
   private removeClient(client: RemoteClient): void {
-    // delete 同时充当幂等门；先退订再关闭 Session，避免状态通知重入清理。
-    if (!this.clients.delete(client)) {
-      return;
-    }
+    if (!this.clients.delete(client)) return;
+    this.publishClientCount();
     client.unsubscribe();
     void client.session.close().catch((error: unknown) => {
       console.error("Failed to close a protocol session:", error);
     });
   }
 
+  private publishClientCount(): void {
+    this.options.runtimeStatus.setWebSocketClients(this.clients.size);
+  }
+
   private async closeInternal(): Promise<void> {
     this.closing = true;
-    // WebSocketServer 的关闭回调会等待现有连接退出，因此必须同时启动会话关闭。
     const webSocketServerClosed = new Promise<void>((resolve, reject) => {
       this.webSocketServer.close((error) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
+        if (error) reject(error);
+        else resolve();
       });
     });
     const clients = [...this.clients];
-    // 单个 Session 关闭失败不能阻断其他客户端的退订和移除。
     const sessionsClosed = Promise.allSettled(
       clients.map((client) => client.session.close()),
     ).then(() => {
-      for (const client of clients) {
-        this.removeClient(client);
-      }
+      for (const client of clients) this.removeClient(client);
     });
     await Promise.all([webSocketServerClosed, sessionsClosed]);
   }
 }
 
 function getText(payload: JsonValue): string {
-  // 协议输入视为不可信数据，只接受没有额外字段的普通对象。
   if (
     payload === null
     || Array.isArray(payload)
