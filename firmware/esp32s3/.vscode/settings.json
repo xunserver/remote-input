@@ -1,0 +1,17 @@
+{
+  "idf.currentSetup": "/Users/xun/.espressif/v6.0.2/esp-idf",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  },
+  "clangd.path": "/Users/xun/.espressif/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=/Users/xun/Documents/remote-copy/firmware/esp32s3/build"
+  ],
+  "idf.flashType": "UART",
+  "idf.port": "/dev/tty.usbserial-140",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ]
+}
