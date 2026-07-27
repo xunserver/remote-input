@@ -6,8 +6,10 @@ import InputHistory from "@/components/InputHistory.vue";
 import { useRemoteInput } from "@/composables/useRemoteInput";
 
 const {
+  connectionMethod,
   connectionState,
   connectionUrl,
+  webSocketUrl,
   hasConnectionConfig,
   showConnectionDialog,
   deviceName,
@@ -32,6 +34,7 @@ const {
       class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:gap-5 sm:px-6 sm:pt-6"
     >
       <ConnectionStatus
+        :connection-method="connectionMethod"
         :connection-state="connectionState"
         :connection-url="connectionUrl"
         :server-info="serverInfo"
@@ -61,7 +64,8 @@ const {
 
     <ConnectionDialog
       :open="showConnectionDialog"
-      :current-url="connectionUrl"
+      :current-method="connectionMethod"
+      :current-url="webSocketUrl"
       :has-connection-config="hasConnectionConfig"
       :connection-state="connectionState"
       :error="lastError"

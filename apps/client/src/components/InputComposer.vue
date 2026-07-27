@@ -110,7 +110,7 @@ function handleKeyDown(event: KeyboardEvent): void {
             autofocus
             :enterkeyhint="mode === 'single' ? 'send' : 'enter'"
             :placeholder="
-              isReady ? '在这里输入或粘贴文字…' : '连接 ESP32-S3 后即可输入'
+              isReady ? '在这里输入或粘贴文字…' : '连接对端后即可输入'
             "
             :disabled="!isReady || isSending"
             class="min-h-44 resize-none border-0 bg-muted/60 p-4 text-base shadow-none focus-visible:bg-background focus-visible:ring-2 sm:min-h-56"
@@ -127,7 +127,7 @@ function handleKeyDown(event: KeyboardEvent): void {
         {{
           isReady
             ? `${text.length.toLocaleString()} 个字符`
-            : "请先完成服务器连接"
+            : "请先完成对端连接"
         }}
       </p>
       <Button
