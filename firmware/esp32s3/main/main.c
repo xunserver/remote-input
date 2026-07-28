@@ -27,7 +27,7 @@
 
 #define USB_VID 0x303a
 #define USB_PID 0x4002
-static const char *TAG = "remote-copy-v2";
+static const char *TAG = "remote-input-v2";
 static uint8_t own_addr_type;
 static uint16_t notify_value_handle;
 static QueueHandle_t relay_queue;
@@ -136,7 +136,7 @@ static const tusb_desc_device_t device_descriptor = {
 };
 static const char *string_descriptors[] = {
     (const char[]){0x09,0x04},
-    "Remote Copy",
+    "Remote Input",
     "USB Keyboard",
     "v2",
     "Keyboard",
@@ -210,7 +210,7 @@ void app_main(void) {
 
     ESP_ERROR_CHECK(nimble_port_init());
     ble_svc_gap_init(); ble_svc_gatt_init();
-    assert(ble_svc_gap_device_name_set("Remote Copy ESP32-S3") == 0);
+    assert(ble_svc_gap_device_name_set("Remote Input ESP32-S3") == 0);
     assert(ble_gatts_count_cfg(gatt_services) == 0);
     assert(ble_gatts_add_svcs(gatt_services) == 0);
     ble_hs_cfg.sync_cb = ble_on_sync;

@@ -4,7 +4,7 @@
       "@shadcn": ["./apps/client/src/shadcn"],
       "@shadcn/*": ["./apps/client/src/shadcn/*"],
       "@/*": ["./apps/client/src/*"],
-      "@remote-copy/protocol": ["./packages/protocol/src/index.ts"]
+      "@remote-input/protocol": ["./packages/protocol/src/index.ts"]
     }
   },
   "files": [],

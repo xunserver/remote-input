@@ -8,7 +8,7 @@ import {
   type ProtocolTraceListener,
   type RequestHandler,
   type Transport,
-} from "@remote-copy/protocol";
+} from "@remote-input/protocol";
 
 export interface ClientOptions {
   transport: Transport;

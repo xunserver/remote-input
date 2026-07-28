@@ -1,11 +1,11 @@
 import {
   KeyboardReportDecoder,
   RelayReassembler,
-} from "@remote-copy/device-protocol";
+} from "@remote-input/device-protocol";
 import {
   isRequestMessage,
   type RequestMessage,
-} from "@remote-copy/protocol";
+} from "@remote-input/protocol";
 
 export interface HidChannel {
   onData(listener: (report: Uint8Array) => void): (() => void) | void;

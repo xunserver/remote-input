@@ -2,7 +2,7 @@ import {
   RelayAgent,
   type HidChannel,
   type TextProcessor,
-} from "@remote-copy/web-agent-sdk";
+} from "@remote-input/web-agent-sdk";
 
 export interface ReconnectableHidChannel extends HidChannel {
   deviceName?: string;
@@ -43,7 +43,7 @@ export async function runAgentRuntime(options: AgentRuntimeOptions): Promise<voi
     }
     if (!channel) {
       if (!waitingLogged) {
-        log("Waiting for the Remote Copy ESP32-S3 HID device...");
+        log("Waiting for the Remote Input ESP32-S3 HID device...");
         options.onStateChange?.("waiting");
         waitingLogged = true;
       }
@@ -52,7 +52,7 @@ export async function runAgentRuntime(options: AgentRuntimeOptions): Promise<voi
     }
 
     waitingLogged = false;
-    log("Remote Copy ESP32-S3 connected.");
+    log("Remote Input ESP32-S3 connected.");
     options.onStateChange?.("connected", channel.deviceName);
     const disconnected = new Promise<void>((resolve) => channel?.onError((error) => {
       onError(error);
@@ -63,7 +63,7 @@ export async function runAgentRuntime(options: AgentRuntimeOptions): Promise<voi
     agent.close();
     channel.close();
     if (!options.signal.aborted) {
-      log("Remote Copy ESP32-S3 disconnected; reconnecting...");
+      log("Remote Input ESP32-S3 disconnected; reconnecting...");
       options.onStateChange?.("disconnected");
       await abortableDelay(retryMs, options.signal);
     }

@@ -1,5 +1,5 @@
 {
-  "name": "@remote-copy/client",
+  "name": "@remote-input/client",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
   },
   "dependencies": {
     "@lucide/vue": "^1.25.0",
-    "@remote-copy/protocol": "workspace:*",
-    "@remote-copy/sdk": "workspace:*",
+    "@remote-input/protocol": "workspace:*",
+    "@remote-input/sdk": "workspace:*",
     "@vueuse/core": "^14.3.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

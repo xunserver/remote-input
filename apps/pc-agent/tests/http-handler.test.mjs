@@ -60,7 +60,7 @@ test("SSE sends a race-free snapshot and full message/status updates", async (co
 });
 
 async function createFixture() {
-  const publicDir = await mkdtemp(path.join(os.tmpdir(), "remote-copy-http-"));
+  const publicDir = await mkdtemp(path.join(os.tmpdir(), "remote-input-http-"));
   await mkdir(path.join(publicDir, "receive"));
   await mkdir(path.join(publicDir, "webhid"));
   await writeFile(path.join(publicDir, "index.html"), "sender");

@@ -20,10 +20,10 @@ importers:
       '@lucide/vue':
         specifier: ^1.25.0
         version: 1.25.0(vue@3.5.40(typescript@6.0.3))
-      '@remote-copy/protocol':
+      '@remote-input/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
-      '@remote-copy/sdk':
+      '@remote-input/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       '@vueuse/core':
@@ -69,13 +69,13 @@ importers:
 
   apps/pc-agent:
     dependencies:
-      '@remote-copy/device-protocol':
+      '@remote-input/device-protocol':
         specifier: workspace:*
         version: link:../../packages/device-protocol
-      '@remote-copy/protocol':
+      '@remote-input/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
-      '@remote-copy/web-agent-sdk':
+      '@remote-input/web-agent-sdk':
         specifier: workspace:*
         version: link:../../packages/web-agent-sdk
       clipboardy:
@@ -88,16 +88,16 @@ importers:
         specifier: ^8.21.1
         version: 8.21.1
     devDependencies:
-      '@remote-copy/client':
+      '@remote-input/client':
         specifier: workspace:*
         version: link:../client
-      '@remote-copy/receiver':
+      '@remote-input/receiver':
         specifier: workspace:*
         version: link:../receiver
-      '@remote-copy/sdk':
+      '@remote-input/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@remote-copy/web-agent':
+      '@remote-input/web-agent':
         specifier: workspace:*
         version: link:../web-agent
       '@types/node':
@@ -137,7 +137,7 @@ importers:
       '@lucide/vue':
         specifier: ^1.25.0
         version: 1.25.0(vue@3.5.40(typescript@6.0.3))
-      '@remote-copy/web-agent-sdk':
+      '@remote-input/web-agent-sdk':
         specifier: workspace:*
         version: link:../../packages/web-agent-sdk
       vue:
@@ -165,7 +165,7 @@ importers:
 
   packages/protocol:
     dependencies:
-      '@remote-copy/device-protocol':
+      '@remote-input/device-protocol':
         specifier: workspace:*
         version: link:../device-protocol
     devDependencies:
@@ -175,7 +175,7 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@remote-copy/protocol':
+      '@remote-input/protocol':
         specifier: workspace:*
         version: link:../protocol
     devDependencies:
@@ -185,10 +185,10 @@ importers:
 
   packages/web-agent-sdk:
     dependencies:
-      '@remote-copy/device-protocol':
+      '@remote-input/device-protocol':
         specifier: workspace:*
         version: link:../device-protocol
-      '@remote-copy/protocol':
+      '@remote-input/protocol':
         specifier: workspace:*
         version: link:../protocol
     devDependencies:

@@ -7,7 +7,7 @@
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=/Users/xun/Documents/remote-copy/firmware/esp32s3/build"
+    "--compile-commands-dir=${workspaceFolder}/build"
   ],
   "idf.flashType": "UART",
   "idf.port": "/dev/tty.usbserial-140",

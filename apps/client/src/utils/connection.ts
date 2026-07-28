@@ -1,7 +1,7 @@
 import type { ConnectionConfig } from "@/types/remote-input";
 
-export const connectionStorageKey = "remote-copy.connection-url";
-export const connectionMethodStorageKey = "remote-copy.connection-method";
+export const connectionStorageKey = "remote-input.connection-url";
+export const connectionMethodStorageKey = "remote-input.connection-method";
 
 export function getDefaultConnectionConfig(): ConnectionConfig {
   if (typeof window === "undefined") {

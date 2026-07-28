@@ -1,5 +1,5 @@
 {
-  "name": "@remote-copy/protocol",
+  "name": "@remote-input/protocol",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -24,7 +24,7 @@
     "test": "node --test --test-timeout=10000 tests/*.test.mjs"
   },
   "dependencies": {
-    "@remote-copy/device-protocol": "workspace:*"
+    "@remote-input/device-protocol": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

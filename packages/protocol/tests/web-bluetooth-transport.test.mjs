@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { RelayReassembler, decodeRelayFrame, encodeRelayFrame, splitRelayMessage } from "@remote-copy/device-protocol";
+import { RelayReassembler, decodeRelayFrame, encodeRelayFrame, splitRelayMessage } from "@remote-input/device-protocol";
 import { getWebBluetoothSupport, WebBluetoothTransport } from "../dist/web-bluetooth-transport.js";
 
 class Characteristic {

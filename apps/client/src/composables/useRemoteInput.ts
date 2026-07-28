@@ -6,8 +6,8 @@ import {
   WebBluetoothTransport,
   WebSocketTransport,
   type TransportState,
-} from "@remote-copy/protocol";
-import { Client, isSDKError, sdkErrorCodes } from "@remote-copy/sdk";
+} from "@remote-input/protocol";
+import { Client, isSDKError, sdkErrorCodes } from "@remote-input/sdk";
 import {
   isInputBusy,
   type ConnectionMethod,
@@ -111,8 +111,8 @@ export function useRemoteInput() {
       return "";
     }
     return connectionMethod.value === "bluetooth"
-      ? "Remote Copy ESP32-S3"
-      : "Remote Copy Server";
+      ? "Remote Input ESP32-S3"
+      : "Remote Input Server";
   });
 
   watch(history, saveHistory, { immediate: true, flush: "sync" });

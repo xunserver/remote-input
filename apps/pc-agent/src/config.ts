@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import {
   parseProtocolTraceLevel,
   type ProtocolTraceLevel,
-} from "@remote-copy/protocol";
+} from "@remote-input/protocol";
 import type { InputMode } from "./input/input-processor.js";
 
 export type AppConfig = {
@@ -24,8 +24,8 @@ export function getConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     publicDir: path.resolve(currentDir, "public"),
     inputMode: parseInputMode(env.INPUT_MODE),
     protocolTraceLevel: parseProtocolTraceLevel(env.PROTOCOL_DEBUG),
-    vendorId: parseId(env.REMOTE_COPY_VID, 0x303a),
-    productId: parseId(env.REMOTE_COPY_PID, 0x4002),
+    vendorId: parseId(env.REMOTE_INPUT_VID, 0x303a),
+    productId: parseId(env.REMOTE_INPUT_PID, 0x4002),
   };
 }
 

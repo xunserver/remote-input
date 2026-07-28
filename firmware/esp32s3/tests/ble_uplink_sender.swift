@@ -83,8 +83,8 @@ private final class UplinkSender: NSObject, CBCentralManagerDelegate, CBPeripher
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        guard peripheral.name == "Remote Copy ESP32-S3" ||
-              advertisementData[CBAdvertisementDataLocalNameKey] as? String == "Remote Copy ESP32-S3"
+        guard peripheral.name == "Remote Input ESP32-S3" ||
+              advertisementData[CBAdvertisementDataLocalNameKey] as? String == "Remote Input ESP32-S3"
         else { return }
         central.stopScan()
         self.peripheral = peripheral

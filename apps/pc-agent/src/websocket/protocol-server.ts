@@ -6,7 +6,7 @@ import {
   type JsonValue,
   type ProtocolTraceLevel,
   type TransportState,
-} from "@remote-copy/protocol";
+} from "@remote-input/protocol";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AcceptText } from "../input/input-service.js";
 import type { RuntimeStatusStore } from "../status/runtime-status.js";

@@ -12,7 +12,7 @@ export {
   SDKError,
   isSDKError,
   sdkErrorCodes,
-} from "@remote-copy/protocol";
+} from "@remote-input/protocol";
 export type {
   DeliveryState,
   JsonValue,
@@ -25,4 +25,4 @@ export type {
   RequestHandler,
   SDKErrorCode,
   Transport,
-} from "@remote-copy/protocol";
+} from "@remote-input/protocol";

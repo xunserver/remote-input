@@ -1,5 +1,5 @@
 {
-  "name": "@remote-copy/pc-agent",
+  "name": "@remote-input/pc-agent",
   "version": "2.0.0",
   "private": true,
   "type": "module",
@@ -14,18 +14,18 @@
     "uninstall:user": "node scripts/user-service.mjs uninstall"
   },
   "dependencies": {
-    "@remote-copy/web-agent-sdk": "workspace:*",
-    "@remote-copy/device-protocol": "workspace:*",
-    "@remote-copy/protocol": "workspace:*",
+    "@remote-input/web-agent-sdk": "workspace:*",
+    "@remote-input/device-protocol": "workspace:*",
+    "@remote-input/protocol": "workspace:*",
     "clipboardy": "^5.3.1",
     "node-hid": "^3.2.0",
     "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@remote-copy/client": "workspace:*",
-    "@remote-copy/receiver": "workspace:*",
-    "@remote-copy/sdk": "workspace:*",
-    "@remote-copy/web-agent": "workspace:*",
+    "@remote-input/client": "workspace:*",
+    "@remote-input/receiver": "workspace:*",
+    "@remote-input/sdk": "workspace:*",
+    "@remote-input/web-agent": "workspace:*",
     "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",
     "typescript": "^7.0.2"

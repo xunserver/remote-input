@@ -15,7 +15,7 @@ import {
   getWebHidSupport,
   type HidDeviceLike,
   type WebHidAgentState,
-} from "@remote-copy/web-agent-sdk";
+} from "@remote-input/web-agent-sdk";
 
 const state = ref<WebHidAgentState>("idle");
 const deviceName = ref("");
@@ -110,7 +110,7 @@ function formatError(cause: unknown): string {
 }
 
 function connectionTitle(device: HidDeviceLike | null): string {
-  return device?.productName || deviceName.value || "Remote Copy HID Relay";
+  return device?.productName || deviceName.value || "Remote Input HID Relay";
 }
 </script>
 
@@ -121,7 +121,7 @@ function connectionTitle(device: HidDeviceLike | null): string {
         <span class="brand-mark"><Radio :size="22" aria-hidden="true" /></span>
         <div>
           <h1>远程接收</h1>
-          <p>Remote Copy WebHID</p>
+          <p>Remote Input WebHID</p>
         </div>
       </div>
       <button

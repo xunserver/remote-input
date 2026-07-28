@@ -2,7 +2,7 @@ import http from "node:http";
 import {
   KEYBOARD_USAGE,
   KEYBOARD_USAGE_PAGE,
-} from "@remote-copy/device-protocol";
+} from "@remote-input/device-protocol";
 import { HID, devicesAsync, type Device } from "node-hid";
 import {
   runAgentRuntime,
@@ -57,7 +57,7 @@ const hidRuntime = runAgentRuntime({
 });
 
 server.listen(config.port, config.host, () => {
-  console.log(`Remote Copy PC Agent is running on port ${config.port}.`);
+  console.log(`Remote Input PC Agent is running on port ${config.port}.`);
   console.log(
     config.inputMode === "paste"
       ? "Input mode: paste (clipboard writes and system paste are enabled)."
@@ -109,7 +109,7 @@ function createHidConnector(
       // the agent observe reports while the OS keeps owning the keyboard.
       const device = new HID(descriptor.path, { nonExclusive: true });
       const channel: ReconnectableHidChannel = {
-        deviceName: descriptor.product ?? "Remote Copy ESP32-S3",
+        deviceName: descriptor.product ?? "Remote Input ESP32-S3",
         onData(listener) {
           const handler = (data: Buffer) => listener(new Uint8Array(data));
           device.on("data", handler);

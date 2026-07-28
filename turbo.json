@@ -23,8 +23,8 @@
         "PORT",
         "INPUT_MODE",
         "PROTOCOL_DEBUG",
-        "REMOTE_COPY_VID",
-        "REMOTE_COPY_PID",
+        "REMOTE_INPUT_VID",
+        "REMOTE_INPUT_PID",
         "VITE_PROTOCOL_DEBUG"
       ]
     },
@@ -37,8 +37,8 @@
         "PORT",
         "INPUT_MODE",
         "PROTOCOL_DEBUG",
-        "REMOTE_COPY_VID",
-        "REMOTE_COPY_PID",
+        "REMOTE_INPUT_VID",
+        "REMOTE_INPUT_PID",
         "VITE_PROTOCOL_DEBUG"
       ]
     },

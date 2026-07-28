@@ -134,8 +134,8 @@ packages/
     面向业务的 Client 和 sendText 等封装
 ~~~
 
-- @remote-copy/protocol 不依赖业务应用。
-- @remote-copy/sdk 通过 workspace:* 依赖 @remote-copy/protocol。
+- @remote-input/protocol 不依赖业务应用。
+- @remote-input/sdk 通过 workspace:* 依赖 @remote-input/protocol。
 - 每个包拥有自己的 build、check、test 脚本。
 - 根脚本只通过 turbo run 委派任务，不把具体实现命令堆到根目录。
 
@@ -1172,11 +1172,11 @@ Response/Timeout 还必须覆盖 timer callback 被事件循环延迟的情况�
 
 建议按以下顺序推进：
 
-1. 在 @remote-copy/protocol 中定义 JsonValue、SessionMessage、错误类型和 Transport 接口。
+1. 在 @remote-input/protocol 中定义 JsonValue、SessionMessage、错误类型和 Transport 接口。
 2. 实现 Fake Link、Fake Clock 和确定性 Transport 测试夹具。
 3. 实现 WebSocket Codec、DATA/ACK、FIFO、重试、去重、generation 和 close。
 4. 实现 Session PendingMap、唯一 settle、端到端 timeout、双向 Handler。
-5. 在 @remote-copy/sdk 中实现 Client 和 sendText 等薄封装。
+5. 在 @remote-input/sdk 中实现 Client 和 sendText 等薄封装。
 6. 完成双端集成测试和故障注入测试。
 7. 接入现有应用，删除或隔离旧 Socket.IO 协议残留。
 
