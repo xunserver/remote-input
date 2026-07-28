@@ -64,6 +64,24 @@ test("sendText maps to the documented request shape", async () => {
   });
 });
 
+test("sendTextUnconfirmed completes after Transport.send without waiting for a Response", async () => {
+  const transport = new TestTransport();
+  transport.send = (message, options) => {
+    transport.sent.push(message);
+    options?.onDeliveryChange?.("unknown");
+    return Promise.resolve();
+  };
+  const client = new Client({ transport });
+
+  await client.sendTextUnconfirmed("hello over BLE");
+  assert.deepEqual(transport.sent, [{
+    type: "request",
+    requestId: 1,
+    method: "sendText",
+    payload: { text: "hello over BLE" },
+  }]);
+});
+
 test("Client forwards summary trace options to its Session without input content", async () => {
   const transport = new TestTransport();
   const events = [];

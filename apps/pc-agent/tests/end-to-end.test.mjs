@@ -58,7 +58,7 @@ class SimulatedEspRelay {
   };
 }
 
-test("BLE/HID uplink processes UTF-8 while the client receives no downlink acknowledgement", async () => {
+test("BLE/HID uplink can complete at the GATT write boundary without a downlink acknowledgement", async () => {
   const esp = new SimulatedEspRelay();
   const processed = [];
   const agent = new RelayAgent(esp.hid, async (text) => {
@@ -70,7 +70,8 @@ test("BLE/HID uplink processes UTF-8 while the client receives no downlink ackno
 
   await transport.connect();
   const text = "网页 -> 蓝牙 -> ESP32-S3 -> HID -> agent 🙂".repeat(20);
-  await assert.rejects(client.sendText(text), /timed out/i);
+  await client.sendTextUnconfirmed(text);
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(processed, [text]);
   await client.close();
   agent.close();

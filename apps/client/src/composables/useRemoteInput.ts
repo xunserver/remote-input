@@ -375,7 +375,9 @@ export function useRemoteInput() {
       state: "processing",
       stage: "sending",
       progress: 50,
-      message: "正在发送，并等待对端完成粘贴。",
+      message: targetRuntime.method === "bluetooth"
+        ? "正在通过蓝牙发送。"
+        : "正在发送，并等待对端完成粘贴。",
     };
     currentOperation.value = processing;
     lastError.value = "";
@@ -393,14 +395,20 @@ export function useRemoteInput() {
     ].slice(0, maxHistoryItems);
 
     try {
-      await targetRuntime.client.sendText(text);
+      if (targetRuntime.method === "bluetooth") {
+        await targetRuntime.client.sendTextUnconfirmed(text);
+      } else {
+        await targetRuntime.client.sendText(text);
+      }
       const succeeded: OperationStatus = {
         ...processing,
         revision: 1,
         state: "succeeded",
         stage: "done",
         progress: 100,
-        message: "对端已完成粘贴。",
+        message: targetRuntime.method === "bluetooth"
+          ? "已通过蓝牙发送（接收端处理结果未确认）。"
+          : "对端已完成粘贴。",
       };
       currentOperation.value = succeeded;
       updateHistory(history, succeeded);

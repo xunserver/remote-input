@@ -201,6 +201,40 @@ export class Session implements TransportReceiver {
     });
   }
 
+  /**
+   * 发送一个不等待 Response 的请求。
+   *
+   * 仅适用于没有下行通道、但业务允许以 Transport.send 完成为成功边界的链路。
+   * 对端仍会把消息当作普通 Request 处理；迟到的 Response 因没有 Pending 记录而被忽略。
+   */
+  notify(method: string, payload: JsonValue): Promise<void> {
+    if (this.#closed) {
+      return Promise.reject(this.#sessionClosedError("Session is closed.", "not_sent"));
+    }
+
+    if (this.#requestIdsExhausted) {
+      return Promise.reject(
+        this.#sessionClosedError(
+          "Session requestId space is exhausted; create a new Session.",
+          "not_sent",
+        ),
+      );
+    }
+
+    const message: RequestMessage = {
+      type: "request",
+      requestId: this.#allocateRequestId(),
+      method,
+      payload,
+    };
+
+    try {
+      return Promise.resolve(this.#transport.send(message));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
   registerHandler(method: string, handler: RequestHandler): () => void {
     if (this.#closed) {
       throw this.#sessionClosedError("Session is closed.", "not_sent");

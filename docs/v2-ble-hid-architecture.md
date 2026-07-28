@@ -151,5 +151,7 @@ macOS IOKit 的 `InputReportCount` 可用于确认 ESP 实际发出了预期数�
 - frame 有长度、版本和 CRC 校验，支持 chunk 去重和乱序重组。
 - 高/低相位、frame 边界、长度和 CRC 可以检测丢报告、重复报告和位错误；失败时不交付文本。
 - BLE write-with-response 只确认 ESP 收到 GATT write，不等于 agent 已处理；当前没有下行确认。
+- 因此发送页在全部 GATT write 完成后结束“发送中”状态，并明确显示“接收端处理结果未确认”，
+  不再等待一个当前硬件链路无法返回的业务 Response。
 - ESP relay 队列满时 BLE write 返回资源不足；网页请求会失败。
 - V2 尚未加入配对认证、应用层加密、跨断线恢复或持久化幂等键。不要发送密码或验证码。

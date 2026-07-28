@@ -49,6 +49,25 @@ export class Client {
     return this.#session.request("sendText", { text });
   }
 
+  /**
+   * 发送文字，但不等待远端业务 Response。
+   *
+   * Promise 完成只代表底层 Transport 已达到自身的发送成功边界；
+   * 它不能证明远端已经处理或粘贴文字。
+   */
+  sendTextUnconfirmed(text: string): Promise<void> {
+    if (typeof text !== "string") {
+      return Promise.reject(
+        new SDKError(
+          sdkErrorCodes.encodeError,
+          "sendTextUnconfirmed requires a string.",
+          "not_sent",
+        ),
+      );
+    }
+    return this.#session.notify("sendText", { text });
+  }
+
   request(method: string, payload: JsonValue): Promise<JsonValue> {
     return this.#session.request(method, payload);
   }
