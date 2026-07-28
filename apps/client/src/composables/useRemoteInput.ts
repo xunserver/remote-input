@@ -18,6 +18,7 @@ import {
 } from "@/types/remote-input";
 import {
   buildWebSocketUrl,
+  connectionAutoConnectStorageKey,
   connectionMethodStorageKey,
   connectionStorageKey,
   getConfigFromUrl,
@@ -26,6 +27,7 @@ import {
 import { loadHistory, maxHistoryItems, saveHistory } from "@/utils/history";
 
 type InitialConnection = {
+  autoConnect: boolean;
   method: ConnectionMethod;
   savedUrl: string | null;
   url: string;
@@ -69,6 +71,7 @@ function getInitialConnection(): InitialConnection {
   );
 
   return {
+    autoConnect: readStoredAutoConnect(),
     method,
     savedUrl,
     url: method === "bluetooth" ? bluetoothUrl : webSocketUrl,
@@ -97,6 +100,7 @@ export function useRemoteInput() {
   // Runtime 包含 SDK 类实例，保持为普通变量可避免 Vue 对其进行深度代理。
   let runtime: Runtime | null = null;
   let generation = 0;
+  let operationEpoch = 0;
   // ref 写入是同步的，可在任何界面更新前拒绝发送和重发入口的重复调用。
   const operationInFlight = ref(false);
 
@@ -173,6 +177,7 @@ export function useRemoteInput() {
     serverInfo.value = null;
     clientCount.value = 0;
     storeConnectionMethod(targetRuntime.method);
+    storeAutoConnect(true);
     if (targetRuntime.method === "websocket") {
       storeConnection(targetRuntime.url);
       const controller = new AbortController();
@@ -224,6 +229,7 @@ export function useRemoteInput() {
       }
     }
 
+    cancelCurrentOperation("连接已切换，之前的发送已取消。");
     const previous = runtime;
     const runtimeGeneration = ++generation;
     // 先废弃旧 Runtime 再异步关闭，确保旧监听器和 Promise 无法回写新连接。
@@ -328,27 +334,43 @@ export function useRemoteInput() {
   }
 
   function reconnect(): void {
-    const targetRuntime = runtime;
-    // idle 状态可以复用 Transport；closing/closed 是终态，只能创建新 Runtime。
-    if (
-      !targetRuntime ||
-      targetRuntime.transport.state === "closing" ||
-      targetRuntime.transport.state === "closed"
-    ) {
-      connect(connectionMethod.value, connectionUrl.value);
+    if (connectionState.value === "connecting") {
       return;
     }
-    if (
-      targetRuntime.transport.state === "connected" ||
-      targetRuntime.transport.state === "connecting"
-    ) {
-      return;
-    }
-    startTransport(targetRuntime);
+    // 用户主动重连时总是关闭旧 Session 并创建新 Runtime，避免旧请求、监听器或
+    // 传输队列跨越连接代次；蓝牙重连也因此会重新触发设备选择。
+    connect(connectionMethod.value, connectionUrl.value);
+  }
+
+  function disconnect(): void {
+    cancelCurrentOperation("连接已主动断开，未完成的发送已取消。");
+    disposeRuntime();
+    connectionState.value = "disconnected";
+    lastError.value = "";
+    serverInfo.value = null;
+    clientCount.value = 0;
+    storeAutoConnect(false);
+  }
+
+  function resetConnection(): void {
+    cancelCurrentOperation("连接已重置，未完成的发送已取消。");
+    disposeRuntime();
+    clearStoredConnection();
+    const fallbackUrl = buildWebSocketUrl(getDefaultConnectionConfig());
+    connectionMethod.value = "bluetooth";
+    connectionUrl.value = bluetoothUrl;
+    webSocketUrl.value = fallbackUrl;
+    connectionState.value = "idle";
+    hasConnectionConfig.value = false;
+    settingsOpen.value = false;
+    lastError.value = "";
+    serverInfo.value = null;
+    clientCount.value = 0;
   }
 
   onMounted(() => {
     if (
+      initialConnection.autoConnect &&
       initialConnection.method === "websocket" &&
       initialConnection.savedUrl
     ) {
@@ -368,6 +390,7 @@ export function useRemoteInput() {
     }
 
     operationInFlight.value = true;
+    const targetOperationEpoch = ++operationEpoch;
     const operationId = createOperationId();
     const processing: OperationStatus = {
       operationId,
@@ -410,9 +433,12 @@ export function useRemoteInput() {
           ? "已通过蓝牙发送（接收端处理结果未确认）。"
           : "对端已完成粘贴。",
       };
-      currentOperation.value = succeeded;
-      updateHistory(history, succeeded);
-      return true;
+      if (operationEpoch === targetOperationEpoch) {
+        currentOperation.value = succeeded;
+        updateHistory(history, succeeded);
+        return true;
+      }
+      return false;
     } catch (error) {
       const message = formatRequestError(error);
       const failed: OperationStatus = {
@@ -423,6 +449,9 @@ export function useRemoteInput() {
         progress: 100,
         message,
       };
+      if (operationEpoch !== targetOperationEpoch) {
+        return false;
+      }
       currentOperation.value = failed;
       // 历史项仍需结算，但旧 Runtime 的失败不能污染新连接的错误提示。
       if (runtime === targetRuntime) {
@@ -431,20 +460,14 @@ export function useRemoteInput() {
       updateHistory(history, failed);
       return false;
     } finally {
-      operationInFlight.value = false;
+      if (operationEpoch === targetOperationEpoch) {
+        operationInFlight.value = false;
+      }
     }
   }
 
   onUnmounted(() => {
-    const targetRuntime = runtime;
-    // 卸载时先废弃 generation，屏蔽尚未结算的连接和元数据回调。
-    ++generation;
-    runtime = null;
-    if (targetRuntime) {
-      targetRuntime.infoAbortController?.abort();
-      targetRuntime.unsubscribe();
-      void targetRuntime.client.close().catch(() => undefined);
-    }
+    disposeRuntime();
   });
 
   return {
@@ -463,6 +486,8 @@ export function useRemoteInput() {
     isBusy,
     connect,
     reconnect,
+    disconnect,
+    resetConnection,
     openConnectionSettings: () => {
       settingsOpen.value = true;
     },
@@ -474,6 +499,38 @@ export function useRemoteInput() {
       history.value = [];
     },
   };
+
+  function disposeRuntime(): void {
+    const targetRuntime = runtime;
+    // 先废弃 generation 与 Runtime，屏蔽关闭过程中同步或迟到的回调。
+    ++generation;
+    runtime = null;
+    if (!targetRuntime) {
+      return;
+    }
+    targetRuntime.infoAbortController?.abort();
+    targetRuntime.unsubscribe();
+    void targetRuntime.client.close().catch(() => undefined);
+  }
+
+  function cancelCurrentOperation(message: string): void {
+    ++operationEpoch;
+    operationInFlight.value = false;
+    const operation = currentOperation.value;
+    if (!operation || operation.state !== "processing") {
+      return;
+    }
+    const failed: OperationStatus = {
+      ...operation,
+      revision: operation.revision + 1,
+      state: "failed",
+      stage: "failed",
+      progress: 100,
+      message,
+    };
+    currentOperation.value = failed;
+    updateHistory(history, failed);
+  }
 }
 
 function updateHistory(
@@ -529,6 +586,15 @@ function readStoredConnectionMethod(): ConnectionMethod | null {
   }
 }
 
+function readStoredAutoConnect(): boolean {
+  try {
+    // 缺少该键表示旧版本保存的 WS 配置，保持原有自动恢复行为。
+    return localStorage.getItem(connectionAutoConnectStorageKey) !== "false";
+  } catch {
+    return true;
+  }
+}
+
 function storeConnection(url: string): void {
   try {
     localStorage.setItem(connectionStorageKey, url);
@@ -542,6 +608,27 @@ function storeConnectionMethod(method: ConnectionMethod): void {
     localStorage.setItem(connectionMethodStorageKey, method);
   } catch {
     // 连接方式持久化是可选能力，失败不能改变实时连接状态。
+  }
+}
+
+function storeAutoConnect(enabled: boolean): void {
+  try {
+    localStorage.setItem(
+      connectionAutoConnectStorageKey,
+      enabled ? "true" : "false",
+    );
+  } catch {
+    // 自动连接偏好持久化失败时不影响当前连接。
+  }
+}
+
+function clearStoredConnection(): void {
+  try {
+    localStorage.removeItem(connectionStorageKey);
+    localStorage.removeItem(connectionMethodStorageKey);
+    localStorage.removeItem(connectionAutoConnectStorageKey);
+  } catch {
+    // 清理失败时仍完成内存中的连接重置。
   }
 }
 

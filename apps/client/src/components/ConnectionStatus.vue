@@ -6,8 +6,10 @@ import {
   CheckCircle2,
   Keyboard,
   RefreshCw,
+  RotateCcw,
   Server,
   Settings2,
+  Unplug,
   Users,
 } from "@lucide/vue";
 import { Button } from "@shadcn/button";
@@ -38,6 +40,8 @@ type ConnectionStatusProps = {
   deviceName: string;
   error: string;
   onReconnect: () => void;
+  onDisconnect: () => void;
+  onReset: () => void;
   onOpenSettings: () => void;
 };
 
@@ -106,6 +110,17 @@ function getPeerEndpoint(
       <div class="flex shrink-0 items-center gap-1">
         <Button
           variant="ghost"
+          size="sm"
+          class="gap-1 px-2"
+          title="重置连接"
+          aria-label="重置连接"
+          @click="props.onReset"
+        >
+          <RotateCcw data-icon="inline-start" aria-hidden="true" />
+          <span class="text-xs">重置</span>
+        </Button>
+        <Button
+          variant="ghost"
           size="icon"
           title="连接设置"
           aria-label="连接设置"
@@ -139,6 +154,19 @@ function getPeerEndpoint(
           </CardDescription>
         </div>
         <div class="flex items-center gap-1">
+          <Button
+            v-if="
+              props.connectionState === 'ready' ||
+              props.connectionState === 'connecting'
+            "
+            variant="ghost"
+            size="icon"
+            title="断开连接"
+            aria-label="断开连接"
+            @click="props.onDisconnect"
+          >
+            <Unplug data-icon="inline-start" aria-hidden="true" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"

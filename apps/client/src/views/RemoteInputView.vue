@@ -21,6 +21,8 @@ const {
   isBusy,
   connect,
   reconnect,
+  disconnect,
+  resetConnection,
   openConnectionSettings,
   closeConnectionSettings,
   sendInput,
@@ -43,6 +45,8 @@ const {
         :device-name="deviceName"
         :error="lastError"
         :on-reconnect="reconnect"
+        :on-disconnect="disconnect"
+        :on-reset="resetConnection"
         :on-open-settings="openConnectionSettings"
       />
       <div

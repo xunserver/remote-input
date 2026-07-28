@@ -89,7 +89,7 @@ function connect(): void {
         <div class="mx-auto mb-1 h-1 w-10 rounded-full bg-border sm:hidden" />
         <DialogTitle>选择连接方式</DialogTitle>
         <DialogDescription>
-          通过蓝牙直连 ESP32，或连接到 WebSocket 服务器。
+          通过蓝牙直连 ESP32，或连接到 WebSocket 服务器。切换方式会先断开当前连接。
         </DialogDescription>
       </DialogHeader>
 

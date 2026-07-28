@@ -2,6 +2,8 @@ import type { ConnectionConfig } from "@/types/remote-input";
 
 export const connectionStorageKey = "remote-input.connection-url";
 export const connectionMethodStorageKey = "remote-input.connection-method";
+export const connectionAutoConnectStorageKey =
+  "remote-input.connection-auto-connect";
 
 export function getDefaultConnectionConfig(): ConnectionConfig {
   if (typeof window === "undefined") {
