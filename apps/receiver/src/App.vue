@@ -188,7 +188,7 @@ function apiUrl(path: string): string {
         <span class="brand-mark"><Radio :size="22" aria-hidden="true" /></span>
         <div>
           <h1>接收看板</h1>
-          <p>Remote Copy PC Agent</p>
+          <p>Remote Input PC Agent</p>
         </div>
       </div>
       <span class="stream-state" :class="{ connected: streamConnected }">

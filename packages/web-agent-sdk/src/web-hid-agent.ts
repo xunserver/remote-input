@@ -2,12 +2,12 @@ import { RelayAgent, type HidChannel, type TextProcessor } from "./relay-agent.j
 import {
   KEYBOARD_USAGE,
   KEYBOARD_USAGE_PAGE,
-} from "@remote-copy/device-protocol";
+} from "@remote-input/device-protocol";
 
-export const REMOTE_COPY_USB_VENDOR_ID = 0x303a;
-export const REMOTE_COPY_USB_PRODUCT_ID = 0x4002;
-export const REMOTE_COPY_HID_USAGE_PAGE = KEYBOARD_USAGE_PAGE;
-export const REMOTE_COPY_HID_USAGE = KEYBOARD_USAGE;
+export const REMOTE_INPUT_USB_VENDOR_ID = 0x303a;
+export const REMOTE_INPUT_USB_PRODUCT_ID = 0x4002;
+export const REMOTE_INPUT_HID_USAGE_PAGE = KEYBOARD_USAGE_PAGE;
+export const REMOTE_INPUT_HID_USAGE = KEYBOARD_USAGE;
 
 export type WebHidAgentState =
   | "idle"
@@ -89,10 +89,10 @@ export interface WebHidAgentOptions {
 
 const defaultFilters: HidDeviceFilterLike[] = [
   {
-    vendorId: REMOTE_COPY_USB_VENDOR_ID,
-    productId: REMOTE_COPY_USB_PRODUCT_ID,
-    usagePage: REMOTE_COPY_HID_USAGE_PAGE,
-    usage: REMOTE_COPY_HID_USAGE,
+    vendorId: REMOTE_INPUT_USB_VENDOR_ID,
+    productId: REMOTE_INPUT_USB_PRODUCT_ID,
+    usagePage: REMOTE_INPUT_HID_USAGE_PAGE,
+    usage: REMOTE_INPUT_HID_USAGE,
   },
 ];
 

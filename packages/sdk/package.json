@@ -1,5 +1,5 @@
 {
-  "name": "@remote-copy/sdk",
+  "name": "@remote-input/sdk",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -19,7 +19,7 @@
     "test": "node --test --test-timeout=10000 tests/*.test.mjs"
   },
   "dependencies": {
-    "@remote-copy/protocol": "workspace:*"
+    "@remote-input/protocol": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

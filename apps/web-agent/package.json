@@ -1,5 +1,5 @@
 {
-  "name": "@remote-copy/web-agent",
+  "name": "@remote-input/web-agent",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@lucide/vue": "^1.25.0",
-    "@remote-copy/web-agent-sdk": "workspace:*",
+    "@remote-input/web-agent-sdk": "workspace:*",
     "vue": "^3.5.40"
   },
   "devDependencies": {

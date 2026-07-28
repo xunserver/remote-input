@@ -6,7 +6,7 @@ import {
   RemoteError,
   Session,
   WebSocketTransport,
-} from "@remote-copy/protocol";
+} from "@remote-input/protocol";
 import { RuntimeStatusStore } from "../dist/status/runtime-status.js";
 import {
   protocolWebSocketPath,

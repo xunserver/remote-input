@@ -153,7 +153,7 @@ function connect(): void {
           </FieldDescription>
         </template>
         <FieldDescription v-else>
-          点击连接后，浏览器会请求蓝牙访问权限并让你选择附近的 Remote Copy 设备。
+          点击连接后，浏览器会请求蓝牙访问权限并让你选择附近的 Remote Input 设备。
         </FieldDescription>
 
         <FieldError v-if="props.error">{{ props.error }}</FieldError>

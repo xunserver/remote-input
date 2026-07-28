@@ -71,5 +71,5 @@ export type {
   WebSocketLike,
   WebSocketTransportOptions,
 } from "./websocket-transport.js";
-export { getWebBluetoothSupport, REMOTE_COPY_BLE_NOTIFY, REMOTE_COPY_BLE_SERVICE, REMOTE_COPY_BLE_WRITE, WebBluetoothTransport } from "./web-bluetooth-transport.js";
+export { getWebBluetoothSupport, REMOTE_INPUT_BLE_NOTIFY, REMOTE_INPUT_BLE_SERVICE, REMOTE_INPUT_BLE_WRITE, WebBluetoothTransport } from "./web-bluetooth-transport.js";
 export type { BluetoothCharacteristicLike, BluetoothDeviceLike, BluetoothDeviceRequest, BluetoothTransportStateListener, WebBluetoothEnvironment, WebBluetoothSupport } from "./web-bluetooth-transport.js";

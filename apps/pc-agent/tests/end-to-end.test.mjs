@@ -3,13 +3,13 @@ import test from "node:test";
 import {
   KeyboardReportEncoder,
   decodeRelayFrame,
-} from "@remote-copy/device-protocol";
+} from "@remote-input/device-protocol";
 import {
-  REMOTE_COPY_BLE_WRITE,
+  REMOTE_INPUT_BLE_WRITE,
   WebBluetoothTransport,
-} from "@remote-copy/protocol";
-import { Client } from "@remote-copy/sdk";
-import { RelayAgent } from "@remote-copy/web-agent-sdk";
+} from "@remote-input/protocol";
+import { Client } from "@remote-input/sdk";
+import { RelayAgent } from "@remote-input/web-agent-sdk";
 
 class NotificationCharacteristic {
   listeners = new Set();
@@ -48,7 +48,7 @@ class SimulatedEspRelay {
       connected: true,
       connect: async () => ({
         getPrimaryService: async () => ({
-          getCharacteristic: async (uuid) => uuid === REMOTE_COPY_BLE_WRITE ? this.write : this.notify,
+          getCharacteristic: async (uuid) => uuid === REMOTE_INPUT_BLE_WRITE ? this.write : this.notify,
         }),
       }),
       disconnect() {},

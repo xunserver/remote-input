@@ -21,7 +21,7 @@ UTF-8 在进入键码层前按字节分片，因此不依赖键盘布局或输�
 
 ## BLE GATT
 
-- Device name: `Remote Copy ESP32-S3`
+- Device name: `Remote Input ESP32-S3`
 - Service: `7c6b0001-6d5a-4f4f-9d2d-5f6f74656368`
 - Browser -> device write: `7c6b0002-6d5a-4f4f-9d2d-5f6f74656368`
 - Device -> browser notify: `7c6b0003-6d5a-4f4f-9d2d-5f6f74656368`
@@ -55,12 +55,12 @@ report：F13 是协议标记，F14/F15 表示高/低相位，F16-F19 的按下�
 
 ## PC Agent
 
-默认 VID/PID 是 `303a:4002`，可用 `REMOTE_COPY_VID` 和 `REMOTE_COPY_PID` 覆盖。
+默认 VID/PID 是 `303a:4002`，可用 `REMOTE_INPUT_VID` 和 `REMOTE_INPUT_PID` 覆盖。
 
 ```bash
-pnpm --filter @remote-copy/pc-agent build
-INPUT_MODE=dev pnpm --filter @remote-copy/pc-agent start
-pnpm --filter @remote-copy/pc-agent start
+pnpm --filter @remote-input/pc-agent build
+INPUT_MODE=dev pnpm --filter @remote-input/pc-agent start
+pnpm --filter @remote-input/pc-agent start
 ```
 
 `INPUT_MODE=dev` 只打印重组后的文本。默认模式写入系统剪贴板并模拟粘贴。Linux 需要
@@ -73,18 +73,18 @@ macOS 会保护标准键盘的原始 HID 访问，需要在“隐私与安全性
 开发工作区可以把 PC agent 安装为当前用户的登录启动项，不需要以 root 身份运行：
 
 ```bash
-pnpm --filter @remote-copy/pc-agent install:user
-pnpm --filter @remote-copy/pc-agent uninstall:user
+pnpm --filter @remote-input/pc-agent install:user
+pnpm --filter @remote-input/pc-agent uninstall:user
 ```
 
 - Linux 使用 `systemd --user`。首次安装需将
-  `apps/pc-agent/assets/99-remote-copy.rules` 复制到 `/etc/udev/rules.d/`，执行
+  `apps/pc-agent/assets/99-remote-input.rules` 复制到 `/etc/udev/rules.d/`，执行
   `sudo udevadm control --reload-rules && sudo udevadm trigger` 后重新插拔设备。
-  使用 `systemctl --user status remote-copy-agent` 和
-  `journalctl --user -u remote-copy-agent -f` 查看运行状态与日志。
-- macOS 使用 `~/Library/LaunchAgents/com.remote-copy.agent.plist`；首次粘贴时需要在
+  使用 `systemctl --user status remote-input-agent` 和
+  `journalctl --user -u remote-input-agent -f` 查看运行状态与日志。
+- macOS 使用 `~/Library/LaunchAgents/com.remote-input.agent.plist`；首次粘贴时需要在
   “隐私与安全性 -> 辅助功能”中允许实际运行 PC agent 的 Node 程序。
-  日志位于 `~/Library/Logs/RemoteCopy/`。
+  日志位于 `~/Library/Logs/RemoteInput/`。
 - Windows 使用当前用户的 `Run` 启动项和隐藏 PowerShell launcher；卸载命令会删除启动项
   并终止已安装 launcher 对应的 PC agent 进程。
 
@@ -123,15 +123,15 @@ cc -std=c11 -Wall -Wextra -Werror \
   -Ifirmware/esp32s3/main \
   firmware/esp32s3/main/relay_frame.c \
   firmware/esp32s3/tests/relay_frame_test.c \
-  -o /tmp/remote-copy-relay-frame-test
-/tmp/remote-copy-relay-frame-test
+  -o /tmp/remote-input-relay-frame-test
+/tmp/remote-input-relay-frame-test
 
 cc -std=c11 -Wall -Wextra -Werror \
   -Ifirmware/esp32s3/main \
   firmware/esp32s3/main/keyboard_uplink.c \
   firmware/esp32s3/tests/keyboard_uplink_test.c \
-  -o /tmp/remote-copy-keyboard-uplink-test
-/tmp/remote-copy-keyboard-uplink-test
+  -o /tmp/remote-input-keyboard-uplink-test
+/tmp/remote-input-keyboard-uplink-test
 ```
 
 实机 BLE 上行可用随固件提供的 Swift 发送器复测：
@@ -139,8 +139,8 @@ cc -std=c11 -Wall -Wextra -Werror \
 ```bash
 swiftc -framework CoreBluetooth -framework Foundation \
   firmware/esp32s3/tests/ble_uplink_sender.swift \
-  -o /tmp/remote-copy-ble-uplink-sender
-/tmp/remote-copy-ble-uplink-sender '标准键盘 HID 上行测试：中文与 emoji 🙂'
+  -o /tmp/remote-input-ble-uplink-sender
+/tmp/remote-input-ble-uplink-sender '标准键盘 HID 上行测试：中文与 emoji 🙂'
 ```
 
 macOS IOKit 的 `InputReportCount` 可用于确认 ESP 实际发出了预期数量的 8 字节键盘报告；

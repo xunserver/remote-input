@@ -1,12 +1,12 @@
-import { HID_PAYLOAD_BYTES, RelayReassembler, decodeRelayFrame, encodeRelayFrame, splitRelayMessage } from "@remote-copy/device-protocol";
+import { HID_PAYLOAD_BYTES, RelayReassembler, decodeRelayFrame, encodeRelayFrame, splitRelayMessage } from "@remote-input/device-protocol";
 import { SDKError, sdkErrorCodes } from "./errors.js";
 import { snapshotJsonValue } from "./json.js";
 import { isSessionMessage, type SessionMessage } from "./messages.js";
 import type { Transport, TransportReceiver, TransportSendOptions, TransportState } from "./transport.js";
 
-export const REMOTE_COPY_BLE_SERVICE = "7c6b0001-6d5a-4f4f-9d2d-5f6f74656368";
-export const REMOTE_COPY_BLE_WRITE = "7c6b0002-6d5a-4f4f-9d2d-5f6f74656368";
-export const REMOTE_COPY_BLE_NOTIFY = "7c6b0003-6d5a-4f4f-9d2d-5f6f74656368";
+export const REMOTE_INPUT_BLE_SERVICE = "7c6b0001-6d5a-4f4f-9d2d-5f6f74656368";
+export const REMOTE_INPUT_BLE_WRITE = "7c6b0002-6d5a-4f4f-9d2d-5f6f74656368";
+export const REMOTE_INPUT_BLE_NOTIFY = "7c6b0003-6d5a-4f4f-9d2d-5f6f74656368";
 
 type EventListener = (event: any) => void;
 export interface BluetoothCharacteristicLike {
@@ -63,8 +63,8 @@ export class WebBluetoothTransport implements Transport {
       const device = await this.requestDevice();
       if (!device.gatt) throw new Error("Selected Bluetooth device has no GATT server.");
       const server = await device.gatt.connect();
-      const service = await server.getPrimaryService(REMOTE_COPY_BLE_SERVICE);
-      const [write, notify] = await Promise.all([service.getCharacteristic(REMOTE_COPY_BLE_WRITE), service.getCharacteristic(REMOTE_COPY_BLE_NOTIFY)]);
+      const service = await server.getPrimaryService(REMOTE_INPUT_BLE_SERVICE);
+      const [write, notify] = await Promise.all([service.getCharacteristic(REMOTE_INPUT_BLE_WRITE), service.getCharacteristic(REMOTE_INPUT_BLE_NOTIFY)]);
       await notify.startNotifications();
       this.device = device; this.writeCharacteristic = write; this.notifyCharacteristic = notify;
       device.addEventListener("gattserverdisconnected", this.onDisconnected);
@@ -131,7 +131,7 @@ async function defaultRequestDevice(): Promise<BluetoothDeviceLike> {
   }
   const bluetooth = environment.bluetooth;
   if (!bluetooth) throw new Error("Web Bluetooth is unavailable in this browser.");
-  return bluetooth.requestDevice({ filters: [{ services: [REMOTE_COPY_BLE_SERVICE] }] });
+  return bluetooth.requestDevice({ filters: [{ services: [REMOTE_INPUT_BLE_SERVICE] }] });
 }
 
 function browserEnvironment(): WebBluetoothEnvironment {

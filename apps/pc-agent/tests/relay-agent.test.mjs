@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HID_PAYLOAD_BYTES, KeyboardReportEncoder, splitRelayMessage } from "@remote-copy/device-protocol";
-import { RelayAgent } from "@remote-copy/web-agent-sdk";
+import { HID_PAYLOAD_BYTES, KeyboardReportEncoder, splitRelayMessage } from "@remote-input/device-protocol";
+import { RelayAgent } from "@remote-input/web-agent-sdk";
 
 class FakeHid { listeners=[]; writes=[]; onData(fn){this.listeners.push(fn); return ()=>{this.listeners=this.listeners.filter(listener=>listener!==fn)}} write(report){this.writes.push(report)} emit(report){for(const fn of this.listeners)fn(report)} }
 test("agent reconstructs and processes UTF-8 without a keyboard downlink", async () => {

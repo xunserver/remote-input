@@ -2,7 +2,7 @@ import type { HistoryItem, OperationState } from "@/types/remote-input";
 
 export const maxHistoryItems = 20;
 
-const historyStorageKey = "remote-copy.input-history";
+const historyStorageKey = "remote-input.input-history";
 
 export function loadHistory(): HistoryItem[] {
   try {

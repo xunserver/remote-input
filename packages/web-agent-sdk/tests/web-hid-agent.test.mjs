@@ -4,19 +4,19 @@ import {
   HID_PAYLOAD_BYTES,
   KeyboardReportEncoder,
   splitRelayMessage,
-} from "@remote-copy/device-protocol";
+} from "@remote-input/device-protocol";
 import {
-  REMOTE_COPY_USB_PRODUCT_ID,
-  REMOTE_COPY_USB_VENDOR_ID,
+  REMOTE_INPUT_USB_PRODUCT_ID,
+  REMOTE_INPUT_USB_VENDOR_ID,
   WebHidAgent,
   getWebHidSupport,
 } from "../dist/index.js";
 
 class FakeDevice {
   opened = false;
-  productId = REMOTE_COPY_USB_PRODUCT_ID;
+  productId = REMOTE_INPUT_USB_PRODUCT_ID;
   productName = "USB Keyboard";
-  vendorId = REMOTE_COPY_USB_VENDOR_ID;
+  vendorId = REMOTE_INPUT_USB_VENDOR_ID;
   listeners = new Set();
   writes = [];
 
@@ -81,8 +81,8 @@ test("WebHidAgent receives UTF-8 text without a keyboard downlink", async () => 
   await agent.connect();
   assert.equal(agent.state, "connected");
   assert.deepEqual(hid.requestOptions.filters, [{
-    vendorId: REMOTE_COPY_USB_VENDOR_ID,
-    productId: REMOTE_COPY_USB_PRODUCT_ID,
+    vendorId: REMOTE_INPUT_USB_VENDOR_ID,
+    productId: REMOTE_INPUT_USB_PRODUCT_ID,
     usagePage: 0x01,
     usage: 0x06,
   }]);

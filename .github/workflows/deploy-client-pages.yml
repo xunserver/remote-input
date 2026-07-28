@@ -1,4 +1,4 @@
-name: Deploy sender to GitHub Pages
+name: Deploy sender to GitHub Pages branch
 
 on:
   push:
@@ -16,14 +16,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: github-pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -43,30 +43,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Configure GitHub Pages
-        id: pages
-        uses: actions/configure-pages@v5
-
       - name: Build sender
         env:
-          VITE_BASE_PATH: ${{ steps.pages.outputs.base_path }}/
-        run: pnpm turbo run build --filter=@remote-copy/client
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+        run: pnpm turbo run build --filter=@remote-input/client
 
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v4
+      - name: Publish gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: apps/client/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: apps/client/dist
+          force_orphan: true
