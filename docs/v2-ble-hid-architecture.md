@@ -88,7 +88,11 @@ pnpm --filter @remote-copy/pc-agent uninstall:user
 这些安装项引用当前工作区的 `dist/main.js` 和 Node 可执行文件，移动或删除工作区前应先
 运行 `uninstall:user`。PC agent 在设备未插入时保持等待，USB 拔插后会自动重新发现 HID。
 
-### WebHID agent
+### 统一 PC Agent 与 WebHID 备用页
+
+正常接收方式是运行统一 PC Agent。它通过 `node-hid` 接收 ESP32-S3，同时启动 HTTP 和
+WebSocket 服务；HID 与 WebSocket 消息共享同一个串行剪贴板/粘贴队列。访问
+`http://localhost:17888/receive/` 可以查看最近 100 条内存消息、来源和处理状态。
 
 目标电脑不能运行桌面 agent 时，可以使用桌面版 Chrome 或 Edge 打开 WebHID 接收页：
 
@@ -96,8 +100,8 @@ pnpm --filter @remote-copy/pc-agent uninstall:user
 pnpm --filter @remote-copy/web-agent dev
 ```
 
-开发地址为 `http://localhost:5174`。执行完整服务端构建后也可从
-`http://localhost:17888/receive/` 打开。部署到其他主机时必须使用 HTTPS；WebHID 只在
+开发地址为 `http://localhost:5174`。执行完整 PC Agent 构建后也可从
+`http://localhost:17888/webhid/` 打开。部署到其他主机时必须使用 HTTPS；WebHID 只在
 安全上下文可用。首次选择设备必须由用户点击“连接设备”触发，浏览器授权过的设备会在
 再次打开页面时自动恢复连接。
 
