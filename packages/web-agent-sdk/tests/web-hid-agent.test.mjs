@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   HID_PAYLOAD_BYTES,
-  KeyboardReportEncoder,
+  HID_REPORT_BYTES,
+  encodeRelayFrame,
   splitRelayMessage,
 } from "@remote-input/device-protocol";
 import {
@@ -15,7 +16,7 @@ import {
 class FakeDevice {
   opened = false;
   productId = REMOTE_INPUT_USB_PRODUCT_ID;
-  productName = "USB Keyboard";
+  productName = "Remote Input HID Relay";
   vendorId = REMOTE_INPUT_USB_VENDOR_ID;
   listeners = new Set();
   writes = [];
@@ -54,7 +55,6 @@ class FakeHidNavigator {
 }
 
 function emitRequest(device, text, transferId = 17) {
-  const encoder = new KeyboardReportEncoder();
   const request = new TextEncoder().encode(JSON.stringify({
     type: "request",
     requestId: 9,
@@ -62,11 +62,13 @@ function emitRequest(device, text, transferId = 17) {
     payload: { text },
   }));
   for (const frame of splitRelayMessage(transferId, request, HID_PAYLOAD_BYTES)) {
-    for (const report of encoder.encode(frame)) device.emit(report);
+    const report = new Uint8Array(HID_REPORT_BYTES);
+    report.set(encodeRelayFrame(frame));
+    device.emit(report);
   }
 }
 
-test("WebHidAgent receives UTF-8 text without a keyboard downlink", async () => {
+test("WebHidAgent receives UTF-8 text from a vendor-defined collection", async () => {
   const device = new FakeDevice();
   const hid = new FakeHidNavigator();
   hid.requested = [device];
@@ -83,8 +85,8 @@ test("WebHidAgent receives UTF-8 text without a keyboard downlink", async () => 
   assert.deepEqual(hid.requestOptions.filters, [{
     vendorId: REMOTE_INPUT_USB_VENDOR_ID,
     productId: REMOTE_INPUT_USB_PRODUCT_ID,
-    usagePage: 0x01,
-    usage: 0x06,
+    usagePage: 0xff00,
+    usage: 0x01,
   }]);
 
   emitRequest(device, "网页接收中文和 emoji 🙂".repeat(8));

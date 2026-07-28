@@ -1,6 +1,6 @@
 import {
-  KeyboardReportDecoder,
   RelayReassembler,
+  decodeHidRelayReport,
 } from "@remote-input/device-protocol";
 import {
   isRequestMessage,
@@ -23,7 +23,6 @@ export type TextProcessor = (
 
 export class RelayAgent {
   readonly #reassembler = new RelayReassembler();
-  readonly #keyboardDecoder = new KeyboardReportDecoder();
   readonly #unsubscribe: () => void;
   #queue = Promise.resolve();
   #closed = false;
@@ -42,14 +41,12 @@ export class RelayAgent {
     this.#closed = true;
     this.#unsubscribe();
     this.#reassembler.reset();
-    this.#keyboardDecoder.reset();
   }
 
   private acceptReport(report: Uint8Array): void {
     if (this.#closed) return;
     try {
-      const frame = this.#keyboardDecoder.accept(report);
-      if (!frame) return;
+      const frame = decodeHidRelayReport(report);
       const complete = this.#reassembler.accept(frame);
       if (!complete) return;
       const message: unknown = JSON.parse(

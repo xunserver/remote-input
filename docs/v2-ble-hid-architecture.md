@@ -9,15 +9,15 @@ Web Client / SDK Session
   -> WebBluetoothTransport
   -> BLE GATT write
   -> ESP32-S3 relay
-  -> USB standard keyboard HID input report
+  -> USB vendor-defined HID input report
   -> PC Agent
   -> clipboard + system paste
 ```
 
 网页到 ESP32-S3 是 BLE transport；ESP32-S3 到 PC agent 是 USB HID transport。ESP32-S3
-不解析 Session JSON。USB 端只枚举一个标准 Keyboard collection，数据使用标准
-Keyboard/Keypad usage 中的 F13-F19 组合承载，不包含 vendor-defined interface。
-UTF-8 在进入键码层前按字节分片，因此不依赖键盘布局或输入法。
+不解析 Session JSON，也不模拟普通键盘字符。USB 端枚举 usage page `ff00`、usage `01`
+的 vendor-defined HID collection，使 PC Agent 和桌面版 Chrome/Edge WebHID 都能读取
+原始 relay frame，可靠承载 UTF-8、中文、emoji 和控制字符。
 
 ## BLE GATT
 
@@ -48,10 +48,9 @@ UTF-8 在进入键码层前按字节分片，因此不依赖键盘布局或输�
 | 14 | 2 | payload CRC16-CCITT |
 | 16 | 0..48 | payload |
 
-每个 relay-frame 字节拆成高、低两个半字节。每个半字节使用一个标准 8 字节键盘 input
-report：F13 是协议标记，F14/F15 表示高/低相位，F16-F19 的按下组合表示四个数据位。
-每帧末尾发送全零释放报告。PC agent 只在相位顺序、frame magic、版本、长度、chunk
-字段和 CRC 全部通过时才交付 UTF-8；异常或不完整帧整帧丢弃。没有 HID LED 下行通道。
+USB 使用无 report ID 的 64 字节 vendor HID input report。短 frame 在线上补零到 64 字节，
+payload length 确定有效边界。PC Agent 和 Web Agent 都校验 frame magic、版本、长度、
+chunk 字段和 CRC 后才交付 UTF-8；异常 frame 整帧丢弃。当前没有 HID 下行通道。
 
 ## PC Agent
 
@@ -65,10 +64,8 @@ pnpm --filter @remote-input/pc-agent start
 
 `INPUT_MODE=dev` 只打印重组后的文本。默认模式写入系统剪贴板并模拟粘贴。Linux 需要
 `xdotool`（X11）或 `wtype`（Wayland），并可能需要为 HID 设备配置 udev 权限。
-macOS 会保护标准键盘的原始 HID 访问，需要在“隐私与安全性 -> 输入监控”中允许实际
-运行 PC agent 的终端或 Node 程序。PC Agent 必须以 node-hid 的 `nonExclusive` 模式打开
-键盘，让系统继续持有设备；默认的独占模式即使已授权也会被 macOS 拒绝。模拟粘贴还需要
-“辅助功能”权限。
+PC Agent 以 node-hid 的 `nonExclusive` 模式打开接口，使同一台电脑上的 WebHID 页面
+仍可连接。macOS 模拟粘贴需要为实际运行 Agent 的 Node 程序授予“辅助功能”权限。
 
 开发工作区可以把 PC agent 安装为当前用户的登录启动项，不需要以 root 身份运行：
 
@@ -91,14 +88,22 @@ pnpm --filter @remote-input/pc-agent uninstall:user
 这些安装项引用当前工作区的 `dist/main.js` 和 Node 可执行文件，移动或删除工作区前应先
 运行 `uninstall:user`。PC agent 在设备未插入时保持等待，USB 拔插后会自动重新发现 HID。
 
-### 统一 PC Agent
+### PC Agent 与 WebHID
 
 正常接收方式是运行统一 PC Agent。它通过 `node-hid` 接收 ESP32-S3，同时启动 HTTP 和
 WebSocket 服务；HID 与 WebSocket 消息共享同一个串行剪贴板/粘贴队列。访问
 `http://localhost:17888/receive/` 可以查看最近 100 条内存消息、来源和处理状态。
 
-浏览器的 WebHID 安全策略通常禁止网页访问键盘 collection，因此标准键盘固件应使用
-PC Agent 接收，WebHID 页面不作为此模式的可用备用入口。
+目标电脑不能运行 PC Agent 时，可以使用桌面版 Chrome 或 Edge 打开 WebHID 接收页。
+完整 PC Agent 构建将页面放在 `http://localhost:17888/webhid/`；独立开发命令是：
+
+```bash
+pnpm --filter @remote-input/web-agent dev
+```
+
+部署到其他主机时必须使用 HTTPS。首次选择设备必须由用户点击“连接设备”触发，浏览器
+授权过的设备会在再次打开页面时自动恢复连接。页面直接读取 ESP32 的 vendor-defined
+collection，只展示、复制和清空收到的文字，不执行系统模拟粘贴。
 
 ## ESP-IDF 6.x
 
@@ -125,13 +130,6 @@ cc -std=c11 -Wall -Wextra -Werror \
   firmware/esp32s3/tests/relay_frame_test.c \
   -o /tmp/remote-input-relay-frame-test
 /tmp/remote-input-relay-frame-test
-
-cc -std=c11 -Wall -Wextra -Werror \
-  -Ifirmware/esp32s3/main \
-  firmware/esp32s3/main/keyboard_uplink.c \
-  firmware/esp32s3/tests/keyboard_uplink_test.c \
-  -o /tmp/remote-input-keyboard-uplink-test
-/tmp/remote-input-keyboard-uplink-test
 ```
 
 实机 BLE 上行可用随固件提供的 Swift 发送器复测：
@@ -140,16 +138,15 @@ cc -std=c11 -Wall -Wextra -Werror \
 swiftc -framework CoreBluetooth -framework Foundation \
   firmware/esp32s3/tests/ble_uplink_sender.swift \
   -o /tmp/remote-input-ble-uplink-sender
-/tmp/remote-input-ble-uplink-sender '标准键盘 HID 上行测试：中文与 emoji 🙂'
+/tmp/remote-input-ble-uplink-sender 'WebHID 上行测试：中文与 emoji 🙂'
 ```
 
-macOS IOKit 的 `InputReportCount` 可用于确认 ESP 实际发出了预期数量的 8 字节键盘报告；
-完整内容解码仍需给 PC Agent 输入监控权限。
+macOS IOKit 的 `InputReportCount` 可用于确认 ESP 实际发出了 64 字节 vendor HID report。
 
 ## 当前可靠性边界
 
 - frame 有长度、版本和 CRC 校验，支持 chunk 去重和乱序重组。
-- 高/低相位、frame 边界、长度和 CRC 可以检测丢报告、重复报告和位错误；失败时不交付文本。
+- frame 边界、长度和 CRC 可以检测截断、重复和位错误；失败时不交付文本。
 - BLE write-with-response 只确认 ESP 收到 GATT write，不等于 agent 已处理；当前没有下行确认。
 - 因此发送页在全部 GATT write 完成后结束“发送中”状态，并明确显示“接收端处理结果未确认”，
   不再等待一个当前硬件链路无法返回的业务 Response。

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  HID_REPORT_BYTES,
   decodeRelayFrame,
+  decodeHidRelayReport,
   encodeRelayFrame,
-  KeyboardReportDecoder,
-  KeyboardReportEncoder,
   RelayReassembler,
   splitRelayMessage,
 } from "../dist/index.js";
@@ -40,27 +40,21 @@ test("reassembler accepts a lower transfer ID from a new link while retaining du
   assert.equal(reassembler.accept(high), undefined);
 });
 
-test("standard keyboard reports carry relay frames and recover after a missing report", () => {
-  const encoder = new KeyboardReportEncoder();
-  const decoder = new KeyboardReportDecoder();
-  const first = splitRelayMessage(
+test("vendor HID reports carry a padded relay frame with or without a report ID", () => {
+  const frame = splitRelayMessage(
     100,
-    new TextEncoder().encode("丢包检查🙂"),
+    new TextEncoder().encode("WebHID 直传🙂"),
     48,
   )[0];
-  const damaged = encoder.encode(first);
-  damaged.splice(7, 1);
-  let decoded;
-  for (const report of damaged) decoded = decoder.accept(report) ?? decoded;
-  assert.equal(decoded, undefined);
+  const report = new Uint8Array(HID_REPORT_BYTES);
+  report.set(encodeRelayFrame(frame));
+  assert.deepEqual(decodeHidRelayReport(report), frame);
 
-  const second = splitRelayMessage(
-    101,
-    new TextEncoder().encode("恢复后的 UTF-8"),
-    48,
-  )[0];
-  for (const report of encoder.encode(second)) {
-    decoded = decoder.accept(report) ?? decoded;
-  }
-  assert.deepEqual(decoded, second);
+  const nodeHidReport = new Uint8Array(HID_REPORT_BYTES + 1);
+  nodeHidReport.set(report, 1);
+  assert.deepEqual(decodeHidRelayReport(nodeHidReport), frame);
+  assert.throws(
+    () => decodeHidRelayReport(report.subarray(0, HID_REPORT_BYTES - 1)),
+    /exactly 64 bytes/,
+  );
 });

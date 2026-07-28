@@ -1,7 +1,7 @@
 import http from "node:http";
 import {
-  KEYBOARD_USAGE,
-  KEYBOARD_USAGE_PAGE,
+  HID_USAGE,
+  HID_USAGE_PAGE,
 } from "@remote-input/device-protocol";
 import { HID, devicesAsync, type Device } from "node-hid";
 import {
@@ -104,9 +104,8 @@ function createHidConnector(
         await devicesAsync(vendorId, productId),
       );
       if (!descriptor?.path) return null;
-      // macOS never permits a normal process to seize a standard keyboard.
-      // Input Monitoring authorization plus a non-exclusive IOHID open lets
-      // the agent observe reports while the OS keeps owning the keyboard.
+      // Keep the interface shareable so the WebHID page can be used while
+      // this process is serving it. Both receivers are input-only.
       const device = new HID(descriptor.path, { nonExclusive: true });
       const channel: ReconnectableHidChannel = {
         deviceName: descriptor.product ?? "Remote Input ESP32-S3",
@@ -133,8 +132,8 @@ function createHidConnector(
 
 export function selectRelayInterface(devices: Device[]): Device | undefined {
   return devices.find((device) =>
-    device.usagePage === KEYBOARD_USAGE_PAGE
-    && device.usage === KEYBOARD_USAGE
+    device.usagePage === HID_USAGE_PAGE
+    && device.usage === HID_USAGE
     && device.path
   );
 }

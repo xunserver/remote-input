@@ -1,13 +1,13 @@
 import { RelayAgent, type HidChannel, type TextProcessor } from "./relay-agent.js";
 import {
-  KEYBOARD_USAGE,
-  KEYBOARD_USAGE_PAGE,
+  HID_USAGE,
+  HID_USAGE_PAGE,
 } from "@remote-input/device-protocol";
 
 export const REMOTE_INPUT_USB_VENDOR_ID = 0x303a;
 export const REMOTE_INPUT_USB_PRODUCT_ID = 0x4002;
-export const REMOTE_INPUT_HID_USAGE_PAGE = KEYBOARD_USAGE_PAGE;
-export const REMOTE_INPUT_HID_USAGE = KEYBOARD_USAGE;
+export const REMOTE_INPUT_HID_USAGE_PAGE = HID_USAGE_PAGE;
+export const REMOTE_INPUT_HID_USAGE = HID_USAGE;
 
 export type WebHidAgentState =
   | "idle"

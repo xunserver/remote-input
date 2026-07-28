@@ -147,7 +147,7 @@ private final class UplinkSender: NSObject, CBCentralManagerDelegate, CBPeripher
     }
 }
 
-private let text = CommandLine.arguments.dropFirst().first ?? "标准键盘 HID 上行测试：中文与 emoji 🙂"
+private let text = CommandLine.arguments.dropFirst().first ?? "WebHID 上行测试：中文与 emoji 🙂"
 private let sender = try UplinkSender(text: text)
 withExtendedLifetime(sender) {
     RunLoop.main.run()

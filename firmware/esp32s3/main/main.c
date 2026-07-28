@@ -22,7 +22,6 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
-#include "keyboard_uplink.h"
 #include "relay_frame.h"
 
 #define USB_VID 0x303a
@@ -104,83 +103,64 @@ static void ble_on_sync(void) {
 
 static void ble_host_task(void *arg) { (void)arg; nimble_port_run(); nimble_port_freertos_deinit(); }
 
-#define HID_INSTANCE_KEYBOARD 0
-
-static const uint8_t keyboard_report_descriptor[] = {
-    0x05, 0x01,       // Usage Page (Generic Desktop)
-    0x09, 0x06,       // Usage (Keyboard)
+static const uint8_t hid_report_descriptor[] = {
+    0x06, 0x00, 0xff, // Usage Page (Vendor Defined 0xff00)
+    0x09, 0x01,       // Usage (0x01)
     0xa1, 0x01,       // Collection (Application)
-    0x05, 0x07,       // Usage Page (Keyboard/Keypad)
-    0x19, 0xe0, 0x29, 0xe7,
-    0x15, 0x00, 0x25, 0x01,
-    0x75, 0x01, 0x95, 0x08,
-    0x81, 0x02,       // Input (modifier bits)
-    0x95, 0x01, 0x75, 0x08,
-    0x81, 0x01,       // Input (reserved byte)
-    0x95, 0x05, 0x75, 0x01,
-    0x05, 0x08, 0x19, 0x01, 0x29, 0x05,
-    0x91, 0x02,       // Output (five standard keyboard LEDs)
-    0x95, 0x01, 0x75, 0x03,
-    0x91, 0x01,       // Output (LED padding)
-    0x95, 0x06, 0x75, 0x08,
-    0x15, 0x00, 0x25, 0x73,
-    0x05, 0x07, 0x19, 0x00, 0x29, 0x73,
-    0x81, 0x00,       // Input (six standard key usages, through F24)
+    0x15, 0x00,       // Logical Minimum (0)
+    0x26, 0xff, 0x00, // Logical Maximum (255)
+    0x75, 0x08,       // Report Size (8 bits)
+    0x95, 0x40,       // Report Count (64)
+    0x09, 0x01,       // Usage (0x01)
+    0x81, 0x02,       // Input (Data, Variable, Absolute)
     0xc0,
 };
 static const tusb_desc_device_t device_descriptor = {
     .bLength = sizeof(tusb_desc_device_t), .bDescriptorType = TUSB_DESC_DEVICE,
     .bcdUSB = 0x0200, .bDeviceClass = 0, .bDeviceSubClass = 0, .bDeviceProtocol = 0,
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE, .idVendor = USB_VID, .idProduct = USB_PID,
-    .bcdDevice = 0x0200, .iManufacturer = 1, .iProduct = 2, .iSerialNumber = 3, .bNumConfigurations = 1,
+    .bcdDevice = 0x0201, .iManufacturer = 1, .iProduct = 2, .iSerialNumber = 3, .bNumConfigurations = 1,
 };
 static const char *string_descriptors[] = {
     (const char[]){0x09,0x04},
     "Remote Input",
-    "USB Keyboard",
-    "v2",
-    "Keyboard",
+    "Remote Input HID Relay",
+    "v2-webhid",
+    "Relay",
 };
 #define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
 static const uint8_t configuration_descriptor[] = {
     TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0, 100),
-    TUD_HID_DESCRIPTOR(0, 4, HID_ITF_PROTOCOL_KEYBOARD, sizeof(keyboard_report_descriptor), 0x81, KEYBOARD_REPORT_BYTES, 1),
+    TUD_HID_DESCRIPTOR(0, 4, HID_ITF_PROTOCOL_NONE, sizeof(hid_report_descriptor), 0x81, RELAY_REPORT_BYTES, 1),
 };
 
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance) {
-    return instance == HID_INSTANCE_KEYBOARD ? keyboard_report_descriptor : NULL;
+    return instance == 0 ? hid_report_descriptor : NULL;
 }
 uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t type, uint8_t *buffer, uint16_t reqlen) {
     (void)report_id;
-    if (instance == HID_INSTANCE_KEYBOARD && type == HID_REPORT_TYPE_INPUT && reqlen >= sizeof(hid_keyboard_report_t)) {
-        memset(buffer, 0, sizeof(hid_keyboard_report_t));
-        return sizeof(hid_keyboard_report_t);
+    if (instance == 0 && type == HID_REPORT_TYPE_INPUT && reqlen >= RELAY_REPORT_BYTES) {
+        memset(buffer, 0, RELAY_REPORT_BYTES);
+        return RELAY_REPORT_BYTES;
     }
     return 0;
 }
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t type, const uint8_t *buffer, uint16_t size) {
     (void)instance; (void)report_id; (void)type; (void)buffer; (void)size;
-    // Standard keyboard LED output reports are intentionally not used as a
-    // reverse data channel.
+    // The relay is intentionally input-only; there is no USB-to-BLE channel.
 }
 
-static bool send_keyboard_report(const uint8_t report[KEYBOARD_REPORT_BYTES]) {
-    while (tud_mounted() && !tud_hid_n_ready(HID_INSTANCE_KEYBOARD)) vTaskDelay(pdMS_TO_TICKS(1));
-    return tud_mounted() && tud_hid_n_report(HID_INSTANCE_KEYBOARD, 0, report, KEYBOARD_REPORT_BYTES);
+static bool send_relay_report(const uint8_t *frame, uint16_t length) {
+    uint8_t report[RELAY_REPORT_BYTES] = {0};
+    memcpy(report, frame, length);
+    while (tud_mounted() && !tud_hid_n_ready(0)) vTaskDelay(pdMS_TO_TICKS(1));
+    return tud_mounted() && tud_hid_n_report(0, 0, report, sizeof(report));
 }
 
 static void relay_task(void *arg) {
     (void)arg; relay_item_t item;
     while (xQueueReceive(relay_queue, &item, portMAX_DELAY) == pdTRUE) {
-        uint8_t report[KEYBOARD_REPORT_BYTES];
-        for (uint16_t index = 0; index < item.length && tud_mounted(); ++index) {
-            keyboard_uplink_encode_nibble(item.data[index] >> 4, true, report);
-            if (!send_keyboard_report(report)) break;
-            keyboard_uplink_encode_nibble(item.data[index] & 0x0f, false, report);
-            if (!send_keyboard_report(report)) break;
-        }
-        memset(report, 0, sizeof(report));
-        send_keyboard_report(report);
+        send_relay_report(item.data, item.length);
     }
 }
 
@@ -215,5 +195,5 @@ void app_main(void) {
     assert(ble_gatts_add_svcs(gatt_services) == 0);
     ble_hs_cfg.sync_cb = ble_on_sync;
     nimble_port_freertos_init(ble_host_task);
-    ESP_LOGI(TAG, "BLE to standard keyboard HID relay started");
+    ESP_LOGI(TAG, "BLE to vendor-defined WebHID relay started");
 }

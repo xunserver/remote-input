@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  KeyboardReportEncoder,
-  decodeRelayFrame,
+  HID_REPORT_BYTES,
 } from "@remote-input/device-protocol";
 import {
   REMOTE_INPUT_BLE_WRITE,
@@ -25,22 +24,20 @@ class NotificationCharacteristic {
 
 class SimulatedEspRelay {
   hidDataListener = () => {};
-  keyboardEncoder = new KeyboardReportEncoder();
   notify = new NotificationCharacteristic();
   write = {
     startNotifications: async () => this.write,
     addEventListener() {},
     removeEventListener() {},
     writeValueWithResponse: async (value) => {
-      const frame = decodeRelayFrame(new Uint8Array(value));
-      for (const report of this.keyboardEncoder.encode(frame)) {
-        this.hidDataListener(report);
-      }
+      const report = new Uint8Array(HID_REPORT_BYTES);
+      report.set(new Uint8Array(value));
+      this.hidDataListener(report);
     },
   };
   hid = {
     onData: (listener) => { this.hidDataListener = listener; return () => { this.hidDataListener = () => {}; }; },
-    write: () => { throw new Error("keyboard downlink is disabled"); },
+    write: () => { throw new Error("HID downlink is disabled"); },
     close() {},
   };
   device = {
@@ -58,7 +55,7 @@ class SimulatedEspRelay {
   };
 }
 
-test("BLE/HID uplink can complete at the GATT write boundary without a downlink acknowledgement", async () => {
+test("BLE/vendor-HID uplink can complete at the GATT write boundary without a downlink acknowledgement", async () => {
   const esp = new SimulatedEspRelay();
   const processed = [];
   const agent = new RelayAgent(esp.hid, async (text) => {
