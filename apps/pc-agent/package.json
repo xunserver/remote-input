@@ -17,6 +17,7 @@
     "@remote-input/web-agent-sdk": "workspace:*",
     "@remote-input/device-protocol": "workspace:*",
     "@remote-input/protocol": "workspace:*",
+    "@remote-input/sdk": "workspace:*",
     "clipboardy": "^5.3.1",
     "node-hid": "^3.2.0",
     "ws": "^8.21.1"
@@ -24,7 +25,6 @@
   "devDependencies": {
     "@remote-input/client": "workspace:*",
     "@remote-input/receiver": "workspace:*",
-    "@remote-input/sdk": "workspace:*",
     "@remote-input/web-agent": "workspace:*",
     "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",

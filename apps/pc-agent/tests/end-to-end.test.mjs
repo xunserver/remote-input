@@ -58,9 +58,9 @@ class SimulatedEspRelay {
 test("BLE/vendor-HID uplink can complete at the GATT write boundary without a downlink acknowledgement", async () => {
   const esp = new SimulatedEspRelay();
   const processed = [];
-  const agent = new RelayAgent(esp.hid, async (text) => {
+  const agent = new RelayAgent(esp.hid, async (command) => {
     await new Promise((resolve) => setImmediate(resolve));
-    processed.push(text);
+    processed.push(command.text);
   }, (error) => { throw error; });
   const transport = new WebBluetoothTransport(async () => esp.device);
   const client = new Client({ transport, requestTimeoutMs: 50 });

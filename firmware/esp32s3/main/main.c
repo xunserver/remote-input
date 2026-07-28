@@ -30,9 +30,13 @@ static const char *TAG = "remote-input-v2";
 static uint8_t own_addr_type;
 static uint16_t notify_value_handle;
 static QueueHandle_t relay_queue;
+static QueueHandle_t notify_queue;
+static volatile uint16_t active_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static volatile uint32_t active_connection_generation;
 
 typedef struct {
     uint16_t length;
+    uint32_t connection_generation;
     uint8_t data[RELAY_REPORT_BYTES];
 } relay_item_t;
 
@@ -73,9 +77,16 @@ static int gap_event(struct ble_gap_event *event, void *arg) {
     (void)arg;
     switch (event->type) {
         case BLE_GAP_EVENT_CONNECT:
-            if (event->connect.status != 0) advertise();
+            if (event->connect.status == 0) {
+                active_connection_generation++;
+                active_conn_handle = event->connect.conn_handle;
+            } else {
+                advertise();
+            }
             return 0;
         case BLE_GAP_EVENT_DISCONNECT:
+            active_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            active_connection_generation++;
             advertise(); return 0;
         case BLE_GAP_EVENT_ADV_COMPLETE: advertise(); return 0;
         default: return 0;
@@ -113,6 +124,8 @@ static const uint8_t hid_report_descriptor[] = {
     0x95, 0x40,       // Report Count (64)
     0x09, 0x01,       // Usage (0x01)
     0x81, 0x02,       // Input (Data, Variable, Absolute)
+    0x09, 0x02,       // Usage (0x02)
+    0x91, 0x02,       // Output (Data, Variable, Absolute)
     0xc0,
 };
 static const tusb_desc_device_t device_descriptor = {
@@ -146,8 +159,18 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
     return 0;
 }
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t type, const uint8_t *buffer, uint16_t size) {
-    (void)instance; (void)report_id; (void)type; (void)buffer; (void)size;
-    // The relay is intentionally input-only; there is no USB-to-BLE channel.
+    (void)report_id;
+    uint16_t frame_length = 0;
+    if (instance != 0 || type != HID_REPORT_TYPE_OUTPUT ||
+        !relay_frame_validate(buffer, size, true, &frame_length)) {
+        return;
+    }
+    relay_item_t item = {
+        .length = frame_length,
+        .connection_generation = active_connection_generation,
+    };
+    memcpy(item.data, buffer, frame_length);
+    xQueueSend(notify_queue, &item, 0);
 }
 
 static bool send_relay_report(const uint8_t *frame, uint16_t length) {
@@ -164,12 +187,27 @@ static void relay_task(void *arg) {
     }
 }
 
+static void notify_task(void *arg) {
+    (void)arg; relay_item_t item;
+    while (xQueueReceive(notify_queue, &item, portMAX_DELAY) == pdTRUE) {
+        uint16_t conn_handle = active_conn_handle;
+        if (conn_handle == BLE_HS_CONN_HANDLE_NONE ||
+            item.connection_generation != active_connection_generation) continue;
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(item.data, item.length);
+        if (om == NULL) continue;
+        int rc = ble_gatts_notify_custom(conn_handle, notify_value_handle, om);
+        if (rc != 0) ESP_LOGW(TAG, "BLE notify failed: %d", rc);
+    }
+}
+
 void app_main(void) {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) { ESP_ERROR_CHECK(nvs_flash_erase()); err = nvs_flash_init(); }
     ESP_ERROR_CHECK(err);
     relay_queue = xQueueCreate(16, sizeof(relay_item_t)); assert(relay_queue);
+    notify_queue = xQueueCreate(16, sizeof(relay_item_t)); assert(notify_queue);
     xTaskCreate(relay_task, "relay", 4096, NULL, 5, NULL);
+    xTaskCreate(notify_task, "notify", 4096, NULL, 5, NULL);
 
     const tinyusb_config_t usb = {
         .port = TINYUSB_PORT_FULL_SPEED_0,

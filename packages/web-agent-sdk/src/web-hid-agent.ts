@@ -244,6 +244,11 @@ export class WebHidAgent {
         device.addEventListener("inputreport", listener);
         return () => device.removeEventListener("inputreport", listener);
       },
+      send: (report) => {
+        const copy = new Uint8Array(report.byteLength);
+        copy.set(report);
+        return device.sendReport(0, copy);
+      },
     };
     this.#relay = new RelayAgent(channel, this.#onText, this.#onError);
     this.setState("connected", device);

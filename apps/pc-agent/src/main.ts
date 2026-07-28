@@ -40,7 +40,7 @@ const server = http.createServer((req, res) => {
 });
 const protocolServer = new RemoteWebSocketServer({
   server,
-  acceptText,
+  acceptInput: acceptText,
   runtimeStatus,
   ...(config.protocolTraceLevel === undefined
     ? {}
@@ -49,7 +49,8 @@ const protocolServer = new RemoteWebSocketServer({
 const connector = createHidConnector(config.vendorId, config.productId);
 const hidRuntime = runAgentRuntime({
   connector,
-  processText: (text) => acceptText("hid", text),
+  processText: (command, _context, onStatus) =>
+    acceptText("hid", command, onStatus),
   signal: abortController.signal,
   onStateChange: (state, deviceName) => {
     runtimeStatus.setHid(state, deviceName);
@@ -116,6 +117,11 @@ function createHidConnector(
         },
         onError(listener) {
           device.once("error", listener);
+        },
+        async send(report) {
+          const nodeHidReport = new Uint8Array(report.byteLength + 1);
+          nodeHidReport.set(report, 1);
+          await device.write(Array.from(nodeHidReport));
         },
         close() {
           try {

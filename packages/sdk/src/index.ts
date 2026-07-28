@@ -1,5 +1,19 @@
 export { Client } from "./client.js";
 export type { ClientOptions } from "./client.js";
+export {
+  createSendTextPayload,
+  inputStatusMethod,
+  parseInputCommand,
+  parseInputStatus,
+} from "./input.js";
+export type {
+  InputCommand,
+  InputControl,
+  InputStatus,
+  InputStatusListener,
+  InputStatusStage,
+  SendTextOptions,
+} from "./input.js";
 
 export {
   CHUNK_PAYLOAD_BYTES,
@@ -16,6 +30,8 @@ export {
 export type {
   DeliveryState,
   JsonValue,
+  NotificationContext,
+  NotificationHandler,
   ProtocolTraceDetails,
   ProtocolTraceEvent,
   ProtocolTraceLevel,

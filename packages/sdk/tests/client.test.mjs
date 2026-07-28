@@ -54,13 +54,19 @@ test("sendText maps to the documented request shape", async () => {
   const client = new Client({ transport });
 
   assert.deepEqual(await client.sendText("hello"), {
-    echoed: { text: "hello" },
+    echoed: {
+      text: "hello",
+      control: { paste: true, restoreClipboard: false },
+    },
   });
   assert.deepEqual(transport.sent[0], {
     type: "request",
     requestId: 1,
     method: "sendText",
-    payload: { text: "hello" },
+    payload: {
+      text: "hello",
+      control: { paste: true, restoreClipboard: false },
+    },
   });
 });
 
@@ -75,11 +81,51 @@ test("sendTextUnconfirmed completes after Transport.send without waiting for a R
 
   await client.sendTextUnconfirmed("hello over BLE");
   assert.deepEqual(transport.sent, [{
-    type: "request",
-    requestId: 1,
+    type: "notify",
     method: "sendText",
-    payload: { text: "hello over BLE" },
+    payload: {
+      text: "hello over BLE",
+      control: { paste: true, restoreClipboard: false },
+    },
   }]);
+});
+
+test("sendText carries per-input control and inputStatus is received via notify", async () => {
+  const transport = new TestTransport();
+  const client = new Client({ transport });
+  const statuses = [];
+  client.onInputStatus((status) => statuses.push(status));
+
+  await client.sendText("copy only", {
+    operationId: "op-1",
+    paste: false,
+    restoreClipboard: true,
+  });
+  assert.deepEqual(transport.sent[0].payload, {
+    text: "copy only",
+    operationId: "op-1",
+    control: { paste: false, restoreClipboard: true },
+  });
+
+  transport.receiver.accept({
+    type: "notify",
+    method: "inputStatus",
+    payload: {
+      operationId: "op-1",
+      stage: "clipboard_restored",
+      progress: 90,
+      message: "restored",
+    },
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(statuses, [{
+    operationId: "op-1",
+    stage: "clipboard_restored",
+    progress: 90,
+    message: "restored",
+  }]);
+  assert.equal(transport.sent.length, 1);
 });
 
 test("Client forwards summary trace options to its Session without input content", async () => {
@@ -175,7 +221,10 @@ test("a reset Transport can bind a new Client without reviving the old Client", 
   const newClient = new Client({ transport });
   await transport.connect();
   assert.deepEqual(await newClient.sendText("new"), {
-    echoed: { text: "new" },
+    echoed: {
+      text: "new",
+      control: { paste: true, restoreClipboard: false },
+    },
   });
   await assert.rejects(
     oldClient.sendText("old"),

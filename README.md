@@ -8,8 +8,9 @@ PC Agent；它同时接收 WebSocket 和 ESP32-S3 USB HID 输入，展示最近�
 
 ```text
 WebSocket 发送端 ─┐
-                  ├─> PC Agent 消息中心 -> 全局输入队列 -> 剪贴板 + 系统粘贴
+                  ├─> PC Agent 消息中心 -> 全局输入队列 -> 剪贴板 / 系统粘贴
 ESP32-S3 USB HID ─┘             │
+        <── inputStatus notify ─┤
                                 └─> HTTP API + SSE -> 接收看板
 ```
 
@@ -21,6 +22,11 @@ ESP32-S3 USB HID ─┘             │
 
 PC Agent 只在内存保存最近 100 条消息，重启后清空。发送端收到成功响应时，对应输入已经
 完成配置的处理，而不只是进入队列。
+
+每次输入都可携带独立控制参数：是否在复制后触发系统粘贴，以及处理后是否恢复接收端
+原剪贴板。旧的 `{ text }` 报文继续使用“自动粘贴、不要恢复”的默认值。接收端通过原生
+单向 `inputStatus` notify 反馈排队、处理、复制、粘贴、剪贴板恢复和最终结果；WebSocket
+直接回传，蓝牙链路通过 USB HID output report 和 BLE notify 反向回传。
 
 ## Workspace
 

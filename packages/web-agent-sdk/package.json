@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "@remote-input/device-protocol": "workspace:*",
-    "@remote-input/protocol": "workspace:*"
+    "@remote-input/protocol": "workspace:*",
+    "@remote-input/sdk": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

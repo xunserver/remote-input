@@ -38,6 +38,7 @@ export type {
   ProtocolTraceValue,
 } from "./trace.js";
 export {
+  isNotificationMessage,
   isPositiveSafeInteger,
   isRequestMessage,
   isResponseMessage,
@@ -45,6 +46,7 @@ export {
 } from "./messages.js";
 export type {
   ErrorResponseMessage,
+  NotificationMessage,
   RemoteErrorPayload,
   RequestMessage,
   ResponseMessage,
@@ -53,6 +55,8 @@ export type {
 } from "./messages.js";
 export { Session } from "./session.js";
 export type {
+  NotificationContext,
+  NotificationHandler,
   RequestContext,
   RequestHandler,
   SessionOptions,

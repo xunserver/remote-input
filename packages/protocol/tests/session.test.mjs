@@ -836,3 +836,32 @@ test("two symmetric Sessions may independently originate requestId 1", async () 
   assert.equal(leftTransport.sent[0].message.requestId, 1);
   assert.equal(rightTransport.sent[0].message.requestId, 1);
 });
+
+test("notify is a native one-way message and never emits a Response", async () => {
+  const clock = new FakeClock();
+  const transport = new MemoryTransport();
+  const session = new Session(transport, { clock });
+  const received = [];
+  session.registerNotificationHandler("status", async (payload, context) => {
+    received.push({ payload, context });
+  });
+
+  await session.notify("outbound", { stage: "queued" });
+  assert.deepEqual(transport.sent[0].message, {
+    type: "notify",
+    method: "outbound",
+    payload: { stage: "queued" },
+  });
+
+  transport.accept({
+    type: "notify",
+    method: "status",
+    payload: { stage: "done" },
+  });
+  await drain(clock);
+  assert.deepEqual(received, [{
+    payload: { stage: "done" },
+    context: { method: "status" },
+  }]);
+  assert.equal(transport.sent.length, 1);
+});

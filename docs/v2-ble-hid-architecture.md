@@ -2,7 +2,7 @@
 
 ## 目标与链路
 
-V2 使用两段独立链路，ESP32-S3 是无业务状态的单向上行 relay：
+V2 使用两段独立链路，ESP32-S3 是无业务状态的双向 relay：
 
 ```text
 Web Client / SDK Session
@@ -12,9 +12,14 @@ Web Client / SDK Session
   -> USB vendor-defined HID input report
   -> PC Agent
   -> clipboard + system paste
+  -> USB vendor-defined HID output report
+  -> ESP32-S3 relay
+  -> BLE GATT notify
+  -> Web Client / SDK inputStatus
 ```
 
-网页到 ESP32-S3 是 BLE transport；ESP32-S3 到 PC agent 是 USB HID transport。ESP32-S3
+网页到 ESP32-S3 是 BLE transport；ESP32-S3 到 PC agent 是 USB HID transport。反向
+状态链路使用 USB HID output report 和 BLE notify。ESP32-S3
 不解析 Session JSON，也不模拟普通键盘字符。USB 端枚举 usage page `ff00`、usage `01`
 的 vendor-defined HID collection，使 PC Agent 和桌面版 Chrome/Edge WebHID 都能读取
 原始 relay frame，可靠承载 UTF-8、中文、emoji 和控制字符。
@@ -28,7 +33,7 @@ Web Client / SDK Session
 
 网页只能从 HTTPS 或 localhost 的安全上下文调用 Web Bluetooth，且首次设备选择必须由
 用户点击触发。当前实现使用 write-with-response，它只确认 ESP 收到 GATT write；
-单向上行不提供 agent 处理完成回执，SDK 调用方必须将请求视为无确认发送。
+业务处理进度和最终结果由接收端另行发送 `inputStatus` notify。
 连接前页面会分别诊断非安全上下文和浏览器不支持两种情况，不会打开一个必然失败的设备
 选择流程。
 
@@ -48,9 +53,10 @@ Web Client / SDK Session
 | 14 | 2 | payload CRC16-CCITT |
 | 16 | 0..48 | payload |
 
-USB 使用无 report ID 的 64 字节 vendor HID input report。短 frame 在线上补零到 64 字节，
+USB 使用无 report ID 的 64 字节 vendor HID input/output report。短 frame 在线上补零到 64 字节，
 payload length 确定有效边界。PC Agent 和 Web Agent 都校验 frame magic、版本、长度、
-chunk 字段和 CRC 后才交付 UTF-8；异常 frame 整帧丢弃。当前没有 HID 下行通道。
+chunk 字段和 CRC 后才交付 UTF-8；异常 frame 整帧丢弃。input report 承载输入上行，
+output report 承载接收端状态下行。
 
 ## PC Agent
 
@@ -62,7 +68,8 @@ INPUT_MODE=dev pnpm --filter @remote-input/pc-agent start
 pnpm --filter @remote-input/pc-agent start
 ```
 
-`INPUT_MODE=dev` 只打印重组后的文本。默认模式写入系统剪贴板并模拟粘贴。Linux 需要
+`INPUT_MODE=dev` 只打印重组后的输入和控制参数。默认模式按每条输入的控制参数写入
+系统剪贴板、选择性模拟粘贴，并可在处理后恢复原剪贴板。Linux 需要
 `xdotool`（X11）或 `wtype`（Wayland），并可能需要为 HID 设备配置 udev 权限。
 PC Agent 以 node-hid 的 `nonExclusive` 模式打开接口，使同一台电脑上的 WebHID 页面
 仍可连接。macOS 模拟粘贴需要为实际运行 Agent 的 Node 程序授予“辅助功能”权限。
@@ -147,8 +154,9 @@ macOS IOKit 的 `InputReportCount` 可用于确认 ESP 实际发出了 64 字节
 
 - frame 有长度、版本和 CRC 校验，支持 chunk 去重和乱序重组。
 - frame 边界、长度和 CRC 可以检测截断、重复和位错误；失败时不交付文本。
-- BLE write-with-response 只确认 ESP 收到 GATT write，不等于 agent 已处理；当前没有下行确认。
-- 因此发送页在全部 GATT write 完成后结束“发送中”状态，并明确显示“接收端处理结果未确认”，
-  不再等待一个当前硬件链路无法返回的业务 Response。
+- BLE write-with-response 只确认 ESP 收到 GATT write，不等于 agent 已处理；发送页随后
+  等待独立的 `inputStatus` notify，并按 operation ID 关联状态。
+- 状态 notify 是单向业务反馈，不要求发送端再回 Response。断线可能丢失状态，因此它不提供
+  跨连接的 exactly-once 保证。
 - ESP relay 队列满时 BLE write 返回资源不足；网页请求会失败。
 - V2 尚未加入配对认证、应用层加密、跨断线恢复或持久化幂等键。不要发送密码或验证码。

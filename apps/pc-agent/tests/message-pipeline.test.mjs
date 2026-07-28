@@ -47,18 +47,18 @@ test("WebSocket and HID inputs share one serial queue and expose lifecycle state
       statuses.push([event.message.text, event.message.status]);
     }
   });
-  const queue = new InputQueue(store, async (text) => {
-    processed.push(text);
-    if (text === "from-ws") {
+  const queue = new InputQueue(store, async (command) => {
+    processed.push(command.text);
+    if (command.text === "from-ws") {
       firstStarted.resolve();
       await releaseFirst.promise;
     }
   });
   const acceptText = createInputService(store, queue);
 
-  const ws = acceptText("websocket", "from-ws");
+  const ws = acceptText("websocket", command("from-ws"));
   await firstStarted.promise;
-  const hid = acceptText("hid", "from-hid");
+  const hid = acceptText("hid", command("from-hid"));
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(processed, ["from-ws"]);
 
@@ -81,20 +81,20 @@ test("queue overflow and processor errors mark their messages failed", async () 
   const store = new MessageStore();
   const activeStarted = deferred();
   const releaseActive = deferred();
-  const queue = new InputQueue(store, async (text) => {
-    if (text === "active") {
+  const queue = new InputQueue(store, async (input) => {
+    if (input.text === "active") {
       activeStarted.resolve();
       await releaseActive.promise;
     }
-    if (text === "processor-error") throw new Error("paste failed");
+    if (input.text === "processor-error") throw new Error("paste failed");
   }, 1);
   const acceptText = createInputService(store, queue);
 
-  const active = acceptText("websocket", "active");
+  const active = acceptText("websocket", command("active"));
   await activeStarted.promise;
-  const waiting = acceptText("hid", "waiting");
+  const waiting = acceptText("hid", command("waiting"));
   await assert.rejects(
-    acceptText("websocket", "overflow"),
+    acceptText("websocket", command("overflow")),
     InputQueueFullError,
   );
   assert.equal(store.snapshot().at(-1).status, "failed");
@@ -102,7 +102,7 @@ test("queue overflow and processor errors mark their messages failed", async () 
   releaseActive.resolve();
   await Promise.all([active, waiting]);
   await assert.rejects(
-    acceptText("hid", "processor-error"),
+    acceptText("hid", command("processor-error")),
     /paste failed/,
   );
   assert.deepEqual(store.snapshot().at(-1), {
@@ -120,4 +120,14 @@ function deferred() {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+function command(text, control = {}) {
+  return {
+    text,
+    control: {
+      paste: control.paste ?? true,
+      restoreClipboard: control.restoreClipboard ?? false,
+    },
+  };
 }

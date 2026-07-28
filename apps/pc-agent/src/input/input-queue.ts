@@ -2,14 +2,24 @@ import {
   type MessageStore,
   type ReceivedMessage,
 } from "../messages/message-store.js";
+import type {
+  InputCommand,
+  InputStatus,
+  InputStatusStage,
+} from "@remote-input/sdk";
 
 type InputJob = {
+  command: InputCommand;
   message: ReceivedMessage;
+  onStatus?: (status: InputStatus) => void;
   resolve: () => void;
   reject: (error: unknown) => void;
 };
 
-export type InputProcessor = (text: string) => Promise<void>;
+export type InputProcessor = (
+  command: InputCommand,
+  onStage: (stage: InputStatusStage, message: string) => void,
+) => Promise<void>;
 
 export class InputQueueFullError extends Error {
   constructor() {
@@ -29,18 +39,30 @@ export class InputQueue {
     private readonly maxWaitingJobs = 100,
   ) {}
 
-  enqueue(message: ReceivedMessage): Promise<void> {
+  enqueue(
+    message: ReceivedMessage,
+    command: InputCommand,
+    onStatus?: (status: InputStatus) => void,
+  ): Promise<void> {
+    emitStatus(command, onStatus, "queued", 10, "输入已进入接收队列。");
     if (this.queue.length >= this.maxWaitingJobs) {
       const error = new InputQueueFullError();
       this.store.update(message.id, {
         status: "failed",
         error: error.message,
       });
+      emitStatus(command, onStatus, "failed", 100, error.message);
       return Promise.reject(error);
     }
 
     const completion = new Promise<void>((resolve, reject) => {
-      this.queue.push({ message, resolve, reject });
+      this.queue.push({
+        command,
+        message,
+        ...(onStatus === undefined ? {} : { onStatus }),
+        resolve,
+        reject,
+      });
     });
     void this.process();
     return completion;
@@ -54,21 +76,75 @@ export class InputQueue {
       const job = this.queue.shift();
       if (!job) continue;
       this.store.update(job.message.id, { status: "processing" });
+      emitStatus(
+        job.command,
+        job.onStatus,
+        "processing",
+        25,
+        "接收端正在处理输入。",
+      );
       try {
-        await this.processor(job.message.text);
+        await this.processor(job.command, (stage, message) => {
+          emitStatus(
+            job.command,
+            job.onStatus,
+            stage,
+            stageProgress(stage),
+            message,
+          );
+        });
         this.store.update(job.message.id, { status: "succeeded" });
+        emitStatus(
+          job.command,
+          job.onStatus,
+          "succeeded",
+          100,
+          job.command.control.paste
+            ? "接收端已完成输入。"
+            : "接收端已复制到剪贴板。",
+        );
         job.resolve();
       } catch (error) {
         this.store.update(job.message.id, {
           status: "failed",
           error: formatError(error),
         });
+        emitStatus(
+          job.command,
+          job.onStatus,
+          "failed",
+          100,
+          formatError(error),
+        );
         job.reject(error);
       }
     }
 
     this.processing = false;
   }
+}
+
+function emitStatus(
+  command: InputCommand,
+  listener: ((status: InputStatus) => void) | undefined,
+  stage: InputStatusStage,
+  progress: number,
+  message: string,
+): void {
+  if (!command.operationId || !listener) return;
+  listener({
+    operationId: command.operationId,
+    stage,
+    progress,
+    message,
+  });
+}
+
+function stageProgress(stage: InputStatusStage): number {
+  if (stage === "copied") return 50;
+  if (stage === "pasted") return 75;
+  if (stage === "clipboard_restored") return 90;
+  return 25;
 }
 
 function formatError(error: unknown): string {

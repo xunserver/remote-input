@@ -1,14 +1,22 @@
 import type { MessageSource, MessageStore } from "../messages/message-store.js";
 import type { InputQueue } from "./input-queue.js";
+import type {
+  InputCommand,
+  InputStatus,
+} from "@remote-input/sdk";
 
-export type AcceptText = (source: MessageSource, text: string) => Promise<void>;
+export type AcceptInput = (
+  source: MessageSource,
+  command: InputCommand,
+  onStatus?: (status: InputStatus) => void,
+) => Promise<void>;
 
 export function createInputService(
   store: MessageStore,
   queue: InputQueue,
-): AcceptText {
-  return async (source, text) => {
-    const message = store.create(source, text);
-    await queue.enqueue(message);
+): AcceptInput {
+  return async (source, command, onStatus) => {
+    const message = store.create(source, command.text);
+    await queue.enqueue(message, command, onStatus);
   };
 }

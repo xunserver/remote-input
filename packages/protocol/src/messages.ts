@@ -7,6 +7,12 @@ export type RequestMessage = {
   payload: JsonValue;
 };
 
+export type NotificationMessage = {
+  type: "notify";
+  method: string;
+  payload: JsonValue;
+};
+
 export type SuccessResponseMessage = {
   type: "response";
   requestId: number;
@@ -31,7 +37,10 @@ export type ResponseMessage =
   | SuccessResponseMessage
   | ErrorResponseMessage;
 
-export type SessionMessage = RequestMessage | ResponseMessage;
+export type SessionMessage =
+  | RequestMessage
+  | ResponseMessage
+  | NotificationMessage;
 
 // 请求 ID 限制为正安全整数，确保 JSON/JavaScript 两端都能无损表示并精确匹配响应。
 export function isPositiveSafeInteger(value: unknown): value is number {
@@ -76,8 +85,23 @@ export function isResponseMessage(value: unknown): value is ResponseMessage {
   return true;
 }
 
+export function isNotificationMessage(
+  value: unknown,
+): value is NotificationMessage {
+  return (
+    isRecord(value) &&
+    value.type === "notify" &&
+    typeof value.method === "string" &&
+    isJsonValue(value.payload)
+  );
+}
+
 export function isSessionMessage(value: unknown): value is SessionMessage {
-  return isRequestMessage(value) || isResponseMessage(value);
+  return (
+    isRequestMessage(value) ||
+    isResponseMessage(value) ||
+    isNotificationMessage(value)
+  );
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

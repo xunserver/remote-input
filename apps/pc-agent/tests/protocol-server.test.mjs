@@ -97,7 +97,8 @@ async function createFixture(acceptText) {
   const runtimeStatus = new RuntimeStatusStore();
   const protocolServer = new RemoteWebSocketServer({
     server,
-    acceptText,
+    acceptInput: (source, command, onStatus) =>
+      acceptText(source, command.text, onStatus),
     runtimeStatus,
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

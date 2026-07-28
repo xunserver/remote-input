@@ -4,11 +4,19 @@ import {
   Session,
   sdkErrorCodes,
   type JsonValue,
+  type NotificationHandler,
   type ProtocolTraceLevel,
   type ProtocolTraceListener,
   type RequestHandler,
   type Transport,
 } from "@remote-input/protocol";
+import {
+  createSendTextPayload,
+  inputStatusMethod,
+  parseInputStatus,
+  type InputStatusListener,
+  type SendTextOptions,
+} from "./input.js";
 
 export interface ClientOptions {
   transport: Transport;
@@ -35,7 +43,10 @@ export class Client {
     });
   }
 
-  sendText(text: string): Promise<JsonValue> {
+  sendText(
+    text: string,
+    options: SendTextOptions = {},
+  ): Promise<JsonValue> {
     // 对无类型调用者仍保持 Promise 拒绝语义，并保证无效输入未触达传输层。
     if (typeof text !== "string") {
       return Promise.reject(
@@ -46,7 +57,10 @@ export class Client {
         ),
       );
     }
-    return this.#session.request("sendText", { text });
+    return this.#session.request(
+      "sendText",
+      createSendTextPayload(text, options),
+    );
   }
 
   /**
@@ -55,7 +69,10 @@ export class Client {
    * Promise 完成只代表底层 Transport 已达到自身的发送成功边界；
    * 它不能证明远端已经处理或粘贴文字。
    */
-  sendTextUnconfirmed(text: string): Promise<void> {
+  sendTextUnconfirmed(
+    text: string,
+    options: SendTextOptions = {},
+  ): Promise<void> {
     if (typeof text !== "string") {
       return Promise.reject(
         new SDKError(
@@ -65,7 +82,10 @@ export class Client {
         ),
       );
     }
-    return this.#session.notify("sendText", { text });
+    return this.#session.notify(
+      "sendText",
+      createSendTextPayload(text, options),
+    );
   }
 
   request(method: string, payload: JsonValue): Promise<JsonValue> {
@@ -74,6 +94,19 @@ export class Client {
 
   registerHandler(method: string, handler: RequestHandler): () => void {
     return this.#session.registerHandler(method, handler);
+  }
+
+  registerNotificationHandler(
+    method: string,
+    handler: NotificationHandler,
+  ): () => void {
+    return this.#session.registerNotificationHandler(method, handler);
+  }
+
+  onInputStatus(listener: InputStatusListener): () => void {
+    return this.registerNotificationHandler(inputStatusMethod, (payload) => {
+      listener(parseInputStatus(payload));
+    });
   }
 
   close(): Promise<void> {

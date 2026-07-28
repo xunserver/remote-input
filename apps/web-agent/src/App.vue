@@ -41,8 +41,8 @@ const textSummary = computed(() =>
 );
 
 const agent = new WebHidAgent({
-  onText(text) {
-    messages.value = [...messages.value, text];
+  onText(command) {
+    messages.value = [...messages.value, command.text];
     error.value = "";
   },
   onError(cause) {

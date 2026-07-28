@@ -15,19 +15,22 @@ import { Spinner } from "@shadcn/spinner";
 import { Switch } from "@shadcn/switch";
 import { Textarea } from "@shadcn/textarea";
 import type { ConnectionState } from "@/types/remote-input";
+import type { InputControl } from "@remote-input/sdk";
 
 type InputMode = "single" | "multi";
 
 type InputComposerProps = {
   connectionState: ConnectionState;
   isBusy: boolean;
-  onSend: (text: string) => Promise<boolean>;
+  onSend: (text: string, control: InputControl) => Promise<boolean>;
 };
 
 const props = defineProps<InputComposerProps>();
 const mode = ref<InputMode>("single");
 const text = ref("");
 const sendInFlight = ref(false);
+const paste = ref(true);
+const restoreClipboard = ref(false);
 
 const isReady = computed(() => props.connectionState === "ready");
 const isSending = computed(() => props.isBusy || sendInFlight.value);
@@ -48,7 +51,10 @@ async function send(): Promise<void> {
 
   sendInFlight.value = true;
   try {
-    if (await props.onSend(text.value)) {
+    if (await props.onSend(text.value, {
+      paste: paste.value,
+      restoreClipboard: restoreClipboard.value,
+    })) {
       text.value = "";
     }
   } finally {
@@ -118,6 +124,30 @@ function handleKeyDown(event: KeyboardEvent): void {
           />
         </Field>
       </FieldGroup>
+      <div class="mt-4 grid gap-3 rounded-lg border bg-background p-3 sm:grid-cols-2">
+        <Field orientation="horizontal" class="justify-between gap-3">
+          <div>
+            <FieldLabel for="paste-after-copy">自动粘贴</FieldLabel>
+            <p class="text-xs text-muted-foreground">关闭后只复制到接收端剪贴板</p>
+          </div>
+          <Switch
+            id="paste-after-copy"
+            v-model="paste"
+            aria-label="复制后自动粘贴"
+          />
+        </Field>
+        <Field orientation="horizontal" class="justify-between gap-3">
+          <div>
+            <FieldLabel for="restore-clipboard">恢复剪贴板</FieldLabel>
+            <p class="text-xs text-muted-foreground">输入完成后恢复接收端原内容</p>
+          </div>
+          <Switch
+            id="restore-clipboard"
+            v-model="restoreClipboard"
+            aria-label="输入后恢复原剪贴板"
+          />
+        </Field>
+      </div>
     </CardContent>
 
     <CardFooter

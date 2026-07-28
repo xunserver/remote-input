@@ -76,7 +76,10 @@ test("WebHidAgent receives UTF-8 text from a vendor-defined collection", async (
   const states = [];
   const agent = new WebHidAgent({
     environment: { hid, isSecureContext: true },
-    onText: async (text, context) => received.push({ text, context }),
+    onText: async (command, context) => received.push({
+      text: command.text,
+      context,
+    }),
     onStateChange: (state) => states.push(state),
   });
 

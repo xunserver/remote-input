@@ -7,7 +7,13 @@ import {
   WebSocketTransport,
   type TransportState,
 } from "@remote-input/protocol";
-import { Client, isSDKError, sdkErrorCodes } from "@remote-input/sdk";
+import {
+  Client,
+  isSDKError,
+  sdkErrorCodes,
+  type InputControl,
+  type InputStatus,
+} from "@remote-input/sdk";
 import {
   isInputBusy,
   type ConnectionMethod,
@@ -48,6 +54,7 @@ type Runtime = {
   seenConnected: boolean;
   transport: ConnectionTransport;
   unsubscribe: () => void;
+  unsubscribeInputStatus: () => void;
   url: string;
 };
 
@@ -237,6 +244,7 @@ export function useRemoteInput() {
     if (previous) {
       previous.infoAbortController?.abort();
       previous.unsubscribe();
+      previous.unsubscribeInputStatus();
       void previous.client.close().catch(() => undefined);
     }
 
@@ -282,10 +290,16 @@ export function useRemoteInput() {
         seenConnected: false,
         transport,
         unsubscribe: () => {},
+        unsubscribeInputStatus: () => {},
         url,
       };
       // subscribe() 会同步回放当前状态，必须先发布 Runtime 引用。
       runtime = nextRuntime;
+      nextRuntime.unsubscribeInputStatus = client.onInputStatus((status) => {
+        if (runtime === nextRuntime && generation === nextRuntime.generation) {
+          applyInputStatus(status);
+        }
+      });
       nextRuntime.unsubscribe = transport.subscribe((state: TransportState) => {
         if (
           runtime !== nextRuntime ||
@@ -378,7 +392,13 @@ export function useRemoteInput() {
     }
   });
 
-  async function sendInput(text: string): Promise<boolean> {
+  async function sendInput(
+    text: string,
+    control: InputControl = {
+      paste: true,
+      restoreClipboard: false,
+    },
+  ): Promise<boolean> {
     const targetRuntime = runtime;
     if (
       !text.trim() ||
@@ -399,8 +419,8 @@ export function useRemoteInput() {
       stage: "sending",
       progress: 50,
       message: targetRuntime.method === "bluetooth"
-        ? "正在通过蓝牙发送。"
-        : "正在发送，并等待对端完成粘贴。",
+        ? "正在通过蓝牙发送控制与输入报文。"
+        : "正在发送，并等待接收端处理。",
     };
     currentOperation.value = processing;
     lastError.value = "";
@@ -419,9 +439,32 @@ export function useRemoteInput() {
 
     try {
       if (targetRuntime.method === "bluetooth") {
-        await targetRuntime.client.sendTextUnconfirmed(text);
+        await targetRuntime.client.sendTextUnconfirmed(text, {
+          operationId,
+          ...control,
+        });
+        if (
+          operationEpoch === targetOperationEpoch &&
+          currentOperation.value?.state === "processing" &&
+          currentOperation.value.revision === 0
+        ) {
+          const waiting: OperationStatus = {
+            ...processing,
+            revision: 1,
+            stage: "sent",
+            progress: 20,
+            message: "已发送，等待接收端状态通知。",
+          };
+          currentOperation.value = waiting;
+          updateHistory(history, waiting);
+          return true;
+        }
+        return currentOperation.value?.state === "succeeded";
       } else {
-        await targetRuntime.client.sendText(text);
+        await targetRuntime.client.sendText(text, {
+          operationId,
+          ...control,
+        });
       }
       const succeeded: OperationStatus = {
         ...processing,
@@ -429,9 +472,9 @@ export function useRemoteInput() {
         state: "succeeded",
         stage: "done",
         progress: 100,
-        message: targetRuntime.method === "bluetooth"
-          ? "已通过蓝牙发送（接收端处理结果未确认）。"
-          : "对端已完成粘贴。",
+        message: control.paste
+          ? "接收端已完成输入。"
+          : "接收端已复制到剪贴板。",
       };
       if (operationEpoch === targetOperationEpoch) {
         currentOperation.value = succeeded;
@@ -510,6 +553,7 @@ export function useRemoteInput() {
     }
     targetRuntime.infoAbortController?.abort();
     targetRuntime.unsubscribe();
+    targetRuntime.unsubscribeInputStatus();
     void targetRuntime.client.close().catch(() => undefined);
   }
 
@@ -530,6 +574,34 @@ export function useRemoteInput() {
     };
     currentOperation.value = failed;
     updateHistory(history, failed);
+  }
+
+  function applyInputStatus(status: InputStatus): void {
+    const operation = currentOperation.value;
+    if (
+      !operation ||
+      operation.operationId !== status.operationId ||
+      operation.state !== "processing"
+    ) {
+      return;
+    }
+    const next: OperationStatus = {
+      ...operation,
+      revision: operation.revision + 1,
+      state: status.stage === "failed"
+        ? "failed"
+        : status.stage === "succeeded"
+          ? "succeeded"
+          : "processing",
+      stage: status.stage,
+      progress: status.progress,
+      message: status.message,
+    };
+    currentOperation.value = next;
+    updateHistory(history, next);
+    if (next.state === "failed") {
+      lastError.value = next.message;
+    }
   }
 }
 

@@ -603,7 +603,9 @@ export class WebSocketTransport implements Transport {
       generation,
       transferId,
       messageType: messageSnapshot.type,
-      requestId: messageSnapshot.requestId,
+      requestId: "requestId" in messageSnapshot
+        ? messageSnapshot.requestId
+        : null,
       payloadBytes: payloadByteLength,
       chunkCount: chunks.length,
       frameBytes: byteLength,
@@ -1022,7 +1024,7 @@ export class WebSocketTransport implements Transport {
     const messageDetails = isSessionMessage(message)
       ? {
         messageType: message.type,
-        requestId: message.requestId,
+        requestId: "requestId" in message ? message.requestId : null,
       }
       : {
         messageType: "invalid-session-message",

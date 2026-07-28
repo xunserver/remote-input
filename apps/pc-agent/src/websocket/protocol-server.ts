@@ -3,12 +3,16 @@ import {
   createConsoleProtocolTracer,
   Session,
   WebSocketTransport,
-  type JsonValue,
   type ProtocolTraceLevel,
   type TransportState,
 } from "@remote-input/protocol";
+import {
+  inputStatusMethod,
+  parseInputCommand,
+  type InputStatus,
+} from "@remote-input/sdk";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { AcceptText } from "../input/input-service.js";
+import type { AcceptInput } from "../input/input-service.js";
 import type { RuntimeStatusStore } from "../status/runtime-status.js";
 
 export const protocolWebSocketPath = "/ws";
@@ -21,7 +25,7 @@ type RemoteClient = {
 
 export type RemoteWebSocketServerOptions = {
   server: http.Server;
-  acceptText: AcceptText;
+  acceptInput: AcceptInput;
   runtimeStatus: RuntimeStatusStore;
   protocolTraceLevel?: ProtocolTraceLevel;
 };
@@ -85,8 +89,20 @@ export class RemoteWebSocketServer {
     if (!this.clients.has(client)) unsubscribe();
 
     session.registerHandler("sendText", async (payload) => {
-      await this.options.acceptText("websocket", getText(payload));
+      await this.options.acceptInput(
+        "websocket",
+        parseInputCommand(payload),
+        (status) => this.notifyInputStatus(session, status),
+      );
       return null;
+    });
+
+    session.registerNotificationHandler("sendText", async (payload) => {
+      await this.options.acceptInput(
+        "websocket",
+        parseInputCommand(payload),
+        (status) => this.notifyInputStatus(session, status),
+      );
     });
 
     if (transport.state === "idle" || transport.state === "closed") {
@@ -107,6 +123,12 @@ export class RemoteWebSocketServer {
     this.options.runtimeStatus.setWebSocketClients(this.clients.size);
   }
 
+  private notifyInputStatus(session: Session, status: InputStatus): void {
+    void session.notify(inputStatusMethod, status).catch((error: unknown) => {
+      console.error("Failed to notify input status:", error);
+    });
+  }
+
   private async closeInternal(): Promise<void> {
     this.closing = true;
     const webSocketServerClosed = new Promise<void>((resolve, reject) => {
@@ -123,19 +145,4 @@ export class RemoteWebSocketServer {
     });
     await Promise.all([webSocketServerClosed, sessionsClosed]);
   }
-}
-
-function getText(payload: JsonValue): string {
-  if (
-    payload === null
-    || Array.isArray(payload)
-    || typeof payload !== "object"
-    || Object.getPrototypeOf(payload) !== Object.prototype
-    || Object.keys(payload).length !== 1
-    || !Object.hasOwn(payload, "text")
-    || typeof payload.text !== "string"
-  ) {
-    throw new TypeError("sendText payload must be exactly { text: string }.");
-  }
-  return payload.text;
 }

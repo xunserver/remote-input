@@ -10,9 +10,11 @@ import {
 } from "./errors.js";
 import { snapshotJsonValue, type JsonValue } from "./json.js";
 import {
+  isNotificationMessage,
   isRequestMessage,
   isResponseMessage,
   type ErrorResponseMessage,
+  type NotificationMessage,
   type RequestMessage,
   type ResponseMessage,
   type SuccessResponseMessage,
@@ -38,6 +40,15 @@ export type RequestHandler = (
   payload: JsonValue,
   context: RequestContext,
 ) => JsonValue | undefined | Promise<JsonValue | undefined>;
+
+export type NotificationContext = {
+  method: string;
+};
+
+export type NotificationHandler = (
+  payload: JsonValue,
+  context: NotificationContext,
+) => void | Promise<void>;
 
 export interface SessionOptions extends ProtocolRuntimeOptions {
   requestTimeoutMs?: number;
@@ -71,6 +82,11 @@ type HandlerRegistration = {
   token: symbol;
 };
 
+type NotificationHandlerRegistration = {
+  handler: NotificationHandler;
+  token: symbol;
+};
+
 // 投递状态只允许单向推进，避免乱序回调降低已经确认的状态。
 const deliveryRank: Readonly<Record<DeliveryState, number>> = {
   not_sent: 0,
@@ -98,6 +114,8 @@ export class Session implements TransportReceiver {
   readonly #traceLevel: ProtocolTraceLevel;
   readonly #pending = new Map<number, PendingRequest>();
   readonly #handlers = new Map<string, HandlerRegistration>();
+  readonly #notificationHandlers =
+    new Map<string, NotificationHandlerRegistration>();
 
   #nextRequestId = 1;
   #requestIdsExhausted = false;
@@ -201,29 +219,14 @@ export class Session implements TransportReceiver {
     });
   }
 
-  /**
-   * 发送一个不等待 Response 的请求。
-   *
-   * 仅适用于没有下行通道、但业务允许以 Transport.send 完成为成功边界的链路。
-   * 对端仍会把消息当作普通 Request 处理；迟到的 Response 因没有 Pending 记录而被忽略。
-   */
+  /** 发送一个没有 requestId、对端也不会响应的单向通知。 */
   notify(method: string, payload: JsonValue): Promise<void> {
     if (this.#closed) {
       return Promise.reject(this.#sessionClosedError("Session is closed.", "not_sent"));
     }
 
-    if (this.#requestIdsExhausted) {
-      return Promise.reject(
-        this.#sessionClosedError(
-          "Session requestId space is exhausted; create a new Session.",
-          "not_sent",
-        ),
-      );
-    }
-
-    const message: RequestMessage = {
-      type: "request",
-      requestId: this.#allocateRequestId(),
+    const message: NotificationMessage = {
+      type: "notify",
       method,
       payload,
     };
@@ -262,6 +265,32 @@ export class Session implements TransportReceiver {
     };
   }
 
+  registerNotificationHandler(
+    method: string,
+    handler: NotificationHandler,
+  ): () => void {
+    if (this.#closed) {
+      throw this.#sessionClosedError("Session is closed.", "not_sent");
+    }
+    if (typeof method !== "string") {
+      throw new TypeError("method must be a string.");
+    }
+    if (typeof handler !== "function") {
+      throw new TypeError("handler must be a function.");
+    }
+
+    const token = Symbol(method);
+    this.#notificationHandlers.set(method, { handler, token });
+    let unregistered = false;
+    return () => {
+      if (unregistered) return;
+      unregistered = true;
+      if (this.#notificationHandlers.get(method)?.token === token) {
+        this.#notificationHandlers.delete(method);
+      }
+    };
+  }
+
   /**
    * 接收一个已解码的 Transport 消息。此入口刻意保持同步，并确保畸形输入或
    * 调度失败不会向外逃逸到 Transport。
@@ -274,6 +303,11 @@ export class Session implements TransportReceiver {
     try {
       if (isResponseMessage(message)) {
         this.#acceptResponse(message);
+        return;
+      }
+
+      if (isNotificationMessage(message)) {
+        this.#acceptNotification(message);
         return;
       }
 
@@ -353,6 +387,7 @@ export class Session implements TransportReceiver {
       pendingCount: this.#pending.size,
     });
     this.#handlers.clear();
+    this.#notificationHandlers.clear();
     this.#transport.unbind(this);
 
     for (const requestId of [...this.#pending.keys()]) {
@@ -481,6 +516,18 @@ export class Session implements TransportReceiver {
     // 异步启动用户代码，使 accept() 保持同步且不同请求可以并发处理。
     this.#queueMicrotask(() => {
       void this.#runHandler(handler, message.payload, context, peerEpoch);
+    });
+  }
+
+  #acceptNotification(message: NotificationMessage): void {
+    const registration = this.#notificationHandlers.get(message.method);
+    if (registration === undefined) return;
+    const handler = registration.handler;
+    const context: NotificationContext = { method: message.method };
+    this.#queueMicrotask(() => {
+      void Promise.resolve(handler(message.payload, context)).catch((error) => {
+        this.#diagnose("Session notification handler failed.", error);
+      });
     });
   }
 
@@ -726,6 +773,7 @@ export class Session implements TransportReceiver {
       reason: message,
     });
     this.#handlers.clear();
+    this.#notificationHandlers.clear();
     this.#transport.unbind(this);
 
     const pendingAtClose = [...this.#pending.keys()];

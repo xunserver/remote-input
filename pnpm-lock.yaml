@@ -75,6 +75,9 @@ importers:
       '@remote-input/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@remote-input/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@remote-input/web-agent-sdk':
         specifier: workspace:*
         version: link:../../packages/web-agent-sdk
@@ -94,9 +97,6 @@ importers:
       '@remote-input/receiver':
         specifier: workspace:*
         version: link:../receiver
-      '@remote-input/sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
       '@remote-input/web-agent':
         specifier: workspace:*
         version: link:../web-agent
@@ -191,6 +191,9 @@ importers:
       '@remote-input/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@remote-input/sdk':
+        specifier: workspace:*
+        version: link:../sdk
     devDependencies:
       typescript:
         specifier: ^7.0.2
