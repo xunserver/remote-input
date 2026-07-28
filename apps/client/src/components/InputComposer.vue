@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { SendHorizonal } from "@lucide/vue";
+import { SendHorizonal, SlidersHorizontal } from "@lucide/vue";
 import { Button } from "@shadcn/button";
 import {
   Card,
@@ -10,9 +10,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@shadcn/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@shadcn/dialog";
 import { Field, FieldGroup, FieldLabel } from "@shadcn/field";
 import { Spinner } from "@shadcn/spinner";
-import { Switch } from "@shadcn/switch";
 import { Textarea } from "@shadcn/textarea";
 import type { ConnectionState } from "@/types/remote-input";
 import type { InputControl } from "@remote-input/sdk";
@@ -30,7 +39,7 @@ const mode = ref<InputMode>("single");
 const text = ref("");
 const sendInFlight = ref(false);
 const paste = ref(true);
-const restoreClipboard = ref(false);
+const restoreClipboard = ref(true);
 
 const isReady = computed(() => props.connectionState === "ready");
 const isSending = computed(() => props.isBusy || sendInFlight.value);
@@ -75,105 +84,212 @@ function handleKeyDown(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <Card class="gap-0 overflow-hidden py-0 shadow-sm">
-    <CardHeader
-      class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-4 sm:px-5"
-    >
-      <div class="flex min-w-0 flex-col gap-1">
-        <CardTitle class="text-base">发送文字</CardTitle>
-        <CardDescription>
-          {{
-            mode === "single"
-              ? "按 Enter 立即发送"
-              : "支持换行，点击按钮发送"
-          }}
-        </CardDescription>
-      </div>
-      <Field orientation="horizontal" class="w-auto shrink-0 gap-2">
-        <FieldLabel
-          for="multi-line-mode"
-          class="text-sm font-normal text-muted-foreground"
+  <Dialog>
+    <Card class="gap-0 overflow-hidden py-0 shadow-sm">
+      <CardHeader class="gap-4 px-4 py-4 sm:px-5">
+        <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+          <div class="flex min-w-0 flex-col gap-1">
+            <CardTitle class="text-base">发送文字</CardTitle>
+            <CardDescription>
+              {{
+                mode === "single"
+                  ? "按 Enter 立即发送"
+                  : "支持换行，点击按钮发送"
+              }}
+            </CardDescription>
+          </div>
+          <DialogTrigger as-child>
+            <Button
+              variant="outline"
+              size="sm"
+              class="sm:hidden"
+              aria-label="打开发送设置"
+            >
+              <SlidersHorizontal data-icon="inline-start" aria-hidden="true" />
+              设置
+            </Button>
+          </DialogTrigger>
+        </div>
+
+        <fieldset
+          class="hidden gap-2 rounded-lg border bg-muted/30 p-2 sm:grid sm:grid-cols-3"
         >
-          多行
-        </FieldLabel>
-        <Switch
-          id="multi-line-mode"
-          v-model="isMultiLine"
-          aria-label="切换多行输入"
-        />
-      </Field>
-    </CardHeader>
+          <legend class="sr-only">发送控制</legend>
+          <label
+            for="multi-line-mode"
+            class="flex cursor-pointer items-start gap-3 rounded-md bg-background px-3 py-2.5"
+          >
+            <input
+              id="multi-line-mode"
+              v-model="isMultiLine"
+              type="checkbox"
+              class="mt-0.5 size-4 shrink-0 accent-foreground"
+            />
+            <span class="min-w-0">
+              <span class="block text-sm font-medium">多行输入</span>
+              <span class="mt-0.5 block text-xs text-muted-foreground">
+                Enter 换行，点击按钮发送
+              </span>
+            </span>
+          </label>
+          <label
+            for="paste-after-copy"
+            class="flex cursor-pointer items-start gap-3 rounded-md bg-background px-3 py-2.5"
+          >
+            <input
+              id="paste-after-copy"
+              v-model="paste"
+              type="checkbox"
+              class="mt-0.5 size-4 shrink-0 accent-foreground"
+            />
+            <span class="min-w-0">
+              <span class="block text-sm font-medium">自动粘贴</span>
+              <span class="mt-0.5 block text-xs text-muted-foreground">
+                复制后立即在接收端粘贴
+              </span>
+            </span>
+          </label>
+          <label
+            for="restore-clipboard"
+            class="flex cursor-pointer items-start gap-3 rounded-md bg-background px-3 py-2.5"
+          >
+            <input
+              id="restore-clipboard"
+              v-model="restoreClipboard"
+              type="checkbox"
+              class="mt-0.5 size-4 shrink-0 accent-foreground"
+            />
+            <span class="min-w-0">
+              <span class="block text-sm font-medium">保留原剪贴板</span>
+              <span class="mt-0.5 block text-xs text-muted-foreground">
+                输入完成后恢复原内容
+              </span>
+            </span>
+          </label>
+        </fieldset>
+      </CardHeader>
 
-    <CardContent class="px-4 pb-4 sm:px-5">
-      <FieldGroup>
-        <Field>
-          <FieldLabel for="remote-input-text" class="sr-only">
-            发送文字
-          </FieldLabel>
-          <Textarea
-            id="remote-input-text"
-            v-model="text"
-            autofocus
-            :enterkeyhint="mode === 'single' ? 'send' : 'enter'"
-            :placeholder="
-              isReady ? '在这里输入或粘贴文字…' : '连接对端后即可输入'
-            "
-            :disabled="!isReady || isSending"
-            class="min-h-44 resize-none border-0 bg-muted/60 p-4 text-base shadow-none focus-visible:bg-background focus-visible:ring-2 sm:min-h-56"
-            @keydown="handleKeyDown"
-          />
-        </Field>
-      </FieldGroup>
-      <div class="mt-4 grid gap-3 rounded-lg border bg-background p-3 sm:grid-cols-2">
-        <Field orientation="horizontal" class="justify-between gap-3">
-          <div>
-            <FieldLabel for="paste-after-copy">自动粘贴</FieldLabel>
-            <p class="text-xs text-muted-foreground">关闭后只复制到接收端剪贴板</p>
-          </div>
-          <Switch
-            id="paste-after-copy"
-            v-model="paste"
-            aria-label="复制后自动粘贴"
-          />
-        </Field>
-        <Field orientation="horizontal" class="justify-between gap-3">
-          <div>
-            <FieldLabel for="restore-clipboard">恢复剪贴板</FieldLabel>
-            <p class="text-xs text-muted-foreground">输入完成后恢复接收端原内容</p>
-          </div>
-          <Switch
-            id="restore-clipboard"
-            v-model="restoreClipboard"
-            aria-label="输入后恢复原剪贴板"
-          />
-        </Field>
-      </div>
-    </CardContent>
+      <CardContent class="px-4 pb-4 sm:px-5">
+        <FieldGroup>
+          <Field>
+            <FieldLabel for="remote-input-text" class="sr-only">
+              发送文字
+            </FieldLabel>
+            <Textarea
+              id="remote-input-text"
+              v-model="text"
+              autofocus
+              :enterkeyhint="mode === 'single' ? 'send' : 'enter'"
+              :placeholder="
+                isReady ? '在这里输入或粘贴文字…' : '连接对端后即可输入'
+              "
+              :disabled="!isReady || isSending"
+              class="min-h-44 resize-none border-0 bg-muted/60 p-4 text-base shadow-none focus-visible:bg-background focus-visible:ring-2 sm:min-h-56"
+              @keydown="handleKeyDown"
+            />
+          </Field>
+        </FieldGroup>
+      </CardContent>
 
-    <CardFooter
-      class="flex-col gap-3 border-t bg-muted/20 px-4 py-3 sm:flex-row sm:justify-between sm:px-5"
-    >
-      <p class="w-full text-xs text-muted-foreground sm:w-auto">
-        {{
-          isReady
-            ? `${text.length.toLocaleString()} 个字符`
-            : "请先完成对端连接"
-        }}
-      </p>
-      <Button
-        size="lg"
-        class="h-12 w-full sm:w-auto sm:min-w-32"
-        :disabled="!canSend"
-        @click="send"
+      <CardFooter
+        class="flex-col gap-3 border-t bg-muted/20 px-4 py-3 sm:flex-row sm:justify-between sm:px-5"
       >
-        <Spinner v-if="isSending" data-icon="inline-start" />
-        <SendHorizonal
-          v-else
-          data-icon="inline-start"
-          aria-hidden="true"
-        />
-        {{ isSending ? "发送中" : "发送" }}
-      </Button>
-    </CardFooter>
-  </Card>
+        <p class="w-full text-xs text-muted-foreground sm:w-auto">
+          {{
+            isReady
+              ? `${text.length.toLocaleString()} 个字符`
+              : "请先完成对端连接"
+          }}
+        </p>
+        <Button
+          size="lg"
+          class="h-12 w-full sm:w-auto sm:min-w-32"
+          :disabled="!canSend"
+          @click="send"
+        >
+          <Spinner v-if="isSending" data-icon="inline-start" />
+          <SendHorizonal
+            v-else
+            data-icon="inline-start"
+            aria-hidden="true"
+          />
+          {{ isSending ? "发送中" : "发送" }}
+        </Button>
+      </CardFooter>
+    </Card>
+
+    <DialogContent
+      :show-close-button="false"
+      class="top-auto bottom-0 max-w-none translate-y-0 gap-5 rounded-b-none rounded-t-2xl border-b-0 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:hidden"
+    >
+      <DialogHeader class="text-left">
+        <div class="mx-auto mb-1 h-1 w-10 rounded-full bg-border" />
+        <DialogTitle>发送设置</DialogTitle>
+        <DialogDescription>
+          调整输入方式以及接收端的剪贴板行为。
+        </DialogDescription>
+      </DialogHeader>
+
+      <fieldset class="grid gap-2">
+        <legend class="sr-only">发送控制</legend>
+        <label
+          for="multi-line-mode-mobile"
+          class="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3"
+        >
+          <input
+            id="multi-line-mode-mobile"
+            v-model="isMultiLine"
+            type="checkbox"
+            class="mt-0.5 size-4 shrink-0 accent-foreground"
+          />
+          <span>
+            <span class="block text-sm font-medium">多行输入</span>
+            <span class="mt-0.5 block text-xs text-muted-foreground">
+              Enter 换行，点击按钮发送
+            </span>
+          </span>
+        </label>
+        <label
+          for="paste-after-copy-mobile"
+          class="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3"
+        >
+          <input
+            id="paste-after-copy-mobile"
+            v-model="paste"
+            type="checkbox"
+            class="mt-0.5 size-4 shrink-0 accent-foreground"
+          />
+          <span>
+            <span class="block text-sm font-medium">自动粘贴</span>
+            <span class="mt-0.5 block text-xs text-muted-foreground">
+              复制后立即在接收端粘贴
+            </span>
+          </span>
+        </label>
+        <label
+          for="restore-clipboard-mobile"
+          class="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3"
+        >
+          <input
+            id="restore-clipboard-mobile"
+            v-model="restoreClipboard"
+            type="checkbox"
+            class="mt-0.5 size-4 shrink-0 accent-foreground"
+          />
+          <span>
+            <span class="block text-sm font-medium">保留原剪贴板</span>
+            <span class="mt-0.5 block text-xs text-muted-foreground">
+              输入完成后恢复原内容
+            </span>
+          </span>
+        </label>
+      </fieldset>
+
+      <DialogFooter class="grid grid-cols-1">
+        <DialogClose as-child>
+          <Button class="h-11 w-full">完成</Button>
+        </DialogClose>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
