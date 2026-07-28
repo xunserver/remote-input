@@ -50,6 +50,12 @@ jobs:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
         run: pnpm turbo run build --filter=@remote-input/client --filter=@remote-input/web-agent
 
+      - name: Verify bookmarklet loader
+        run: |
+          test -s apps/client/dist/bookmarklet.js
+          node --check apps/client/dist/bookmarklet.js
+          cmp apps/client/public/bookmarklet.js apps/client/dist/bookmarklet.js
+
       - name: Assemble GitHub Pages routes
         run: |
           mkdir -p apps/client/dist/webhid

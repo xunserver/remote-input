@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BookmarkletInstaller from "@/components/BookmarkletInstaller.vue";
 import ConnectionDialog from "@/components/ConnectionDialog.vue";
 import ConnectionStatus from "@/components/ConnectionStatus.vue";
 import InputComposer from "@/components/InputComposer.vue";
@@ -64,6 +65,7 @@ const {
           :on-clear="clearHistory"
         />
       </div>
+      <BookmarkletInstaller />
     </section>
 
     <ConnectionDialog

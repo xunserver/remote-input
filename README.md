@@ -20,6 +20,10 @@ ESP32-S3 USB HID ─┘             │
 - `/ws`：V1 Session WebSocket 协议入口。
 - `/events`：接收看板的 SSE 快照和实时事件。
 
+发送端页面底部提供“快速发送选中文本”书签脚本。将按钮拖到浏览器书签栏后，在任意
+网页选中文字并点击书签，会按需加载远端脚本并注入一个隔离的悬浮发送窗。悬浮窗复用
+发送端域名下保存的 WebSocket 配置，首次使用前需先在完整发送页连接一次。
+
 PC Agent 只在内存保存最近 100 条消息，重启后清空。发送端收到成功响应时，对应输入已经
 完成配置的处理，而不只是进入队列。
 
@@ -71,7 +75,35 @@ WebHID 接收页，把静态文件发布到专用的 `gh-pages` 分支。Pages �
 `gh-pages` 分支的根目录；日常开发代码只保留在 `main`。
 
 - `https://xunserver.github.io/remote-input/`：WebSocket/Web Bluetooth 发送端。
+- `https://xunserver.github.io/remote-input/bookmarklet.js`：书签按需加载的稳定入口。
 - `https://xunserver.github.io/remote-input/webhid/`：独立 WebHID 接收页。
+
+### 书签脚本加载与降级
+
+书签栏中只保存轻量 `javascript:` 启动器，不内嵌 Vue、SDK 或协议代码。每次点击时：
+
+1. 启动器从当前网页读取普通文本选区，或 `input` / `textarea` 的选区。
+2. 启动器用时间戳绕过缓存，下载 Pages 上稳定地址的 `bookmarklet.js`。
+3. loader 使用 Shadow DOM 创建悬浮层，并在 iframe 中加载完整发送端；Vite 的哈希
+   JS/CSS 资源仍可长期缓存。
+4. 选中文字只通过限定目标 origin 的 `postMessage` 传入 iframe，不写入请求 URL。
+
+兼容与降级顺序：
+
+- loader 已存在时直接复用，不重复下载或注册事件；重复点击只更新选中文字。
+- iframe 被页面 `frame-src`、网络或其他策略阻止时，5 秒后显示“独立小窗”按钮；用户
+  点击后以新的用户手势打开发送页，再通过 `postMessage` 传入文字。
+- loader 自身被严格 `script-src` CSP 阻止时，启动器直接尝试打开独立小窗，并把文字
+  放在 URL fragment 中作为最后降级。fragment 不会随 HTTP 请求发送，发送页读取后会
+  立即从地址栏和历史项中清除。
+- 弹窗也被阻止时显示明确提示，用户可允许当前网站打开弹窗或直接访问完整发送页。
+
+Pages 构建把 `apps/client/public/bookmarklet.js` 原样发布到稳定地址；完整应用资源继续
+由 Vite 生成内容哈希文件名。因此 loader 的兼容修复会自动应用到已安装书签，同时大型
+资源仍能命中浏览器缓存。
+
+在 HTTPS 网页中使用时，Pages、loader 和 iframe 都是 HTTPS，不会形成混合内容。
+WebSocket 接收端也必须提供 `wss://`；浏览器不会允许 HTTPS 发送页连接明文 `ws://`。
 
 Web Bluetooth 只能在安全上下文中使用，选择设备还必须由用户点击触发。GitHub Pages
 提供浏览器信任的 HTTPS，WebHID 页面可直接访问浏览器已授权的兼容设备，不依赖目标
