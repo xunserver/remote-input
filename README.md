@@ -64,17 +64,21 @@ pnpm dev:receiver
 pnpm dev:web-agent
 ```
 
-### GitHub Pages 蓝牙发送端
+### GitHub Pages Web 应用
 
-仓库内的 `deploy-client-pages.yml` 会在 `main` 分支的发送端代码变化后构建
-`apps/client`，把静态文件发布到专用的 `gh-pages` 分支，并由该分支部署到
-`https://xunserver.github.io/remote-input/`。Pages 的发布源应设为 `gh-pages` 分支的
-根目录；日常开发代码只保留在 `main`。
+仓库内的 `deploy-client-pages.yml` 会在 `main` 分支的相关前端代码变化后构建发送端和
+WebHID 接收页，把静态文件发布到专用的 `gh-pages` 分支。Pages 的发布源应设为
+`gh-pages` 分支的根目录；日常开发代码只保留在 `main`。
+
+- `https://xunserver.github.io/remote-input/`：WebSocket/Web Bluetooth 发送端。
+- `https://xunserver.github.io/remote-input/webhid/`：独立 WebHID 接收页。
 
 Web Bluetooth 只能在安全上下文中使用，选择设备还必须由用户点击触发。GitHub Pages
-提供浏览器信任的 HTTPS；普通自签名证书只有在手机已安装并信任对应根证书时才可用，
-不建议将“忽略证书警告”作为部署方案。HTTPS 不会补齐浏览器缺失的 Web Bluetooth
-实现，手机端建议使用 Android Chrome；Safari/WebKit 当前没有实现 Web Bluetooth。
+提供浏览器信任的 HTTPS，WebHID 页面可直接访问浏览器已授权的兼容设备，不依赖目标
+电脑运行 PC Agent。普通自签名证书只有在设备已安装并信任对应根证书时才可用，不建议
+将“忽略证书警告”作为部署方案。HTTPS 不会补齐浏览器缺失的 Web Bluetooth 或 WebHID
+实现；Web Bluetooth 手机端建议使用 Android Chrome，WebHID 使用桌面版 Chrome 或
+Edge；Safari/WebKit 当前没有实现这些 API。
 
 仓库和 Pages 站点都是公开的。发送端静态页面不包含服务端凭据，但浏览器本地保存的
 输入历史不会随页面一起发布。

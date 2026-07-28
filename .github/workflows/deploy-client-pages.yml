@@ -1,4 +1,4 @@
-name: Deploy sender to GitHub Pages branch
+name: Deploy web apps to GitHub Pages branch
 
 on:
   push:
@@ -6,9 +6,11 @@ on:
     paths:
       - ".github/workflows/deploy-client-pages.yml"
       - "apps/client/**"
+      - "apps/web-agent/**"
       - "packages/device-protocol/**"
       - "packages/protocol/**"
       - "packages/sdk/**"
+      - "packages/web-agent-sdk/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -43,10 +45,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build sender
+      - name: Build GitHub Pages apps
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
-        run: pnpm turbo run build --filter=@remote-input/client
+        run: pnpm turbo run build --filter=@remote-input/client --filter=@remote-input/web-agent
+
+      - name: Assemble GitHub Pages routes
+        run: |
+          mkdir -p apps/client/dist/webhid
+          cp -R apps/web-agent/dist/. apps/client/dist/webhid/
 
       - name: Publish gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
