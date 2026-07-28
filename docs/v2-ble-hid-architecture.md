@@ -148,7 +148,21 @@ swiftc -framework CoreBluetooth -framework Foundation \
 /tmp/remote-input-ble-uplink-sender 'WebHID 上行测试：中文与 emoji 🙂'
 ```
 
+启动 PC Agent 后，可用双向诊断验证 BLE、USB HID 和状态通知的完整往返链路：
+
+```bash
+swiftc -warnings-as-errors -framework CoreBluetooth -framework Foundation \
+  firmware/esp32s3/tests/ble_roundtrip_sender.swift \
+  -o /tmp/remote-input-ble-roundtrip
+/tmp/remote-input-ble-roundtrip '双向测试：中文与 emoji 🙂'
+```
+
+加上 `--paste` 可覆盖正常模式下复制、粘贴、恢复剪贴板产生的完整状态突发。
+
 macOS IOKit 的 `InputReportCount` 可用于确认 ESP 实际发出了 64 字节 vendor HID report。
+双向固件应同时显示 `MaxInputReportSize = 64` 和 `MaxOutputReportSize = 64`。如果
+`MaxOutputReportSize = 0`，说明电脑仍识别成旧的 input-only HID 描述符；请确认已刷入
+`bcdDevice = 0x0202` 或更高版本的固件，并重新插拔原生 USB 接口。
 
 ## 当前可靠性边界
 

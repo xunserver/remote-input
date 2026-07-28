@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build --config vite.config.ts",
     "check": "vue-tsc --noEmit -p tsconfig.json",
-    "dev": "vite --config vite.config.ts --host 0.0.0.0"
+    "dev": "vite --config vite.config.ts --host 0.0.0.0",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {
     "@lucide/vue": "^1.25.0",

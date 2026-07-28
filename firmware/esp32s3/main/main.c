@@ -132,7 +132,10 @@ static const tusb_desc_device_t device_descriptor = {
     .bLength = sizeof(tusb_desc_device_t), .bDescriptorType = TUSB_DESC_DEVICE,
     .bcdUSB = 0x0200, .bDeviceClass = 0, .bDeviceSubClass = 0, .bDeviceProtocol = 0,
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE, .idVendor = USB_VID, .idProduct = USB_PID,
-    .bcdDevice = 0x0201, .iManufacturer = 1, .iProduct = 2, .iSerialNumber = 3, .bNumConfigurations = 1,
+    // 0x0202 invalidates host-side caches created by the earlier input-only
+    // report descriptor. Without this bump, macOS can keep advertising
+    // MaxOutputReportSize = 0 after flashing the bidirectional firmware.
+    .bcdDevice = 0x0202, .iManufacturer = 1, .iProduct = 2, .iSerialNumber = 3, .bNumConfigurations = 1,
 };
 static const char *string_descriptors[] = {
     (const char[]){0x09,0x04},
@@ -170,7 +173,10 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
         .connection_generation = active_connection_generation,
     };
     memcpy(item.data, buffer, frame_length);
-    xQueueSend(notify_queue, &item, 0);
+    // inputStatus updates arrive as a short burst of multi-frame HID reports.
+    // Backpressure the host write until BLE drains the queue; dropping a frame
+    // here leaves the browser reassembler waiting forever for that transfer.
+    xQueueSend(notify_queue, &item, portMAX_DELAY);
 }
 
 static bool send_relay_report(const uint8_t *frame, uint16_t length) {

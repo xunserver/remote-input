@@ -298,36 +298,78 @@ p {
   background: #245449;
 }
 
-.text-surface {
-  min-height: 390px;
+.message-list {
+  display: grid;
+  min-height: 240px;
   max-height: calc(100svh - 310px);
   overflow: auto;
+  margin: 0;
+  padding: 16px;
+  gap: 12px;
+  list-style: none;
   background: #fbfcfb;
 }
 
-.text-surface pre {
-  min-height: 390px;
+.message-card {
+  padding: 14px 16px 16px;
+  border: 1px solid #dfe6e3;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.message-meta time {
+  color: #77817d;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.message-copy-button {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid #dce3e0;
+  border-radius: 7px;
+  background: #fff;
+  color: #485650;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.message-copy-button:hover {
+  border-color: #c9d2cf;
+  background: #f5f8f7;
+}
+
+.message-card pre {
   margin: 0;
-  padding: 24px;
   color: #1b2521;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
-  font-size: 16px;
-  line-height: 1.75;
+  font-size: 15px;
+  line-height: 1.65;
   letter-spacing: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
-.text-surface.empty {
-  display: grid;
-  place-items: center;
-}
-
 .empty-state {
   display: flex;
+  min-height: 390px;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   color: #929b98;
   font-size: 13px;
@@ -381,17 +423,20 @@ p {
     font-size: 0;
   }
 
-  .text-surface,
-  .text-surface pre {
+  .message-list,
+  .empty-state {
     min-height: calc(100svh - 260px);
   }
 
-  .text-surface {
+  .message-list {
     max-height: none;
   }
 
-  .text-surface pre {
-    padding: 18px;
+  .message-card {
+    padding: 12px 13px 14px;
+  }
+
+  .message-card pre {
     font-size: 15px;
   }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   Check,
   CircleAlert,
@@ -16,16 +16,25 @@ import {
   type HidDeviceLike,
   type WebHidAgentState,
 } from "@remote-input/web-agent-sdk";
+import {
+  createWebHidHistoryMessage,
+  loadWebHidHistory,
+  maxWebHidHistoryItems,
+  saveWebHidHistory,
+  type WebHidHistoryMessage,
+} from "./history";
 
 const state = ref<WebHidAgentState>("idle");
 const deviceName = ref("");
-const messages = ref<string[]>([]);
+const messages = ref<WebHidHistoryMessage[]>(loadWebHidHistory());
 const error = ref("");
-const copied = ref(false);
+const copiedId = ref("");
 let copyTimer: ReturnType<typeof setTimeout> | undefined;
 
 const support = getWebHidSupport();
-const receivedText = computed(() => messages.value.join("\n"));
+const receivedText = computed(() =>
+  messages.value.map((message) => message.text).join("\n"),
+);
 const isConnected = computed(() => state.value === "connected");
 const isConnecting = computed(() => state.value === "connecting");
 const statusLabel = computed(() => {
@@ -40,10 +49,23 @@ const textSummary = computed(() =>
     : `${messages.value.length} 条 · ${receivedText.value.length.toLocaleString()} 个字符`,
 );
 
+watch(
+  messages,
+  (value) => {
+    if (!saveWebHidHistory(value)) {
+      error.value = "历史记录无法保存到浏览器本地存储。";
+    }
+  },
+  { flush: "sync" },
+);
+
 const agent = new WebHidAgent({
   onText(command) {
-    messages.value = [...messages.value, command.text];
     error.value = "";
+    messages.value = [
+      ...messages.value,
+      createWebHidHistoryMessage(command.text),
+    ].slice(-maxWebHidHistoryItems);
   },
   onError(cause) {
     error.value = formatError(cause);
@@ -68,14 +90,22 @@ async function toggleConnection(): Promise<void> {
   }
 }
 
-async function copyText(): Promise<void> {
+async function copyMessage(message: WebHidHistoryMessage): Promise<void> {
+  await copyText(message.text, message.id);
+}
+
+async function copyAll(): Promise<void> {
   if (!receivedText.value) return;
+  await copyText(receivedText.value, "all");
+}
+
+async function copyText(text: string, id: string): Promise<void> {
   try {
-    await navigator.clipboard.writeText(receivedText.value);
-    copied.value = true;
+    await navigator.clipboard.writeText(text);
+    copiedId.value = id;
     if (copyTimer) clearTimeout(copyTimer);
     copyTimer = setTimeout(() => {
-      copied.value = false;
+      copiedId.value = "";
     }, 1600);
   } catch (cause) {
     error.value = formatError(cause);
@@ -84,7 +114,7 @@ async function copyText(): Promise<void> {
 
 function clearText(): void {
   messages.value = [];
-  copied.value = false;
+  copiedId.value = "";
 }
 
 onMounted(() => {
@@ -111,6 +141,19 @@ function formatError(cause: unknown): string {
 
 function connectionTitle(device: HidDeviceLike | null): string {
   return device?.productName || deviceName.value || "Remote Input HID Relay";
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(date);
 }
 </script>
 
@@ -180,22 +223,51 @@ function connectionTitle(device: HidDeviceLike | null): string {
             class="copy-button"
             type="button"
             :disabled="messages.length === 0"
-            @click="copyText"
+            @click="copyAll"
           >
-            <Check v-if="copied" :size="18" aria-hidden="true" />
+            <Check v-if="copiedId === 'all'" :size="18" aria-hidden="true" />
             <Copy v-else :size="18" aria-hidden="true" />
-            {{ copied ? "已复制" : "复制全部" }}
+            {{ copiedId === "all" ? "已复制" : "复制全部" }}
           </button>
         </div>
       </div>
 
-      <div class="text-surface" :class="{ empty: !receivedText }">
-        <pre v-if="receivedText">{{ receivedText }}</pre>
-        <div v-else class="empty-state">
-          <FileText :size="30" stroke-width="1.5" aria-hidden="true" />
-          <span>尚未收到文字</span>
-        </div>
+      <div v-if="messages.length === 0" class="empty-state">
+        <FileText :size="30" stroke-width="1.5" aria-hidden="true" />
+        <span>尚未收到文字</span>
       </div>
+
+      <ol v-else class="message-list">
+        <li
+          v-for="message in messages"
+          :key="message.id"
+          class="message-card"
+        >
+          <div class="message-meta">
+            <time
+              :datetime="message.receivedAt"
+              :title="new Date(message.receivedAt).toLocaleString('zh-CN')"
+            >
+              {{ formatTime(message.receivedAt) }}
+            </time>
+            <button
+              class="message-copy-button"
+              type="button"
+              :aria-label="`复制 ${formatTime(message.receivedAt)} 的消息`"
+              @click="copyMessage(message)"
+            >
+              <Check
+                v-if="copiedId === message.id"
+                :size="16"
+                aria-hidden="true"
+              />
+              <Copy v-else :size="16" aria-hidden="true" />
+              {{ copiedId === message.id ? "已复制" : "复制" }}
+            </button>
+          </div>
+          <pre>{{ message.text }}</pre>
+        </li>
+      </ol>
     </section>
   </main>
 </template>
