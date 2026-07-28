@@ -1,22 +1,14 @@
 import {
-  HID_PAYLOAD_BYTES,
-  HID_REPORT_BYTES,
-  HID_REPORT_ID,
+  KeyboardReportDecoder,
   RelayReassembler,
-  decodeRelayFrame,
-  encodeRelayFrame,
-  splitRelayMessage,
 } from "@remote-copy/device-protocol";
 import {
   isRequestMessage,
-  type ErrorResponseMessage,
   type RequestMessage,
-  type SuccessResponseMessage,
 } from "@remote-copy/protocol";
 
 export interface HidChannel {
   onData(listener: (report: Uint8Array) => void): (() => void) | void;
-  write(report: Uint8Array): Promise<void> | void;
 }
 
 export interface ReceivedTextContext {
@@ -31,8 +23,8 @@ export type TextProcessor = (
 
 export class RelayAgent {
   readonly #reassembler = new RelayReassembler();
+  readonly #keyboardDecoder = new KeyboardReportDecoder();
   readonly #unsubscribe: () => void;
-  #responseTransferId = randomTransferId();
   #queue = Promise.resolve();
   #closed = false;
 
@@ -50,17 +42,14 @@ export class RelayAgent {
     this.#closed = true;
     this.#unsubscribe();
     this.#reassembler.reset();
+    this.#keyboardDecoder.reset();
   }
 
   private acceptReport(report: Uint8Array): void {
     if (this.#closed) return;
     try {
-      const offset =
-        report.byteLength === HID_REPORT_BYTES + 1 &&
-        report[0] === HID_REPORT_ID
-          ? 1
-          : 0;
-      const frame = decodeRelayFrame(report.subarray(offset));
+      const frame = this.#keyboardDecoder.accept(report);
+      if (!frame) return;
       const complete = this.#reassembler.accept(frame);
       if (!complete) return;
       const message: unknown = JSON.parse(
@@ -81,43 +70,8 @@ export class RelayAgent {
     request: RequestMessage,
     transferId: number,
   ): Promise<void> {
-    let response: SuccessResponseMessage | ErrorResponseMessage;
-    try {
-      const text = readSendText(request);
-      await this.processText(text, { requestId: request.requestId, transferId });
-      response = {
-        type: "response",
-        requestId: request.requestId,
-        ok: true,
-        data: { pasted: true },
-      };
-    } catch (error) {
-      response = {
-        type: "response",
-        requestId: request.requestId,
-        ok: false,
-        error: {
-          code: "AGENT_INPUT_FAILED",
-          message:
-            error instanceof Error ? error.message : "Agent input failed.",
-        },
-      };
-    }
-    await this.send(response);
-  }
-
-  private async send(
-    message: SuccessResponseMessage | ErrorResponseMessage,
-  ): Promise<void> {
-    const bytes = new TextEncoder().encode(JSON.stringify(message));
-    const id = this.#responseTransferId;
-    this.#responseTransferId = id === 0xffffffff ? 1 : id + 1;
-    for (const frame of splitRelayMessage(id, bytes, HID_PAYLOAD_BYTES)) {
-      const encoded = encodeRelayFrame(frame);
-      const report = new Uint8Array(HID_REPORT_BYTES);
-      report.set(encoded);
-      await this.hid.write(report);
-    }
+    const text = readSendText(request);
+    await this.processText(text, { requestId: request.requestId, transferId });
   }
 }
 
@@ -134,10 +88,4 @@ function readSendText(request: RequestMessage): string {
     );
   }
   return request.payload.text;
-}
-
-function randomTransferId(): number {
-  const values = new Uint32Array(1);
-  globalThis.crypto?.getRandomValues?.(values);
-  return values[0] || Math.floor(Math.random() * 0xffffffff) + 1;
 }

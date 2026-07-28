@@ -1,4 +1,8 @@
 import http from "node:http";
+import {
+  KEYBOARD_USAGE,
+  KEYBOARD_USAGE_PAGE,
+} from "@remote-copy/device-protocol";
 import { HID, devicesAsync, type Device } from "node-hid";
 import {
   runAgentRuntime,
@@ -100,7 +104,10 @@ function createHidConnector(
         await devicesAsync(vendorId, productId),
       );
       if (!descriptor?.path) return null;
-      const device = new HID(descriptor.path);
+      // macOS never permits a normal process to seize a standard keyboard.
+      // Input Monitoring authorization plus a non-exclusive IOHID open lets
+      // the agent observe reports while the OS keeps owning the keyboard.
+      const device = new HID(descriptor.path, { nonExclusive: true });
       const channel: ReconnectableHidChannel = {
         deviceName: descriptor.product ?? "Remote Copy ESP32-S3",
         onData(listener) {
@@ -110,9 +117,6 @@ function createHidConnector(
         },
         onError(listener) {
           device.once("error", listener);
-        },
-        write(report) {
-          device.write([0, ...report]);
         },
         close() {
           try {
@@ -128,8 +132,11 @@ function createHidConnector(
 }
 
 export function selectRelayInterface(devices: Device[]): Device | undefined {
-  return devices.find((device) => device.usagePage === 0xff00 && device.path)
-    ?? devices.find((device) => Boolean(device.path));
+  return devices.find((device) =>
+    device.usagePage === KEYBOARD_USAGE_PAGE
+    && device.usage === KEYBOARD_USAGE
+    && device.path
+  );
 }
 
 function closeHttpServer(serverToClose: http.Server): Promise<void> {

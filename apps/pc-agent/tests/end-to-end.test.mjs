@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HID_REPORT_BYTES } from "@remote-copy/device-protocol";
+import {
+  KeyboardReportEncoder,
+  decodeRelayFrame,
+} from "@remote-copy/device-protocol";
 import {
   REMOTE_COPY_BLE_WRITE,
   WebBluetoothTransport,
@@ -22,24 +25,22 @@ class NotificationCharacteristic {
 
 class SimulatedEspRelay {
   hidDataListener = () => {};
+  keyboardEncoder = new KeyboardReportEncoder();
   notify = new NotificationCharacteristic();
   write = {
     startNotifications: async () => this.write,
     addEventListener() {},
     removeEventListener() {},
     writeValueWithResponse: async (value) => {
-      const frame = new Uint8Array(value);
-      const hidReport = new Uint8Array(HID_REPORT_BYTES);
-      hidReport.set(frame);
-      this.hidDataListener(hidReport);
+      const frame = decodeRelayFrame(new Uint8Array(value));
+      for (const report of this.keyboardEncoder.encode(frame)) {
+        this.hidDataListener(report);
+      }
     },
   };
   hid = {
     onData: (listener) => { this.hidDataListener = listener; return () => { this.hidDataListener = () => {}; }; },
-    write: (wireReport) => {
-      const payloadLength = wireReport[12] | (wireReport[13] << 8);
-      this.notify.emit(wireReport.slice(0, 16 + payloadLength));
-    },
+    write: () => { throw new Error("keyboard downlink is disabled"); },
     close() {},
   };
   device = {
@@ -57,7 +58,7 @@ class SimulatedEspRelay {
   };
 }
 
-test("Client text completes only after the BLE/HID agent processing round trip", async () => {
+test("BLE/HID uplink processes UTF-8 while the client receives no downlink acknowledgement", async () => {
   const esp = new SimulatedEspRelay();
   const processed = [];
   const agent = new RelayAgent(esp.hid, async (text) => {
@@ -65,14 +66,12 @@ test("Client text completes only after the BLE/HID agent processing round trip",
     processed.push(text);
   }, (error) => { throw error; });
   const transport = new WebBluetoothTransport(async () => esp.device);
-  const client = new Client({ transport, requestTimeoutMs: 1_000 });
+  const client = new Client({ transport, requestTimeoutMs: 50 });
 
   await transport.connect();
   const text = "网页 -> 蓝牙 -> ESP32-S3 -> HID -> agent 🙂".repeat(20);
-  const result = await client.sendText(text);
-
+  await assert.rejects(client.sendText(text), /timed out/i);
   assert.deepEqual(processed, [text]);
-  assert.deepEqual(result, { pasted: true });
   await client.close();
   agent.close();
 });

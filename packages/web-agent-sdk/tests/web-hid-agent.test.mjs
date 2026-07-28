@@ -2,10 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   HID_PAYLOAD_BYTES,
-  HID_REPORT_BYTES,
-  RelayReassembler,
-  decodeRelayFrame,
-  encodeRelayFrame,
+  KeyboardReportEncoder,
   splitRelayMessage,
 } from "@remote-copy/device-protocol";
 import {
@@ -18,7 +15,7 @@ import {
 class FakeDevice {
   opened = false;
   productId = REMOTE_COPY_USB_PRODUCT_ID;
-  productName = "Remote Copy HID Relay";
+  productName = "USB Keyboard";
   vendorId = REMOTE_COPY_USB_VENDOR_ID;
   listeners = new Set();
   writes = [];
@@ -57,6 +54,7 @@ class FakeHidNavigator {
 }
 
 function emitRequest(device, text, transferId = 17) {
+  const encoder = new KeyboardReportEncoder();
   const request = new TextEncoder().encode(JSON.stringify({
     type: "request",
     requestId: 9,
@@ -64,13 +62,11 @@ function emitRequest(device, text, transferId = 17) {
     payload: { text },
   }));
   for (const frame of splitRelayMessage(transferId, request, HID_PAYLOAD_BYTES)) {
-    const report = new Uint8Array(HID_REPORT_BYTES);
-    report.set(encodeRelayFrame(frame));
-    device.emit(report);
+    for (const report of encoder.encode(frame)) device.emit(report);
   }
 }
 
-test("WebHidAgent receives UTF-8 text and writes the Session response", async () => {
+test("WebHidAgent receives UTF-8 text without a keyboard downlink", async () => {
   const device = new FakeDevice();
   const hid = new FakeHidNavigator();
   hid.requested = [device];
@@ -87,8 +83,8 @@ test("WebHidAgent receives UTF-8 text and writes the Session response", async ()
   assert.deepEqual(hid.requestOptions.filters, [{
     vendorId: REMOTE_COPY_USB_VENDOR_ID,
     productId: REMOTE_COPY_USB_PRODUCT_ID,
-    usagePage: 0xff00,
-    usage: 1,
+    usagePage: 0x01,
+    usage: 0x06,
   }]);
 
   emitRequest(device, "网页接收中文和 emoji 🙂".repeat(8));
@@ -98,17 +94,7 @@ test("WebHidAgent receives UTF-8 text and writes the Session response", async ()
     context: { requestId: 9, transferId: 17 },
   }]);
 
-  const reassembler = new RelayReassembler();
-  let response;
-  for (const report of device.writes) {
-    response = reassembler.accept(decodeRelayFrame(report)) ?? response;
-  }
-  assert.deepEqual(JSON.parse(new TextDecoder().decode(response)), {
-    type: "response",
-    requestId: 9,
-    ok: true,
-    data: { pasted: true },
-  });
+  assert.deepEqual(device.writes, []);
   assert.deepEqual(states, ["connecting", "connected"]);
   await agent.close();
   assert.equal(device.opened, false);

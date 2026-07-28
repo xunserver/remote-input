@@ -1,9 +1,13 @@
 import { RelayAgent, type HidChannel, type TextProcessor } from "./relay-agent.js";
+import {
+  KEYBOARD_USAGE,
+  KEYBOARD_USAGE_PAGE,
+} from "@remote-copy/device-protocol";
 
 export const REMOTE_COPY_USB_VENDOR_ID = 0x303a;
 export const REMOTE_COPY_USB_PRODUCT_ID = 0x4002;
-export const REMOTE_COPY_HID_USAGE_PAGE = 0xff00;
-export const REMOTE_COPY_HID_USAGE = 0x01;
+export const REMOTE_COPY_HID_USAGE_PAGE = KEYBOARD_USAGE_PAGE;
+export const REMOTE_COPY_HID_USAGE = KEYBOARD_USAGE;
 
 export type WebHidAgentState =
   | "idle"
@@ -240,7 +244,6 @@ export class WebHidAgent {
         device.addEventListener("inputreport", listener);
         return () => device.removeEventListener("inputreport", listener);
       },
-      write: (report) => device.sendReport(0, report.slice().buffer as ArrayBuffer),
     };
     this.#relay = new RelayAgent(channel, this.#onText, this.#onError);
     this.setState("connected", device);
