@@ -1,3 +1,10 @@
 {
-  "extends": ["//"]
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "env": ["VITE_BASE_PATH", "VITE_PROTOCOL_DEBUG"]
+    }
+  }
 }

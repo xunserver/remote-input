@@ -58,6 +58,22 @@ pnpm dev:receiver
 pnpm dev:web-agent
 ```
 
+### GitHub Pages 蓝牙发送端
+
+仓库内的 `deploy-client-pages.yml` 会在 `main` 分支的发送端代码变化后构建
+`apps/client`，并发布到 `https://xunserver.github.io/remote-copy/`。首次启用时，在
+GitHub 仓库的 `Settings -> Pages -> Build and deployment` 中把 `Source` 设为
+`GitHub Actions`，然后手动运行一次该工作流或推送相关改动。
+
+Web Bluetooth 只能在安全上下文中使用，选择设备还必须由用户点击触发。GitHub Pages
+提供浏览器信任的 HTTPS；普通自签名证书只有在手机已安装并信任对应根证书时才可用，
+不建议将“忽略证书警告”作为部署方案。HTTPS 不会补齐浏览器缺失的 Web Bluetooth
+实现，手机端建议使用 Android Chrome；Safari/WebKit 当前没有实现 Web Bluetooth。
+
+当前仓库是私有仓库：从私有仓库发布 Pages 需要 GitHub Pro、Team 或 Enterprise
+套餐，而且普通 GitHub Pages 站点仍会公开在互联网上。发送端静态页面不包含服务端
+凭据，但浏览器本地保存的输入历史不会随页面一起发布。
+
 PC Agent 配置：
 
 - `HOST`：监听地址，默认 `0.0.0.0`。

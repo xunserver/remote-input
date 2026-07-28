@@ -219,7 +219,7 @@ export function useRemoteInput() {
       if (!support.supported) {
         lastError.value = support.reason === "insecure_context"
           ? "网页蓝牙需要 HTTPS 或 localhost 安全上下文。"
-          : "当前浏览器不支持 Web Bluetooth，请使用支持该功能的 Chromium 浏览器。";
+          : "当前浏览器不支持 Web Bluetooth，请使用 Android Chrome 或支持该功能的桌面 Chromium 浏览器。";
         return;
       }
     }
