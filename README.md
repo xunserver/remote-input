@@ -84,8 +84,8 @@ WebHID 接收页，把静态文件发布到专用的 `gh-pages` 分支。Pages �
 
 1. 启动器从当前网页读取普通文本选区，或 `input` / `textarea` 的选区。
 2. 启动器用时间戳绕过缓存，下载 Pages 上稳定地址的 `bookmarklet.js`。
-3. loader 使用 Shadow DOM 创建悬浮层，并在 iframe 中加载完整发送端；Vite 的哈希
-   JS/CSS 资源仍可长期缓存。
+3. loader 使用 Shadow DOM 创建悬浮层，并在 iframe 中加载完整发送端；iframe 入口
+   HTML 复用 loader 的时间戳绕过缓存，Vite 的哈希 JS/CSS 资源仍可长期缓存。
 4. 快速发送窗读取已保存的连接配置：WebSocket 自动重连；首次使用或选择蓝牙时展示
    完整的“蓝牙 / WebSocket”连接步骤。蓝牙设备首次选择仍由用户点击触发；授权成功后
    的新快速窗会优先复用浏览器已授权设备自动重连。

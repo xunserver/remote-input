@@ -16,6 +16,10 @@
       ? new URL("https://blog.xunserver.cn/remote-input/")
       : new URL(".", loaderUrl);
   senderUrl.searchParams.set(queryKey, "1");
+  senderUrl.searchParams.set(
+    "_",
+    loaderUrl.searchParams.get("_") || String(Date.now()),
+  );
   senderUrl.hash = "";
   const senderOrigin = senderUrl.origin;
   const previousApi = window[apiKey];

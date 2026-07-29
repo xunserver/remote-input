@@ -188,7 +188,7 @@ test("loader consumes queued text, sends it after ready, and reuses its API", ()
   assert.ok(frame);
   assert.equal(
     frame.src,
-    "https://blog.xunserver.cn/remote-input/?remote-input-bookmarklet=1",
+    "https://blog.xunserver.cn/remote-input/?remote-input-bookmarklet=1&_=1",
   );
   assert.equal(frame.allow, "bluetooth");
 
