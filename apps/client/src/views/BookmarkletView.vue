@@ -37,7 +37,6 @@ const {
 const text = ref("");
 const sent = ref(false);
 const fullSenderUrl = getFullSenderUrl();
-let closeTimer: number | undefined;
 let pendingOperationId: string | undefined;
 
 function getMessageTarget(): Window {
@@ -133,7 +132,6 @@ function finishSuccessfulSend(): void {
   }
   pendingOperationId = undefined;
   sent.value = true;
-  closeTimer = window.setTimeout(close, 700);
 }
 
 watch(currentOperation, (operation) => {
@@ -162,9 +160,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener("message", handleMessage);
-  if (closeTimer !== undefined) {
-    window.clearTimeout(closeTimer);
-  }
 });
 </script>
 
