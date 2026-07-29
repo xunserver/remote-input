@@ -6,7 +6,15 @@
   const queryKey = "remote-input-bookmarklet";
   const script = document.currentScript;
   const loaderUrl = new URL(script?.src || window.location.href);
-  const senderUrl = new URL(".", loaderUrl);
+  // GitHub Pages redirects the legacy project URL to the custom domain, but
+  // HTMLScriptElement.src keeps the originally requested URL. Normalize that
+  // legacy address so iframe navigation and postMessage always use the actual
+  // final origin. Existing installed bookmarks therefore keep working.
+  const senderUrl =
+    loaderUrl.origin === "https://xunserver.github.io" &&
+    loaderUrl.pathname.startsWith("/remote-input/")
+      ? new URL("https://blog.xunserver.cn/remote-input/")
+      : new URL(".", loaderUrl);
   senderUrl.searchParams.set(queryKey, "1");
   senderUrl.hash = "";
   const senderOrigin = senderUrl.origin;

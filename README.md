@@ -74,9 +74,9 @@ pnpm dev:web-agent
 WebHID 接收页，把静态文件发布到专用的 `gh-pages` 分支。Pages 的发布源应设为
 `gh-pages` 分支的根目录；日常开发代码只保留在 `main`。
 
-- `https://xunserver.github.io/remote-input/`：WebSocket/Web Bluetooth 发送端。
-- `https://xunserver.github.io/remote-input/bookmarklet.js`：书签按需加载的稳定入口。
-- `https://xunserver.github.io/remote-input/webhid/`：独立 WebHID 接收页。
+- `https://blog.xunserver.cn/remote-input/`：WebSocket/Web Bluetooth 发送端。
+- `https://blog.xunserver.cn/remote-input/bookmarklet.js`：书签按需加载的稳定入口。
+- `https://blog.xunserver.cn/remote-input/webhid/`：独立 WebHID 接收页。
 
 ### 书签脚本加载与降级
 

@@ -188,13 +188,13 @@ test("loader consumes queued text, sends it after ready, and reuses its API", ()
   assert.ok(frame);
   assert.equal(
     frame.src,
-    "https://xunserver.github.io/remote-input/?remote-input-bookmarklet=1",
+    "https://blog.xunserver.cn/remote-input/?remote-input-bookmarklet=1",
   );
   assert.equal(frame.allow, "bluetooth");
 
   fixture.dispatchWindow("message", {
     data: { type: "remote-input:ready" },
-    origin: "https://xunserver.github.io",
+    origin: "https://blog.xunserver.cn",
     source: frame.contentWindow,
   });
   assert.equal(frame.contentWindow.messages.length, 1);
@@ -205,7 +205,7 @@ test("loader consumes queued text, sends it after ready, and reuses its API", ()
   assert.equal(frame.contentWindow.messages[0].message.text, "首次选文");
   assert.equal(
     frame.contentWindow.messages[0].origin,
-    "https://xunserver.github.io",
+    "https://blog.xunserver.cn",
   );
 
   api.open("第二次选文");
@@ -239,7 +239,7 @@ test("loader removes its host when the embedded sender requests close", () => {
 
   fixture.dispatchWindow("message", {
     data: { type: "remote-input:close" },
-    origin: "https://xunserver.github.io",
+    origin: "https://blog.xunserver.cn",
     source: frame.contentWindow,
   });
 
@@ -266,7 +266,7 @@ test("popup fallback transfers text after the popup sender becomes ready", () =>
   popupButton.dispatch("click");
   fixture.dispatchWindow("message", {
     data: { type: "remote-input:ready" },
-    origin: "https://xunserver.github.io",
+    origin: "https://blog.xunserver.cn",
     source: popupWindow,
   });
 
@@ -274,7 +274,7 @@ test("popup fallback transfers text after the popup sender becomes ready", () =>
   assert.equal(popupWindow.messages[0].message.text, "首次选文");
   assert.equal(
     popupWindow.messages[0].origin,
-    "https://xunserver.github.io",
+    "https://blog.xunserver.cn",
   );
   assert.equal(
     fixture.document.getElementById("remote-input-bookmarklet-host"),
