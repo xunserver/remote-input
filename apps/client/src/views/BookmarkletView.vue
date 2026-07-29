@@ -99,6 +99,9 @@ function handleMessage(event: MessageEvent<BookmarkletMessage>): void {
   }
   text.value = event.data.text;
   sent.value = false;
+  if (event.data.autoSend && connectionState.value === "ready") {
+    void send();
+  }
 }
 
 async function send(): Promise<void> {

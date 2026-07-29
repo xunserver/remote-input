@@ -203,6 +203,7 @@ test("loader consumes queued text, sends it after ready, and reuses its API", ()
     "remote-input:selection",
   );
   assert.equal(frame.contentWindow.messages[0].message.text, "首次选文");
+  assert.equal(frame.contentWindow.messages[0].message.autoSend, false);
   assert.equal(
     frame.contentWindow.messages[0].origin,
     "https://blog.xunserver.cn",
@@ -214,6 +215,7 @@ test("loader consumes queued text, sends it after ready, and reuses its API", ()
     host,
   );
   assert.equal(frame.contentWindow.messages.at(-1).message.text, "第二次选文");
+  assert.equal(frame.contentWindow.messages.at(-1).message.autoSend, true);
 });
 
 test("loader shows the popup fallback when the iframe never becomes ready", () => {
@@ -230,8 +232,9 @@ test("loader shows the popup fallback when the iframe never becomes ready", () =
   assert.equal(fallback.classList.contains("visible"), true);
 });
 
-test("loader removes its host when the embedded sender requests close", () => {
+test("loader hides and reuses its connected iframe when sender closes", () => {
   const fixture = createFixture();
+  const api = fixture.window.__remoteInputBookmarklet;
   const host = fixture.document.getElementById(
     "remote-input-bookmarklet-host",
   );
@@ -243,10 +246,25 @@ test("loader removes its host when the embedded sender requests close", () => {
     source: frame.contentWindow,
   });
 
+  assert.equal(host.hidden, true);
   assert.equal(
     fixture.document.getElementById("remote-input-bookmarklet-host"),
-    null,
+    host,
   );
+
+  fixture.dispatchWindow("message", {
+    data: { type: "remote-input:ready" },
+    origin: "https://blog.xunserver.cn",
+    source: frame.contentWindow,
+  });
+  api.open("再次点击直接发送");
+
+  assert.equal(host.hidden, false);
+  const latestMessage = frame.contentWindow.messages.at(-1);
+  assert.equal(latestMessage.message.autoSend, true);
+  assert.equal(latestMessage.message.text, "再次点击直接发送");
+  assert.equal(latestMessage.message.type, "remote-input:selection");
+  assert.equal(latestMessage.origin, "https://blog.xunserver.cn");
 });
 
 test("popup fallback transfers text after the popup sender becomes ready", () => {

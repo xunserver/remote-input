@@ -37,7 +37,7 @@
   function open(text = "") {
     const existing = document.getElementById(hostId);
     if (existing?._remoteInputUpdate) {
-      existing._remoteInputUpdate(text);
+      existing._remoteInputUpdate(text, true);
       return;
     }
 
@@ -127,10 +127,10 @@
     let ready = false;
     let readinessTimer;
 
-    const postSelection = () => {
+    const postSelection = (autoSend = false) => {
       if (!frame.contentWindow) return;
       frame.contentWindow.postMessage(
-        { type: "remote-input:selection", text: selection },
+        { type: "remote-input:selection", text: selection, autoSend },
         senderOrigin,
       );
     };
@@ -138,6 +138,9 @@
       if (ready) return;
       frame.hidden = true;
       fallback.classList.add("visible");
+    };
+    const hide = () => {
+      host.hidden = true;
     };
     const cleanup = () => {
       window.clearTimeout(readinessTimer);
@@ -161,7 +164,7 @@
         event.source === frame.contentWindow &&
         event.data?.type === "remote-input:close"
       ) {
-        cleanup();
+        hide();
       }
       if (
         popupWindow &&
@@ -176,16 +179,16 @@
       }
     };
     const handleKeyDown = (event) => {
-      if (event.key === "Escape") cleanup();
+      if (event.key === "Escape") hide();
     };
 
-    host._remoteInputUpdate = (nextText) => {
+    host._remoteInputUpdate = (nextText, autoSend = false) => {
       selection = String(nextText);
       host.hidden = false;
-      if (ready) postSelection();
+      if (ready) postSelection(autoSend);
     };
     backdrop.addEventListener("click", (event) => {
-      if (!panel.contains(event.target)) cleanup();
+      if (!panel.contains(event.target)) hide();
     });
     popupButton.addEventListener("click", () => {
       popupWindow = window.open(

@@ -6,7 +6,11 @@ const bookmarkletLoaderFile = "bookmarklet.js";
 export type BookmarkletMessage =
   | { type: "remote-input:close" }
   | { type: "remote-input:ready" }
-  | { text: string; type: "remote-input:selection" };
+  | {
+    autoSend?: boolean;
+    text: string;
+    type: "remote-input:selection";
+  };
 
 export function isBookmarkletMode(): boolean {
   return new URLSearchParams(window.location.search).get(bookmarkletQueryKey) ===
