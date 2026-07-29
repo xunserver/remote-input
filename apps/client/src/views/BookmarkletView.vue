@@ -38,6 +38,8 @@ const text = ref("");
 const sent = ref(false);
 const fullSenderUrl = getFullSenderUrl();
 let pendingOperationId: string | undefined;
+let pendingAutoSend = false;
+let lastRequestId: number | undefined;
 
 function getMessageTarget(): Window {
   return window.opener && !window.opener.closed
@@ -82,6 +84,7 @@ function postToParent(message: BookmarkletMessage): void {
 
 function close(): void {
   if (window.parent === window) {
+    postToParent({ type: "remote-input:close" });
     window.close();
     return;
   }
@@ -96,9 +99,17 @@ function handleMessage(event: MessageEvent<BookmarkletMessage>): void {
   ) {
     return;
   }
+  if (
+    event.data.requestId !== undefined &&
+    event.data.requestId === lastRequestId
+  ) {
+    return;
+  }
+  lastRequestId = event.data.requestId;
   text.value = event.data.text;
   sent.value = false;
-  if (event.data.autoSend && connectionState.value === "ready") {
+  pendingAutoSend = Boolean(event.data.autoSend && text.value.trim());
+  if (pendingAutoSend && canSend.value) {
     void send();
   }
 }
@@ -107,6 +118,7 @@ async function send(): Promise<void> {
   if (!canSend.value) {
     return;
   }
+  pendingAutoSend = false;
   const accepted = await sendInput(text.value, {
     paste: true,
     restoreClipboard: true,
@@ -142,6 +154,12 @@ watch(currentOperation, (operation) => {
     finishSuccessfulSend();
   } else if (operation.state === "failed") {
     pendingOperationId = undefined;
+  }
+});
+
+watch([connectionState, isBusy], () => {
+  if (pendingAutoSend && canSend.value) {
+    void send();
   }
 });
 

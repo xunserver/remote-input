@@ -18,6 +18,10 @@ class FakeClassList {
   contains(value) {
     return this.values.has(value);
   }
+
+  remove(...values) {
+    for (const value of values) this.values.delete(value);
+  }
 }
 
 class FakeElement {
@@ -93,6 +97,7 @@ function descendants(root) {
 function createFixture(options = {}) {
   const windowListeners = new Map();
   const timers = new Map();
+  const openCalls = [];
   let nextTimerId = 1;
   const document = {
     currentScript: {
@@ -119,8 +124,9 @@ function createFixture(options = {}) {
       timers.delete(id);
     },
     location: { href: "https://example.com/article" },
-    open() {
-      return options.popupWindow ?? null;
+    open(...args) {
+      openCalls.push(args);
+      return options.open?.(...args) ?? options.popupWindow ?? null;
     },
     removeEventListener(type, listener) {
       const listeners = windowListeners.get(type) ?? [];
@@ -159,6 +165,7 @@ function createFixture(options = {}) {
       timers.delete(entry[0]);
       entry[1]();
     },
+    openCalls,
     window,
   };
 }
@@ -178,7 +185,7 @@ function findByClass(root, className) {
 test("loader consumes queued text, sends it after ready, and reuses its API", () => {
   const fixture = createFixture();
   const api = fixture.window.__remoteInputBookmarklet;
-  assert.equal(api.version, 2);
+  assert.equal(api.version, 3);
 
   const host = fixture.document.getElementById(
     "remote-input-bookmarklet-host",
@@ -286,15 +293,41 @@ test("clicking outside the panel hides the bookmarklet host", () => {
     "remote-input-bookmarklet-host",
   );
   const backdrop = findByClass(host.shadowRoot, "backdrop");
+  const frame = findByTag(host.shadowRoot, "IFRAME");
+
+  fixture.dispatchWindow("message", {
+    data: { type: "remote-input:ready" },
+    origin: "https://blog.xunserver.cn",
+    source: frame.contentWindow,
+  });
 
   backdrop.dispatch("click", { target: backdrop });
 
   assert.equal(host.hidden, true);
 });
 
-test("popup fallback transfers text after the popup sender becomes ready", () => {
+test("fallback ignores backdrop dismissal until its independent page opens", () => {
+  const fixture = createFixture();
+  const host = fixture.document.getElementById(
+    "remote-input-bookmarklet-host",
+  );
+  const backdrop = findByClass(host.shadowRoot, "backdrop");
+
+  fixture.runLatestTimer();
+  backdrop.dispatch("click", { target: backdrop });
+
+  assert.equal(host.hidden, false);
+  assert.equal(fixture.window.__remoteInputBookmarklet.mode, "fallback");
+});
+
+test("popup fallback stays managed and receives repeated selections", () => {
   const popupWindow = {
+    closed: false,
+    focusCount: 0,
     messages: [],
+    focus() {
+      this.focusCount += 1;
+    },
     postMessage(message, origin) {
       this.messages.push({ message, origin });
     },
@@ -310,17 +343,70 @@ test("popup fallback transfers text after the popup sender becomes ready", () =>
   fixture.dispatchWindow("message", {
     data: { type: "remote-input:ready" },
     origin: "https://blog.xunserver.cn",
+    source: findByTag(host.shadowRoot, "IFRAME").contentWindow,
+  });
+  assert.equal(host.hidden, true);
+  assert.equal(fixture.window.__remoteInputBookmarklet.mode, "popup");
+
+  fixture.dispatchWindow("message", {
+    data: { type: "remote-input:ready" },
+    origin: "https://blog.xunserver.cn",
     source: popupWindow,
   });
 
   assert.equal(popupWindow.messages.length, 1);
   assert.equal(popupWindow.messages[0].message.text, "首次选文");
+  assert.equal(popupWindow.messages[0].message.autoSend, false);
   assert.equal(
     popupWindow.messages[0].origin,
     "https://blog.xunserver.cn",
   );
+  assert.equal(host.hidden, true);
   assert.equal(
     fixture.document.getElementById("remote-input-bookmarklet-host"),
-    null,
+    host,
   );
+
+  fixture.window.__remoteInputBookmarklet.open("第二次兼容发送");
+
+  assert.equal(fixture.openCalls.length, 1);
+  assert.equal(popupWindow.focusCount, 2);
+  assert.equal(popupWindow.messages.length, 2);
+  assert.equal(popupWindow.messages[1].message.text, "第二次兼容发送");
+  assert.equal(popupWindow.messages[1].message.autoSend, true);
+  assert.notEqual(
+    popupWindow.messages[0].message.requestId,
+    popupWindow.messages[1].message.requestId,
+  );
+});
+
+test("a closed fallback page reopens directly on the next bookmark click", () => {
+  const popupWindows = [
+    {
+      closed: false,
+      focus() {},
+      postMessage() {},
+    },
+    {
+      closed: false,
+      focus() {},
+      postMessage() {},
+    },
+  ];
+  const fixture = createFixture({
+    open: () => popupWindows[fixture.openCalls.length - 1],
+  });
+  const host = fixture.document.getElementById(
+    "remote-input-bookmarklet-host",
+  );
+  const popupButton = findByTag(host.shadowRoot, "BUTTON");
+
+  fixture.runLatestTimer();
+  popupButton.dispatch("click");
+  popupWindows[0].closed = true;
+  fixture.window.__remoteInputBookmarklet.open("关闭后重开");
+
+  assert.equal(fixture.openCalls.length, 2);
+  assert.equal(fixture.window.__remoteInputBookmarklet.mode, "popup");
+  assert.equal(fixture.openCalls[1].length, 2);
 });
