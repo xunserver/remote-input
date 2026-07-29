@@ -190,6 +190,7 @@ test("loader consumes queued text, sends it after ready, and reuses its API", ()
     frame.src,
     "https://xunserver.github.io/remote-input/?remote-input-bookmarklet=1",
   );
+  assert.equal(frame.allow, "bluetooth");
 
   fixture.dispatchWindow("message", {
     data: { type: "remote-input:ready" },

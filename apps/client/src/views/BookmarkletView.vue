@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { ExternalLink, SendHorizonal, X } from "@lucide/vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import {
+  ExternalLink,
+  RefreshCw,
+  SendHorizonal,
+  Settings2,
+  X,
+} from "@lucide/vue";
 import { Button } from "@shadcn/button";
 import { Spinner } from "@shadcn/spinner";
 import { Textarea } from "@shadcn/textarea";
+import ConnectionDialog from "@/components/ConnectionDialog.vue";
 import { useRemoteInput } from "@/composables/useRemoteInput";
 import {
   getFullSenderUrl,
@@ -12,10 +19,18 @@ import {
 } from "@/utils/bookmarklet";
 
 const {
+  connectionMethod,
   connectionState,
+  webSocketUrl,
+  hasConnectionConfig,
+  showConnectionDialog,
   currentOperation,
   isBusy,
   lastError,
+  connect,
+  reconnect,
+  openConnectionSettings,
+  closeConnectionSettings,
   sendInput,
 } = useRemoteInput();
 
@@ -23,6 +38,7 @@ const text = ref("");
 const sent = ref(false);
 const fullSenderUrl = getFullSenderUrl();
 let closeTimer: number | undefined;
+let pendingOperationId: string | undefined;
 
 function getMessageTarget(): Window {
   return window.opener && !window.opener.closed
@@ -52,7 +68,10 @@ const statusText = computed(() => {
   if (lastError.value) {
     return lastError.value;
   }
-  return "请先在完整发送页配置 WebSocket 连接";
+  if (connectionState.value === "disconnected") {
+    return "连接已断开，请重新连接";
+  }
+  return "请选择蓝牙或 WebSocket 完成连接";
 });
 
 function postToParent(message: BookmarkletMessage): void {
@@ -86,16 +105,44 @@ async function send(): Promise<void> {
   if (!canSend.value) {
     return;
   }
-  if (
-    await sendInput(text.value, {
-      paste: true,
-      restoreClipboard: true,
-    })
-  ) {
-    sent.value = true;
-    closeTimer = window.setTimeout(close, 700);
+  const accepted = await sendInput(text.value, {
+    paste: true,
+    restoreClipboard: true,
+  });
+  if (!accepted) {
+    return;
   }
+
+  const operation = currentOperation.value;
+  if (
+    connectionMethod.value === "bluetooth" &&
+    operation?.state === "processing"
+  ) {
+    pendingOperationId = operation.operationId;
+    return;
+  }
+  finishSuccessfulSend();
 }
+
+function finishSuccessfulSend(): void {
+  if (sent.value) {
+    return;
+  }
+  pendingOperationId = undefined;
+  sent.value = true;
+  closeTimer = window.setTimeout(close, 700);
+}
+
+watch(currentOperation, (operation) => {
+  if (!pendingOperationId || operation?.operationId !== pendingOperationId) {
+    return;
+  }
+  if (operation.state === "succeeded") {
+    finishSuccessfulSend();
+  } else if (operation.state === "failed") {
+    pendingOperationId = undefined;
+  }
+});
 
 function handleKeyDown(event: KeyboardEvent): void {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -127,9 +174,20 @@ onUnmounted(() => {
           Enter 发送，Shift + Enter 换行
         </p>
       </div>
-      <Button variant="ghost" size="icon" aria-label="关闭悬浮窗" @click="close">
-        <X aria-hidden="true" />
-      </Button>
+      <div class="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="连接设置"
+          title="连接设置"
+          @click="openConnectionSettings"
+        >
+          <Settings2 aria-hidden="true" />
+        </Button>
+        <Button variant="ghost" size="icon" aria-label="关闭悬浮窗" @click="close">
+          <X aria-hidden="true" />
+        </Button>
+      </div>
     </header>
 
     <section class="flex min-h-0 flex-1 flex-col gap-3 p-4">
@@ -141,18 +199,32 @@ onUnmounted(() => {
         :disabled="isBusy"
         @keydown="handleKeyDown"
       />
-      <p
-        class="min-h-5 text-xs"
-        :class="
-          currentOperation?.state === 'failed'
-            ? 'text-destructive'
-            : sent
-              ? 'text-emerald-600'
-              : 'text-muted-foreground'
-        "
-      >
-        {{ statusText }}
-      </p>
+      <div class="flex min-h-8 items-center gap-2">
+        <p
+          class="min-w-0 flex-1 text-xs"
+          :class="
+            currentOperation?.state === 'failed' || connectionState === 'error'
+              ? 'text-destructive'
+              : sent
+                ? 'text-emerald-600'
+                : 'text-muted-foreground'
+          "
+        >
+          {{ statusText }}
+        </p>
+        <Button
+          v-if="
+            !showConnectionDialog &&
+            (connectionState === 'error' || connectionState === 'disconnected')
+          "
+          variant="outline"
+          size="sm"
+          @click="reconnect"
+        >
+          <RefreshCw data-icon="inline-start" aria-hidden="true" />
+          重新连接
+        </Button>
+      </div>
       <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
         <Button class="h-11" :disabled="!canSend" @click="send">
           <Spinner v-if="isBusy" data-icon="inline-start" />
@@ -173,4 +245,15 @@ onUnmounted(() => {
       </div>
     </section>
   </main>
+
+  <ConnectionDialog
+    :open="showConnectionDialog"
+    :current-method="connectionMethod"
+    :current-url="webSocketUrl"
+    :has-connection-config="hasConnectionConfig"
+    :connection-state="connectionState"
+    :error="lastError"
+    :on-connect="connect"
+    :on-close="closeConnectionSettings"
+  />
 </template>

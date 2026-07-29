@@ -64,6 +64,7 @@ type ServerSnapshot = {
 };
 
 const bluetoothUrl = "bluetooth://esp32-s3";
+const bluetoothStatusTimeoutMs = 15_000;
 const protocolTraceLevel = parseProtocolTraceLevel(
   import.meta.env.VITE_PROTOCOL_DEBUG,
 );
@@ -108,6 +109,7 @@ export function useRemoteInput() {
   let runtime: Runtime | null = null;
   let generation = 0;
   let operationEpoch = 0;
+  let bluetoothStatusTimer: number | undefined;
   // ref 写入是同步的，可在任何界面更新前拒绝发送和重发入口的重复调用。
   const operationInFlight = ref(false);
 
@@ -385,10 +387,11 @@ export function useRemoteInput() {
   onMounted(() => {
     if (
       initialConnection.autoConnect &&
-      initialConnection.method === "websocket" &&
-      initialConnection.savedUrl
+      (initialConnection.method === "bluetooth" ||
+        (initialConnection.method === "websocket" &&
+          initialConnection.savedUrl))
     ) {
-      connect("websocket", initialConnection.url);
+      connect(initialConnection.method, initialConnection.url);
     }
   });
 
@@ -410,6 +413,7 @@ export function useRemoteInput() {
     }
 
     operationInFlight.value = true;
+    clearBluetoothStatusTimeout();
     const targetOperationEpoch = ++operationEpoch;
     const operationId = createOperationId();
     const processing: OperationStatus = {
@@ -443,10 +447,24 @@ export function useRemoteInput() {
           operationId,
           ...control,
         });
+        if (operationEpoch !== targetOperationEpoch) {
+          return false;
+        }
+        const operation = currentOperation.value;
         if (
-          operationEpoch === targetOperationEpoch &&
-          currentOperation.value?.state === "processing" &&
-          currentOperation.value.revision === 0
+          !operation ||
+          operation.operationId !== operationId ||
+          operation.state === "failed"
+        ) {
+          return false;
+        }
+        if (operation.state === "succeeded") {
+          clearBluetoothStatusTimeout();
+          return true;
+        }
+        if (
+          operation.state === "processing" &&
+          operation.revision === 0
         ) {
           const waiting: OperationStatus = {
             ...processing,
@@ -457,9 +475,9 @@ export function useRemoteInput() {
           };
           currentOperation.value = waiting;
           updateHistory(history, waiting);
-          return true;
         }
-        return currentOperation.value?.state === "succeeded";
+        armBluetoothStatusTimeout(operationId);
+        return true;
       } else {
         await targetRuntime.client.sendText(text, {
           operationId,
@@ -483,6 +501,7 @@ export function useRemoteInput() {
       }
       return false;
     } catch (error) {
+      clearBluetoothStatusTimeout();
       const message = formatRequestError(error);
       const failed: OperationStatus = {
         ...processing,
@@ -544,6 +563,7 @@ export function useRemoteInput() {
   };
 
   function disposeRuntime(): void {
+    clearBluetoothStatusTimeout();
     const targetRuntime = runtime;
     // 先废弃 generation 与 Runtime，屏蔽关闭过程中同步或迟到的回调。
     ++generation;
@@ -558,6 +578,7 @@ export function useRemoteInput() {
   }
 
   function cancelCurrentOperation(message: string): void {
+    clearBluetoothStatusTimeout();
     ++operationEpoch;
     operationInFlight.value = false;
     const operation = currentOperation.value;
@@ -599,9 +620,49 @@ export function useRemoteInput() {
     };
     currentOperation.value = next;
     updateHistory(history, next);
+    if (next.state === "processing") {
+      armBluetoothStatusTimeout(next.operationId);
+    } else {
+      clearBluetoothStatusTimeout();
+    }
     if (next.state === "failed") {
       lastError.value = next.message;
     }
+  }
+
+  function armBluetoothStatusTimeout(operationId: string): void {
+    clearBluetoothStatusTimeout();
+    bluetoothStatusTimer = window.setTimeout(() => {
+      bluetoothStatusTimer = undefined;
+      const operation = currentOperation.value;
+      if (
+        !operation ||
+        operation.operationId !== operationId ||
+        operation.state !== "processing"
+      ) {
+        return;
+      }
+      const failed: OperationStatus = {
+        ...operation,
+        revision: operation.revision + 1,
+        state: "failed",
+        stage: "failed",
+        progress: 100,
+        message:
+          "等待接收端状态超时，请确认 PC Agent 或 WebHID 接收页正在运行。",
+      };
+      currentOperation.value = failed;
+      lastError.value = failed.message;
+      updateHistory(history, failed);
+    }, bluetoothStatusTimeoutMs);
+  }
+
+  function clearBluetoothStatusTimeout(): void {
+    if (bluetoothStatusTimer === undefined) {
+      return;
+    }
+    window.clearTimeout(bluetoothStatusTimer);
+    bluetoothStatusTimer = undefined;
   }
 }
 

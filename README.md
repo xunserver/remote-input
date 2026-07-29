@@ -86,11 +86,16 @@ WebHID 接收页，把静态文件发布到专用的 `gh-pages` 分支。Pages �
 2. 启动器用时间戳绕过缓存，下载 Pages 上稳定地址的 `bookmarklet.js`。
 3. loader 使用 Shadow DOM 创建悬浮层，并在 iframe 中加载完整发送端；Vite 的哈希
    JS/CSS 资源仍可长期缓存。
-4. 选中文字只通过限定目标 origin 的 `postMessage` 传入 iframe，不写入请求 URL。
+4. 快速发送窗读取已保存的连接配置：WebSocket 自动重连；首次使用或选择蓝牙时展示
+   完整的“蓝牙 / WebSocket”连接步骤。蓝牙设备首次选择仍由用户点击触发；授权成功后
+   的新快速窗会优先复用浏览器已授权设备自动重连。
+5. 选中文字只通过限定目标 origin 的 `postMessage` 传入 iframe，不写入请求 URL。
 
 兼容与降级顺序：
 
 - loader 已存在时直接复用，不重复下载或注册事件；重复点击只更新选中文字。
+- loader 为发送 iframe 声明 `bluetooth` 权限；如果目标网页通过 Permissions Policy
+  禁止蓝牙，用户仍可使用 WebSocket，或在完整发送页中连接蓝牙。
 - iframe 被页面 `frame-src`、网络或其他策略阻止时，5 秒后显示“独立小窗”按钮；用户
   点击后以新的用户手势打开发送页，再通过 `postMessage` 传入文字。
 - loader 自身被严格 `script-src` CSP 阻止时，启动器直接尝试打开独立小窗，并把文字

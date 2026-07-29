@@ -29,7 +29,12 @@ export type WebBluetoothSupport =
   | { supported: false; reason: "insecure_context" | "unavailable" };
 export interface WebBluetoothEnvironment {
   isSecureContext: boolean | undefined;
-  bluetooth: { requestDevice(options: unknown): Promise<BluetoothDeviceLike> } | undefined;
+  bluetooth:
+    | {
+      getDevices?(): Promise<BluetoothDeviceLike[]>;
+      requestDevice(options: unknown): Promise<BluetoothDeviceLike>;
+    }
+    | undefined;
 }
 
 export function getWebBluetoothSupport(environment: WebBluetoothEnvironment = browserEnvironment()): WebBluetoothSupport {
@@ -131,6 +136,11 @@ async function defaultRequestDevice(): Promise<BluetoothDeviceLike> {
   }
   const bluetooth = environment.bluetooth;
   if (!bluetooth) throw new Error("Web Bluetooth is unavailable in this browser.");
+  const grantedDevices = await bluetooth.getDevices?.();
+  const grantedDevice = grantedDevices?.find(
+    (device) => device.name === "Remote Input ESP32-S3",
+  );
+  if (grantedDevice) return grantedDevice;
   return bluetooth.requestDevice({ filters: [{ services: [REMOTE_INPUT_BLE_SERVICE] }] });
 }
 

@@ -47,7 +47,7 @@
         right: 20px;
         bottom: 20px;
         width: min(420px, calc(100vw - 24px));
-        height: min(440px, calc(100vh - 24px));
+        height: min(560px, calc(100vh - 24px));
         overflow: hidden;
         border: 1px solid rgba(148, 163, 184, .45);
         border-radius: 16px;
@@ -95,6 +95,7 @@
     const panel = element("div", "panel");
     const frame = element("iframe");
     frame.title = "快速发送选中文本";
+    frame.allow = "bluetooth";
     frame.referrerPolicy = "no-referrer";
     const fallback = element("div", "fallback");
     const fallbackTitle = element("strong", "", "悬浮窗被当前网页阻止");

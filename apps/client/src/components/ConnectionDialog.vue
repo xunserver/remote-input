@@ -81,7 +81,7 @@ function connect(): void {
   <Dialog :open="props.open" @update:open="handleOpenChange">
     <DialogContent
       :show-close-button="false"
-      class="top-auto bottom-0 max-w-none translate-y-0 gap-5 rounded-b-none rounded-t-2xl border-b-0 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:top-1/2 sm:bottom-auto sm:max-w-md sm:-translate-y-1/2 sm:rounded-2xl sm:border-b sm:p-6"
+      class="top-auto bottom-0 max-h-[calc(100svh-0.5rem)] max-w-none translate-y-0 gap-4 overflow-y-auto rounded-b-none rounded-t-2xl border-b-0 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:top-1/2 sm:bottom-auto sm:max-w-md sm:-translate-y-1/2 sm:rounded-2xl sm:border-b sm:p-6"
       @escape-key-down="preventInitialClose"
       @pointer-down-outside="preventInitialClose"
     >
@@ -93,7 +93,7 @@ function connect(): void {
         </DialogDescription>
       </DialogHeader>
 
-      <form class="flex flex-col gap-5" @submit.prevent="connect">
+      <form class="flex flex-col gap-4" @submit.prevent="connect">
         <div class="grid grid-cols-2 gap-3" role="radiogroup" aria-label="连接方式">
           <button
             type="button"
