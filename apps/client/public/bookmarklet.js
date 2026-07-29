@@ -47,6 +47,7 @@
     const style = element("style");
     style.textContent = `
       :host { all: initial; }
+      :host([hidden]) { display: none !important; }
       .backdrop {
         position: fixed;
         inset: 0;

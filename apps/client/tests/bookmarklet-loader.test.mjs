@@ -267,6 +267,31 @@ test("loader hides and reuses its connected iframe when sender closes", () => {
   assert.equal(latestMessage.origin, "https://blog.xunserver.cn");
 });
 
+test("loader stylesheet makes the hidden host non-rendering", () => {
+  const fixture = createFixture();
+  const host = fixture.document.getElementById(
+    "remote-input-bookmarklet-host",
+  );
+  const style = findByTag(host.shadowRoot, "STYLE");
+
+  assert.match(
+    style.textContent,
+    /:host\(\[hidden\]\)\s*\{\s*display:\s*none\s*!important;/,
+  );
+});
+
+test("clicking outside the panel hides the bookmarklet host", () => {
+  const fixture = createFixture();
+  const host = fixture.document.getElementById(
+    "remote-input-bookmarklet-host",
+  );
+  const backdrop = findByClass(host.shadowRoot, "backdrop");
+
+  backdrop.dispatch("click", { target: backdrop });
+
+  assert.equal(host.hidden, true);
+});
+
 test("popup fallback transfers text after the popup sender becomes ready", () => {
   const popupWindow = {
     messages: [],
