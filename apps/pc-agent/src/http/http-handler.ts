@@ -128,11 +128,14 @@ async function sendStatic(
   const pathname =
     requestedPath === "/"
       ? "/index.html"
-      : requestedPath === "/receive" || requestedPath === "/receive/"
-        ? "/receive/index.html"
-        : requestedPath === "/webhid" || requestedPath === "/webhid/"
-          ? "/webhid/index.html"
-          : requestedPath;
+      : requestedPath === "/bookmarklet" ||
+          requestedPath === "/bookmarklet/"
+        ? "/bookmarklet/index.html"
+        : requestedPath === "/receive" || requestedPath === "/receive/"
+          ? "/receive/index.html"
+          : requestedPath === "/webhid" || requestedPath === "/webhid/"
+            ? "/webhid/index.html"
+            : requestedPath;
   const normalized = path.posix.normalize(pathname);
   if (normalized.includes("\0") || normalized.startsWith("/../")) {
     sendJson(res, 403, { error: "Forbidden" });

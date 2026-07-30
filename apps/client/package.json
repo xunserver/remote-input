@@ -4,15 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build --config vite.config.ts",
+    "build": "vite build --config vite.config.ts && vite build --config vite.config.ts --mode bookmarklet-lib",
+    "build:pages": "vite build --config vite.config.ts --mode pages && vite build --config vite.config.ts --mode pages-lib",
     "check": "vue-tsc --noEmit -p tsconfig.json",
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.mjs tests/*.test.ts"
   },
   "dependencies": {
     "@lucide/vue": "^1.25.0",
     "@remote-input/protocol": "workspace:*",
     "@remote-input/sdk": "workspace:*",
+    "@remote-input/web-agent-sdk": "workspace:*",
     "@vueuse/core": "^14.3.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

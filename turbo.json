@@ -4,7 +4,12 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
-      "env": ["VITE_PROTOCOL_DEBUG"]
+      "env": ["VITE_BASE_PATH", "VITE_PROTOCOL_DEBUG"]
+    },
+    "build:pages": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist-pages/**"],
+      "env": ["VITE_BASE_PATH", "VITE_PROTOCOL_DEBUG"]
     },
     "check": {
       "dependsOn": ["^build"],

@@ -8,7 +8,7 @@ import { createHttpHandler } from "../dist/http/http-handler.js";
 import { MessageStore } from "../dist/messages/message-store.js";
 import { RuntimeStatusStore } from "../dist/status/runtime-status.js";
 
-test("HTTP API serves history, status, clear, and all three web apps", async (context) => {
+test("HTTP API serves history, status, clear, and all four web pages", async (context) => {
   const fixture = await createFixture();
   context.after(() => fixture.close());
   const message = fixture.messages.create("hid", "hello");
@@ -27,6 +27,7 @@ test("HTTP API serves history, status, clear, and all three web apps", async (co
   const history = await getJson(`${fixture.origin}/api/messages`);
   assert.equal(history.messages[0].text, "hello");
   assert.equal(await getText(`${fixture.origin}/`), "sender");
+  assert.equal(await getText(`${fixture.origin}/bookmarklet/`), "bookmarklet");
   assert.equal(await getText(`${fixture.origin}/receive/`), "receiver");
   assert.equal(await getText(`${fixture.origin}/webhid/`), "webhid");
 
@@ -61,9 +62,11 @@ test("SSE sends a race-free snapshot and full message/status updates", async (co
 
 async function createFixture() {
   const publicDir = await mkdtemp(path.join(os.tmpdir(), "remote-input-http-"));
+  await mkdir(path.join(publicDir, "bookmarklet"));
   await mkdir(path.join(publicDir, "receive"));
   await mkdir(path.join(publicDir, "webhid"));
   await writeFile(path.join(publicDir, "index.html"), "sender");
+  await writeFile(path.join(publicDir, "bookmarklet/index.html"), "bookmarklet");
   await writeFile(path.join(publicDir, "receive/index.html"), "receiver");
   await writeFile(path.join(publicDir, "webhid/index.html"), "webhid");
   const messages = new MessageStore();

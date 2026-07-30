@@ -15,6 +15,7 @@ ESP32-S3 USB HID ─┘             │
 ```
 
 - `/`：Vue 发送端，支持 WebSocket 和 Web Bluetooth。
+- `/bookmarklet/`：书签 loader 在 iframe 或独立窗口中打开的快速发送页。
 - `/receive/`：PC Agent 接收看板，展示 WS/HID 来源、时间和处理状态。
 - `/webhid/`：目标电脑不能运行 PC Agent 时使用的 WebHID 备用接收页。
 - `/ws`：V1 Session WebSocket 协议入口。
@@ -36,10 +37,8 @@ PC Agent 只在内存保存最近 100 条消息，重启后清空。发送端收
 
 ```text
 apps/
-  client/          WebSocket/Web Bluetooth 发送端
+  client/          Vite 多页面：发送端、书签快速页、接收看板和 WebHID 备用接收页
   pc-agent/        唯一 Node 接收进程：HTTP、WS、HID、消息队列和系统输入
-  receiver/        PC Agent 接收看板
-  web-agent/       独立 WebHID 备用接收页
 
 packages/
   device-protocol/ ESP32-S3 relay frame 编解码与重组
@@ -48,8 +47,14 @@ packages/
   web-agent-sdk/   HID RelayAgent 与 WebHID agent
 ```
 
-`apps/pc-agent` 将三个前端声明为 workspace 开发依赖。Turborepo 会先构建它们，再把产物
-打包到 `apps/pc-agent/dist/public` 的根目录、`receive` 和 `webhid` 子目录。
+`apps/client` 通过 Vite multi-page build 一次生成根目录、`bookmarklet`、`receive`
+和 `webhid` 四个页面，再通过 library mode 将 TypeScript loader 构建为根目录的
+`bookmarklet.js`。`apps/pc-agent` 将 `client` 声明为 workspace 开发依赖；
+Turborepo 会先构建它，再把完整产物打包到 `apps/pc-agent/dist/public`。其中
+`receive` 只属于 PC Agent 分发，不发布到公开 Pages 站点。
+
+`pnpm build` 生成 PC Agent 使用的完整 `dist`；`pnpm build:pages` 使用同一份 Vite
+配置生成不含 `receive` 入口及其专属资源的 `dist-pages`。
 
 ## 使用
 
@@ -64,9 +69,9 @@ pnpm start
 ```bash
 INPUT_MODE=dev pnpm dev:pc-agent
 pnpm dev:client
-pnpm dev:receiver
-pnpm dev:web-agent
 ```
+
+`pnpm dev:client` 同时提供 `/`、`/bookmarklet/`、`/receive/` 和 `/webhid/`。
 
 ### GitHub Pages Web 应用
 
@@ -75,6 +80,7 @@ WebHID 接收页，把静态文件发布到专用的 `gh-pages` 分支。Pages �
 `gh-pages` 分支的根目录；日常开发代码只保留在 `main`。
 
 - `https://blog.xunserver.cn/remote-input/`：WebSocket/Web Bluetooth 发送端。
+- `https://blog.xunserver.cn/remote-input/bookmarklet/`：书签快速发送页。
 - `https://blog.xunserver.cn/remote-input/bookmarklet.js`：书签按需加载的稳定入口。
 - `https://blog.xunserver.cn/remote-input/webhid/`：独立 WebHID 接收页。
 
@@ -109,10 +115,11 @@ WebHID 接收页，把静态文件发布到专用的 `gh-pages` 分支。Pages �
 - 普通 iframe 模式点击遮罩空白会隐藏悬浮层；兼容提示状态点击空白不会销毁或隐藏
   控制器。发送成功不会自动关闭 iframe 或独立发送页。
 
-Pages 构建把 `apps/client/public/bookmarklet.js` 原样发布到稳定地址；完整应用资源继续
-由 Vite 生成内容哈希文件名。因此 loader 的兼容修复会自动应用到已安装书签，同时大型
-资源仍能命中浏览器缓存。若目标网页连 loader 本身都被 CSP 阻止，远端修复无法在该
-页面执行；这类站点需要重新安装包含新版 fallback 启动器的书签。
+Pages 构建通过 Vite library mode 将
+`apps/client/src/bookmarklet/loader.ts` 发布为稳定地址的 `bookmarklet.js`；三个页面
+的应用资源继续由 Vite 生成内容哈希文件名。因此 loader 的兼容修复会自动应用到已安装
+书签，同时大型资源仍能命中浏览器缓存。若目标网页连 loader 本身都被 CSP 阻止，远端
+修复无法在该页面执行；这类站点需要重新安装包含新版 fallback 启动器的书签。
 
 在 HTTPS 网页中使用时，Pages、loader 和 iframe 都是 HTTPS，不会形成混合内容。
 WebSocket 接收端也必须提供 `wss://`；浏览器不会允许 HTTPS 发送页连接明文 `ws://`。

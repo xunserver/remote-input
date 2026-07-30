@@ -1,6 +1,5 @@
 import { createBookmarkletCode } from "@/utils/bookmarklet-bootstrap";
 
-export const bookmarkletQueryKey = "remote-input-bookmarklet";
 export const bookmarkletSelectionHashKey = "selection";
 
 const bookmarkletLoaderFile = "bookmarklet.js";
@@ -14,11 +13,6 @@ export type BookmarkletMessage =
     text: string;
     type: "remote-input:selection";
   };
-
-export function isBookmarkletMode(): boolean {
-  return new URLSearchParams(window.location.search).get(bookmarkletQueryKey) ===
-    "1";
-}
 
 export function getBookmarkletLoaderUrl(): string {
   return new URL(

@@ -6,7 +6,6 @@ on:
     paths:
       - ".github/workflows/deploy-client-pages.yml"
       - "apps/client/**"
-      - "apps/web-agent/**"
       - "packages/device-protocol/**"
       - "packages/protocol/**"
       - "packages/sdk/**"
@@ -48,23 +47,21 @@ jobs:
       - name: Build GitHub Pages apps
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
-        run: pnpm turbo run build --filter=@remote-input/client --filter=@remote-input/web-agent
+        run: pnpm turbo run build:pages --filter=@remote-input/client
 
-      - name: Verify bookmarklet loader
+      - name: Verify multi-page and library outputs
         run: |
-          test -s apps/client/dist/bookmarklet.js
-          node --check apps/client/dist/bookmarklet.js
-          cmp apps/client/public/bookmarklet.js apps/client/dist/bookmarklet.js
-
-      - name: Assemble GitHub Pages routes
-        run: |
-          mkdir -p apps/client/dist/webhid
-          cp -R apps/web-agent/dist/. apps/client/dist/webhid/
+          test -s apps/client/dist-pages/index.html
+          test -s apps/client/dist-pages/bookmarklet/index.html
+          test -s apps/client/dist-pages/webhid/index.html
+          test -s apps/client/dist-pages/bookmarklet.js
+          node --check apps/client/dist-pages/bookmarklet.js
+          test ! -e apps/client/dist-pages/receive
 
       - name: Publish gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
-          publish_dir: apps/client/dist
+          publish_dir: apps/client/dist-pages
           force_orphan: true

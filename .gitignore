@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-pages
 .turbo
 /public
 firmware/esp32s3/build/

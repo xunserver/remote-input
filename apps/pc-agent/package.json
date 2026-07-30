@@ -24,8 +24,6 @@
   },
   "devDependencies": {
     "@remote-input/client": "workspace:*",
-    "@remote-input/receiver": "workspace:*",
-    "@remote-input/web-agent": "workspace:*",
     "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",
     "typescript": "^7.0.2"

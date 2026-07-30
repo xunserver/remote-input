@@ -26,6 +26,9 @@ importers:
       '@remote-input/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      '@remote-input/web-agent-sdk':
+        specifier: workspace:*
+        version: link:../../packages/web-agent-sdk
       '@vueuse/core':
         specifier: ^14.3.0
         version: 14.3.0(vue@3.5.40(typescript@6.0.3))
@@ -94,12 +97,6 @@ importers:
       '@remote-input/client':
         specifier: workspace:*
         version: link:../client
-      '@remote-input/receiver':
-        specifier: workspace:*
-        version: link:../receiver
-      '@remote-input/web-agent':
-        specifier: workspace:*
-        version: link:../web-agent
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
@@ -109,53 +106,6 @@ importers:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
-
-  apps/receiver:
-    dependencies:
-      '@lucide/vue':
-        specifier: ^1.25.0
-        version: 1.25.0(vue@3.5.40(typescript@6.0.3))
-      vue:
-        specifier: ^3.5.40
-        version: 3.5.40(typescript@6.0.3)
-    devDependencies:
-      '@vitejs/plugin-vue':
-        specifier: ^6.0.8
-        version: 6.0.8(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))(vue@3.5.40(typescript@6.0.3))
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-      vite:
-        specifier: ^8.1.4
-        version: 8.1.4(@types/node@26.1.1)(jiti@2.7.0)
-      vue-tsc:
-        specifier: ^3.3.7
-        version: 3.3.7(typescript@6.0.3)
-
-  apps/web-agent:
-    dependencies:
-      '@lucide/vue':
-        specifier: ^1.25.0
-        version: 1.25.0(vue@3.5.40(typescript@6.0.3))
-      '@remote-input/web-agent-sdk':
-        specifier: workspace:*
-        version: link:../../packages/web-agent-sdk
-      vue:
-        specifier: ^3.5.40
-        version: 3.5.40(typescript@6.0.3)
-    devDependencies:
-      '@vitejs/plugin-vue':
-        specifier: ^6.0.8
-        version: 6.0.8(vite@8.1.4(@types/node@26.1.1)(jiti@2.7.0))(vue@3.5.40(typescript@6.0.3))
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-      vite:
-        specifier: ^8.1.4
-        version: 8.1.4(@types/node@26.1.1)(jiti@2.7.0)
-      vue-tsc:
-        specifier: ^3.3.7
-        version: 3.3.7(typescript@6.0.3)
 
   packages/device-protocol:
     devDependencies:

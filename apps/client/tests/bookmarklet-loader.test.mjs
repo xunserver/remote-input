@@ -4,7 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 const loaderSource = await readFile(
-  new URL("../public/bookmarklet.js", import.meta.url),
+  new URL("../dist/bookmarklet.js", import.meta.url),
   "utf8",
 );
 
@@ -195,7 +195,7 @@ test("loader consumes queued text, sends it after ready, and reuses its API", ()
   assert.ok(frame);
   assert.equal(
     frame.src,
-    "https://blog.xunserver.cn/remote-input/?remote-input-bookmarklet=1&_=1",
+    "https://blog.xunserver.cn/remote-input/bookmarklet/?_=1",
   );
   assert.equal(frame.allow, "bluetooth");
 

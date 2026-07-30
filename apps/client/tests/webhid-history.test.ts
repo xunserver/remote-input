@@ -6,7 +6,7 @@ import {
   maxWebHidHistoryItems,
   saveWebHidHistory,
   webHidHistoryStorageKey,
-} from "../src/history.ts";
+} from "../src/pages/webhid/history.ts";
 
 class MemoryStorage {
   readonly values = new Map<string, string>();

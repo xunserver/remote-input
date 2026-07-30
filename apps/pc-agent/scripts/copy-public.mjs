@@ -9,8 +9,6 @@ const packageDir = path.resolve(
 const publicDir = path.join(packageDir, "dist/public");
 const builds = [
   ["Client", path.resolve(packageDir, "../client/dist"), "."],
-  ["Receiver", path.resolve(packageDir, "../receiver/dist"), "receive"],
-  ["WebHID agent", path.resolve(packageDir, "../web-agent/dist"), "webhid"],
 ];
 
 for (const [name, output] of builds) {
