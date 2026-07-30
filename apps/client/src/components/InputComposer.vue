@@ -202,6 +202,7 @@ function handleKeyDown(event: KeyboardEvent): void {
           }}
         </p>
         <Button
+          data-testid="send-button"
           size="lg"
           class="h-12 w-full sm:w-auto sm:min-w-32"
           :disabled="!canSend"

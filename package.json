@@ -8,6 +8,8 @@
     "build:pages": "turbo run build:pages --filter=@remote-input/client",
     "check": "turbo run check",
     "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e --filter=@remote-input/e2e",
+    "test:e2e:ui": "turbo run test:e2e:ui --filter=@remote-input/e2e",
     "dev": "turbo run dev",
     "dev:client": "turbo run dev --filter=@remote-input/client",
     "dev:pc-agent": "turbo run dev --filter=@remote-input/pc-agent",

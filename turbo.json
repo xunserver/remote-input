@@ -19,6 +19,15 @@
       "dependsOn": ["build"],
       "outputs": []
     },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "test:e2e:ui": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
     "dev": {
       "dependsOn": ["^build"],
       "cache": false,

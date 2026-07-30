@@ -2,6 +2,8 @@ node_modules
 dist
 dist-pages
 .turbo
+playwright-report
+test-results
 /public
 firmware/esp32s3/build/
 firmware/esp32s3/managed_components/

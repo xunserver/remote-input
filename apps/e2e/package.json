@@ -1,0 +1,17 @@
+{
+  "name": "@remote-input/e2e",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0",
+    "@remote-input/pc-agent": "workspace:*",
+    "@types/node": "^26.1.0",
+    "typescript": "^7.0.2"
+  }
+}

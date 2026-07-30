@@ -158,8 +158,32 @@ Node 程序授予辅助功能权限。
 ```bash
 pnpm check
 pnpm test
+pnpm --filter @remote-input/e2e exec playwright install chromium
+pnpm test:e2e
 pnpm build
 ```
+
+`pnpm test:e2e` 会构建前端和 PC Agent，以 `INPUT_MODE=dev` 在本机拉起测试服务，
+再用 Chromium 完成 WebSocket 连接、发送、接收看板、历史和重连等浏览器端到端验证。
+本地运行默认打开可见浏览器并适度放慢操作，CI 环境则自动使用无界面模式。
+首次运行前需要安装一次 Playwright Chromium；测试失败时可在
+`apps/e2e/playwright-report` 和 `apps/e2e/test-results` 查看报告、截图、录像与 trace。
+
+在 VS Code 中需要逐步观察、筛选或重复运行用例时，可以运行：
+
+```bash
+pnpm test:e2e:ui
+```
+
+也可以安装工作区推荐的 Microsoft Playwright Test for VSCode 扩展，在 Testing
+侧边栏运行或调试单条用例；调试模式会停在断点并保留可见浏览器。
+
+当前 18 条浏览器用例覆盖：
+
+- 页面加载、控制台异常、首次连接、错误端点恢复、主动断开、服务异常退出、重连和重置；
+- 空白输入、Enter 发送、多行输入、桌面/移动端发送控制及发送中防重复提交；
+- Unicode、HTML-like 文本、长消息的无损发送，以及 WebSocket 来源和完成状态；
+- SSE 实时更新与初始快照、双发送端数量、发送历史持久化、重发和两侧独立清空。
 
 V2 Web Bluetooth、ESP32-S3 relay frame、固件构建和 USB 权限细节见
 [V2 架构](docs/v2-ble-hid-architecture.md)。V1 Session 和 WebSocket 协议见
