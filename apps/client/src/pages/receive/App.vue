@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import {
+  Activity,
   Check,
   CircleAlert,
   ClipboardCopy,
@@ -11,6 +12,22 @@ import {
   Usb,
   Wifi,
 } from "@lucide/vue";
+import { Badge } from "@shadcn/badge";
+import { Button } from "@shadcn/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@shadcn/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@shadcn/empty";
 
 type MessageSource = "websocket" | "hid";
 type MessageStatus = "queued" | "processing" | "succeeded" | "failed";
@@ -182,113 +199,232 @@ function apiUrl(path: string): string {
 </script>
 
 <template>
-  <main class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark"><Radio :size="22" aria-hidden="true" /></span>
-        <div>
-          <h1>接收看板</h1>
-          <p>Remote Input PC Agent</p>
-        </div>
-      </div>
-      <span class="stream-state" :class="{ connected: streamConnected }">
-        <span class="status-dot" />
-        {{ streamConnected ? "实时连接" : "正在重连" }}
-      </span>
-    </header>
-
-    <section class="status-grid" aria-label="连接状态">
-      <div class="status-card">
-        <Usb :size="20" aria-hidden="true" />
-        <div>
-          <span>USB HID</span>
-          <strong>{{ hidLabel }}</strong>
-        </div>
-      </div>
-      <div class="status-card">
-        <Wifi :size="20" aria-hidden="true" />
-        <div>
-          <span>WebSocket</span>
-          <strong>{{ runtimeStatus.websocketClients }} 个发送端</strong>
-        </div>
-      </div>
-      <div class="status-card">
-        <Laptop :size="20" aria-hidden="true" />
-        <div>
-          <span>接收历史</span>
-          <strong>{{ messages.length }} 条 · {{ totalCharacters }} 字符</strong>
-        </div>
-      </div>
-    </section>
-
-    <div v-if="error" class="error-banner" role="alert">
-      <CircleAlert :size="18" aria-hidden="true" />
-      <span>{{ error }}</span>
-    </div>
-
-    <section class="receiver">
-      <div class="receiver-toolbar">
-        <div>
-          <h2>接收内容</h2>
-          <p>最近 100 条，仅保存在本机内存中</p>
-        </div>
-        <div class="toolbar-actions">
-          <button
-            class="secondary-button"
-            type="button"
-            :disabled="messages.length === 0"
-            @click="clearMessages"
-          >
-            <Trash2 :size="17" aria-hidden="true" />
-            清空
-          </button>
-          <button
-            class="primary-button"
-            type="button"
-            :disabled="messages.length === 0"
-            @click="copyAll"
-          >
-            <Check v-if="copiedId === 'all'" :size="17" aria-hidden="true" />
-            <ClipboardCopy v-else :size="17" aria-hidden="true" />
-            {{ copiedId === "all" ? "已复制" : "复制全部" }}
-          </button>
-        </div>
-      </div>
-
-      <div v-if="messages.length === 0" class="empty-state">
-        <Radio :size="34" stroke-width="1.5" aria-hidden="true" />
-        <strong>尚未收到消息</strong>
-        <span>WebSocket 或 ESP32 HID 发来的文字会显示在这里</span>
-      </div>
-
-      <ol v-else class="message-list">
-        <li v-for="message in messages" :key="message.id" class="message-card">
-          <div class="message-meta">
-            <span class="source">
-              <Usb v-if="message.source === 'hid'" :size="15" aria-hidden="true" />
-              <Wifi v-else :size="15" aria-hidden="true" />
-              {{ sourceLabel(message.source) }}
-            </span>
-            <time :datetime="message.receivedAt">
-              {{ formatTime(message.receivedAt) }}
-            </time>
-            <span class="message-status" :class="message.status">
-              {{ statusLabel(message.status) }}
-            </span>
-            <button
-              class="icon-button"
-              type="button"
-              title="复制这条消息"
-              @click="copyMessage(message)"
+  <main class="min-h-svh text-foreground">
+    <section
+      class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:gap-5 sm:px-6 sm:pt-6"
+    >
+      <header class="flex flex-col gap-4">
+        <div class="flex items-center justify-between gap-3 px-1">
+          <div class="flex min-w-0 items-center gap-3">
+            <div
+              class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"
             >
-              <Check v-if="copiedId === message.id" :size="16" aria-hidden="true" />
-              <Copy v-else :size="16" aria-hidden="true" />
-            </button>
+              <Radio aria-hidden="true" />
+            </div>
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <h1 class="text-xl font-semibold tracking-tight">接收看板</h1>
+              <p class="text-sm text-muted-foreground">
+                Remote Input PC Agent
+              </p>
+            </div>
           </div>
-          <pre>{{ message.text }}</pre>
-          <p v-if="message.error" class="message-error">{{ message.error }}</p>
-        </li>
-      </ol>
+          <Badge
+            :variant="streamConnected ? 'secondary' : 'destructive'"
+            class="gap-1.5"
+          >
+            <span
+              class="size-1.5 rounded-full bg-current"
+              :class="{ 'animate-pulse': !streamConnected }"
+            />
+            {{ streamConnected ? "实时连接" : "正在重连" }}
+          </Badge>
+        </div>
+
+        <Card class="gap-0 overflow-hidden py-0 shadow-xs">
+          <CardHeader
+            class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-3 py-3 sm:px-4"
+          >
+            <div
+              class="flex size-9 items-center justify-center rounded-full bg-secondary text-secondary-foreground"
+            >
+              <Activity aria-hidden="true" />
+            </div>
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <CardTitle class="text-sm">接收服务状态</CardTitle>
+              <CardDescription class="text-xs">
+                同时监听 USB HID 与 WebSocket 输入
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent
+            class="grid gap-2 border-t bg-muted/30 px-3 py-3 sm:grid-cols-3 sm:px-4"
+            aria-label="连接状态"
+          >
+            <div
+              class="flex min-w-0 items-center gap-2 rounded-lg bg-background px-3 py-2 shadow-xs ring-1 ring-border/70"
+            >
+              <Usb class="shrink-0" aria-hidden="true" />
+              <div class="flex min-w-0 flex-col">
+                <span class="text-xs text-muted-foreground">USB HID</span>
+                <span class="truncate text-sm font-medium">{{ hidLabel }}</span>
+              </div>
+            </div>
+            <div
+              class="flex min-w-0 items-center gap-2 rounded-lg bg-background px-3 py-2 shadow-xs ring-1 ring-border/70"
+            >
+              <Wifi class="shrink-0" aria-hidden="true" />
+              <div class="flex min-w-0 flex-col">
+                <span class="text-xs text-muted-foreground">WebSocket</span>
+                <span class="truncate text-sm font-medium">
+                  {{ runtimeStatus.websocketClients }} 个发送端
+                </span>
+              </div>
+            </div>
+            <div
+              class="flex min-w-0 items-center gap-2 rounded-lg bg-background px-3 py-2 shadow-xs ring-1 ring-border/70"
+            >
+              <Laptop class="shrink-0" aria-hidden="true" />
+              <div class="flex min-w-0 flex-col">
+                <span class="text-xs text-muted-foreground">接收历史</span>
+                <span class="truncate text-sm font-medium">
+                  {{ messages.length }} 条 · {{ totalCharacters }} 字符
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </header>
+
+      <div
+        v-if="error"
+        class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
+        role="alert"
+      >
+        <CircleAlert class="mt-0.5 shrink-0" aria-hidden="true" />
+        <span>{{ error }}</span>
+      </div>
+
+      <Card class="gap-0 overflow-hidden py-0 shadow-sm">
+        <CardHeader
+          class="flex flex-row items-center justify-between gap-3 border-b px-4 py-4 sm:px-5"
+        >
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="flex items-center gap-2">
+              <CardTitle class="text-base">接收内容</CardTitle>
+              <Badge v-if="messages.length > 0" variant="secondary">
+                {{ messages.length }}
+              </Badge>
+            </div>
+            <CardDescription>
+              最近 100 条，仅保存在本机内存中
+            </CardDescription>
+          </div>
+          <div class="flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              :disabled="messages.length === 0"
+              @click="clearMessages"
+            >
+              <Trash2 data-icon="inline-start" aria-hidden="true" />
+              清空
+            </Button>
+            <Button
+              size="sm"
+              :disabled="messages.length === 0"
+              @click="copyAll"
+            >
+              <Check
+                v-if="copiedId === 'all'"
+                data-icon="inline-start"
+                aria-hidden="true"
+              />
+              <ClipboardCopy
+                v-else
+                data-icon="inline-start"
+                aria-hidden="true"
+              />
+              {{ copiedId === "all" ? "已复制" : "复制全部" }}
+            </Button>
+          </div>
+        </CardHeader>
+
+        <CardContent class="p-0">
+          <Empty
+            v-if="messages.length === 0"
+            class="min-h-80 rounded-none border-0"
+          >
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Radio aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>尚未收到消息</EmptyTitle>
+              <EmptyDescription>
+                WebSocket 或 ESP32 HID 发来的文字会显示在这里
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+
+          <ol
+            v-else
+            class="grid max-h-[calc(100svh-19rem)] min-h-60 gap-3 overflow-auto bg-muted/30 p-3 sm:p-4"
+          >
+            <li v-for="message in messages" :key="message.id">
+              <Card size="sm" class="gap-2 shadow-xs">
+                <CardHeader
+                  class="flex flex-row items-center gap-2 px-3 sm:px-4"
+                >
+                  <Badge variant="outline">
+                    <Usb
+                      v-if="message.source === 'hid'"
+                      data-icon="inline-start"
+                      aria-hidden="true"
+                    />
+                    <Wifi
+                      v-else
+                      data-icon="inline-start"
+                      aria-hidden="true"
+                    />
+                    {{ sourceLabel(message.source) }}
+                  </Badge>
+                  <time
+                    class="text-xs text-muted-foreground tabular-nums"
+                    :datetime="message.receivedAt"
+                  >
+                    {{ formatTime(message.receivedAt) }}
+                  </time>
+                  <Badge
+                    :variant="
+                      message.status === 'failed'
+                        ? 'destructive'
+                        : message.status === 'succeeded'
+                          ? 'secondary'
+                          : 'outline'
+                    "
+                  >
+                    {{ statusLabel(message.status) }}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="ml-auto"
+                    title="复制这条消息"
+                    aria-label="复制这条消息"
+                    @click="copyMessage(message)"
+                  >
+                    <Check
+                      v-if="copiedId === message.id"
+                      aria-hidden="true"
+                    />
+                    <Copy v-else aria-hidden="true" />
+                  </Button>
+                </CardHeader>
+                <CardContent class="px-3 sm:px-4">
+                  <pre
+                    class="m-0 whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground"
+                  >{{ message.text }}</pre>
+                  <p
+                    v-if="message.error"
+                    class="mt-2 text-xs text-destructive"
+                  >
+                    {{ message.error }}
+                  </p>
+                </CardContent>
+              </Card>
+            </li>
+          </ol>
+        </CardContent>
+      </Card>
     </section>
   </main>
 </template>

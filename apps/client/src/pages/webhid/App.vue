@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
+  Activity,
   Check,
   CircleAlert,
   Copy,
@@ -10,6 +11,23 @@ import {
   Unplug,
   Usb,
 } from "@lucide/vue";
+import { Badge } from "@shadcn/badge";
+import { Button } from "@shadcn/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@shadcn/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@shadcn/empty";
+import { Spinner } from "@shadcn/spinner";
 import {
   WebHidAgent,
   getWebHidSupport,
@@ -158,116 +176,219 @@ function formatTime(value: string): string {
 </script>
 
 <template>
-  <main class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark"><Radio :size="22" aria-hidden="true" /></span>
-        <div>
-          <h1>远程接收</h1>
-          <p>Remote Input WebHID</p>
-        </div>
-      </div>
-      <button
-        class="connection-button"
-        :class="{ connected: isConnected }"
-        type="button"
-        :disabled="isConnecting || !support.supported"
-        @click="toggleConnection"
-      >
-        <Unplug v-if="isConnected" :size="17" aria-hidden="true" />
-        <Usb v-else :size="17" aria-hidden="true" />
-        {{ isConnected ? "断开设备" : isConnecting ? "连接中" : "连接设备" }}
-      </button>
-    </header>
-
-    <section class="status-band" aria-live="polite">
-      <div class="status-main">
-        <span class="status-dot" :class="state" />
-        <div>
-          <strong>{{ statusLabel }}</strong>
-          <span>{{ connectionTitle(agent.device) }}</span>
-        </div>
-      </div>
-      <div class="transport-label">
-        <Usb :size="16" aria-hidden="true" />
-        USB HID
-      </div>
-    </section>
-
-    <div v-if="error" class="error-banner" role="alert">
-      <CircleAlert :size="18" aria-hidden="true" />
-      <span>{{ error }}</span>
-    </div>
-
-    <section class="receiver" aria-labelledby="receiver-title">
-      <div class="receiver-toolbar">
-        <div class="receiver-heading">
-          <FileText :size="19" aria-hidden="true" />
-          <div>
-            <h2 id="receiver-title">接收内容</h2>
-            <span>{{ textSummary }}</span>
-          </div>
-        </div>
-        <div class="toolbar-actions">
-          <button
-            class="icon-button"
-            type="button"
-            title="清空内容"
-            aria-label="清空内容"
-            :disabled="messages.length === 0"
-            @click="clearText"
-          >
-            <Trash2 :size="18" aria-hidden="true" />
-          </button>
-          <button
-            class="copy-button"
-            type="button"
-            :disabled="messages.length === 0"
-            @click="copyAll"
-          >
-            <Check v-if="copiedId === 'all'" :size="18" aria-hidden="true" />
-            <Copy v-else :size="18" aria-hidden="true" />
-            {{ copiedId === "all" ? "已复制" : "复制全部" }}
-          </button>
-        </div>
-      </div>
-
-      <div v-if="messages.length === 0" class="empty-state">
-        <FileText :size="30" stroke-width="1.5" aria-hidden="true" />
-        <span>尚未收到文字</span>
-      </div>
-
-      <ol v-else class="message-list">
-        <li
-          v-for="message in messages"
-          :key="message.id"
-          class="message-card"
-        >
-          <div class="message-meta">
-            <time
-              :datetime="message.receivedAt"
-              :title="new Date(message.receivedAt).toLocaleString('zh-CN')"
+  <main class="min-h-svh text-foreground">
+    <section
+      class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:gap-5 sm:px-6 sm:pt-6"
+    >
+      <header class="flex flex-col gap-4">
+        <div class="flex items-center justify-between gap-3 px-1">
+          <div class="flex min-w-0 items-center gap-3">
+            <div
+              class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm"
             >
-              {{ formatTime(message.receivedAt) }}
-            </time>
-            <button
-              class="message-copy-button"
-              type="button"
-              :aria-label="`复制 ${formatTime(message.receivedAt)} 的消息`"
-              @click="copyMessage(message)"
+              <Radio aria-hidden="true" />
+            </div>
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <h1 class="text-xl font-semibold tracking-tight">远程接收</h1>
+              <p class="text-sm text-muted-foreground">
+                Remote Input WebHID
+              </p>
+            </div>
+          </div>
+          <Button
+            :variant="isConnected ? 'outline' : 'default'"
+            size="sm"
+            :disabled="isConnecting || !support.supported"
+            @click="toggleConnection"
+          >
+            <Spinner v-if="isConnecting" data-icon="inline-start" />
+            <Unplug
+              v-else-if="isConnected"
+              data-icon="inline-start"
+              aria-hidden="true"
+            />
+            <Usb v-else data-icon="inline-start" aria-hidden="true" />
+            {{
+              isConnected
+                ? "断开设备"
+                : isConnecting
+                  ? "连接中"
+                  : "连接设备"
+            }}
+          </Button>
+        </div>
+
+        <Card class="gap-0 overflow-hidden py-0 shadow-xs" aria-live="polite">
+          <CardHeader
+            class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:px-4"
+          >
+            <div
+              class="flex size-9 items-center justify-center rounded-full bg-secondary text-secondary-foreground"
+              :class="{ 'bg-primary/10 text-primary': isConnected }"
+            >
+              <Activity aria-hidden="true" />
+            </div>
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <CardTitle class="text-sm">{{ statusLabel }}</CardTitle>
+              <CardDescription class="truncate text-xs">
+                {{ connectionTitle(agent.device) }}
+              </CardDescription>
+            </div>
+            <Badge
+              :variant="
+                state === 'disconnected'
+                  ? 'destructive'
+                  : isConnected
+                    ? 'secondary'
+                    : 'outline'
+              "
+            >
+              <Usb data-icon="inline-start" aria-hidden="true" />
+              USB HID
+            </Badge>
+          </CardHeader>
+          <CardContent
+            class="grid grid-cols-2 gap-2 border-t bg-muted/30 px-3 py-3 sm:px-4"
+          >
+            <div
+              class="flex min-w-0 flex-col rounded-lg bg-background px-3 py-2 shadow-xs ring-1 ring-border/70"
+            >
+              <span class="text-xs text-muted-foreground">连接状态</span>
+              <span class="truncate text-sm font-medium">
+                {{ statusLabel }}
+              </span>
+            </div>
+            <div
+              class="flex min-w-0 flex-col rounded-lg bg-background px-3 py-2 shadow-xs ring-1 ring-border/70"
+            >
+              <span class="text-xs text-muted-foreground">接收历史</span>
+              <span class="truncate text-sm font-medium">
+                {{ textSummary }}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </header>
+
+      <div
+        v-if="error"
+        class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
+        role="alert"
+      >
+        <CircleAlert class="mt-0.5 shrink-0" aria-hidden="true" />
+        <span>{{ error }}</span>
+      </div>
+
+      <Card
+        class="gap-0 overflow-hidden py-0 shadow-sm"
+        aria-labelledby="receiver-title"
+      >
+        <CardHeader
+          class="flex flex-row items-center justify-between gap-3 border-b px-4 py-4 sm:px-5"
+        >
+          <div class="flex min-w-0 items-center gap-3">
+            <div
+              class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground"
+            >
+              <FileText aria-hidden="true" />
+            </div>
+            <div class="flex min-w-0 flex-col gap-1">
+              <CardTitle id="receiver-title" class="text-base">
+                接收内容
+              </CardTitle>
+              <CardDescription>{{ textSummary }}</CardDescription>
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              title="清空内容"
+              aria-label="清空内容"
+              :disabled="messages.length === 0"
+              @click="clearText"
+            >
+              <Trash2 aria-hidden="true" />
+            </Button>
+            <Button
+              size="sm"
+              :disabled="messages.length === 0"
+              @click="copyAll"
             >
               <Check
-                v-if="copiedId === message.id"
-                :size="16"
+                v-if="copiedId === 'all'"
+                data-icon="inline-start"
                 aria-hidden="true"
               />
-              <Copy v-else :size="16" aria-hidden="true" />
-              {{ copiedId === message.id ? "已复制" : "复制" }}
-            </button>
+              <Copy v-else data-icon="inline-start" aria-hidden="true" />
+              {{ copiedId === "all" ? "已复制" : "复制全部" }}
+            </Button>
           </div>
-          <pre>{{ message.text }}</pre>
-        </li>
-      </ol>
+        </CardHeader>
+
+        <CardContent class="p-0">
+          <Empty
+            v-if="messages.length === 0"
+            class="min-h-80 rounded-none border-0"
+          >
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <FileText aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>尚未收到文字</EmptyTitle>
+              <EmptyDescription>
+                连接 HID 设备后，接收到的文字会显示在这里
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+
+          <ol
+            v-else
+            class="grid max-h-[calc(100svh-19rem)] min-h-60 gap-3 overflow-auto bg-muted/30 p-3 sm:p-4"
+          >
+            <li v-for="message in messages" :key="message.id">
+              <Card size="sm" class="gap-2 shadow-xs">
+                <CardHeader
+                  class="flex flex-row items-center justify-between gap-3 px-3 sm:px-4"
+                >
+                  <time
+                    class="text-xs text-muted-foreground tabular-nums"
+                    :datetime="message.receivedAt"
+                    :title="
+                      new Date(message.receivedAt).toLocaleString('zh-CN')
+                    "
+                  >
+                    {{ formatTime(message.receivedAt) }}
+                  </time>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    :aria-label="`复制 ${formatTime(message.receivedAt)} 的消息`"
+                    @click="copyMessage(message)"
+                  >
+                    <Check
+                      v-if="copiedId === message.id"
+                      data-icon="inline-start"
+                      aria-hidden="true"
+                    />
+                    <Copy
+                      v-else
+                      data-icon="inline-start"
+                      aria-hidden="true"
+                    />
+                    {{ copiedId === message.id ? "已复制" : "复制" }}
+                  </Button>
+                </CardHeader>
+                <CardContent class="px-3 sm:px-4">
+                  <pre
+                    class="m-0 whitespace-pre-wrap break-words font-sans text-[0.9375rem] leading-relaxed text-foreground"
+                  >{{ message.text }}</pre>
+                </CardContent>
+              </Card>
+            </li>
+          </ol>
+        </CardContent>
+      </Card>
     </section>
   </main>
 </template>
