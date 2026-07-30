@@ -13,21 +13,7 @@
     "dev:pc-agent": "turbo run dev --filter=@remote-input/pc-agent",
     "start": "turbo run start --filter=@remote-input/pc-agent",
     "install:user": "turbo run install:user --filter=@remote-input/pc-agent",
-    "uninstall:user": "turbo run uninstall:user --filter=@remote-input/pc-agent",
-    "build:client": "turbo run build --filter=@remote-input/client",
-    "build:pc-agent": "turbo run build --filter=@remote-input/pc-agent",
-    "build:protocol": "turbo run build --filter=@remote-input/protocol",
-    "build:sdk": "turbo run build --filter=@remote-input/sdk",
-    "build:web-agent-sdk": "turbo run build --filter=@remote-input/web-agent-sdk",
-    "check:client": "turbo run check --filter=@remote-input/client",
-    "check:pc-agent": "turbo run check --filter=@remote-input/pc-agent",
-    "check:protocol": "turbo run check --filter=@remote-input/protocol",
-    "check:sdk": "turbo run check --filter=@remote-input/sdk",
-    "check:web-agent-sdk": "turbo run check --filter=@remote-input/web-agent-sdk",
-    "test:protocol": "turbo run test --filter=@remote-input/protocol",
-    "test:sdk": "turbo run test --filter=@remote-input/sdk",
-    "test:web-agent-sdk": "turbo run test --filter=@remote-input/web-agent-sdk",
-    "test:pc-agent": "turbo run test --filter=@remote-input/pc-agent"
+    "uninstall:user": "turbo run uninstall:user --filter=@remote-input/pc-agent"
   },
   "packageManager": "pnpm@10.0.0",
   "devDependencies": {
