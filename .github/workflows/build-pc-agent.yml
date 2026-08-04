@@ -87,3 +87,43 @@ jobs:
           path: apps/pc-agent/release/${{ matrix.archive }}
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download platform archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: remote-input-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify release assets
+        run: |
+          test -s release-assets/remote-input-linux-x64.tar.gz
+          test -s release-assets/remote-input-win-x64.zip
+          test -s release-assets/remote-input-darwin-arm64.tar.gz
+          test -s release-assets/remote-input-darwin-x64.tar.gz
+
+      - name: Generate SHA-256 checksums
+        working-directory: release-assets
+        run: sha256sum remote-input-* > SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/* \
+              --verify-tag \
+              --generate-notes \
+              --title "Remote Input $GITHUB_REF_NAME"
+          fi

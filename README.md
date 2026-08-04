@@ -90,6 +90,10 @@ pnpm package:pc-agent
 x64 压缩包，并作为 Actions artifacts 保留 14 天。打包阶段会使用内置 Runtime 实际加载
 一次 `node-hid`，原生模块与目标平台不匹配时任务会失败，不会上传不可运行的产物。
 
+推送 `v*` 标签时，四个平台全部构建成功后还会自动创建对应的 GitHub Release，生成发布
+说明，并附加四个压缩包和 `SHA256SUMS.txt`。普通 `main` 构建和手动构建不会创建 Release。
+同一标签的工作流重跑会覆盖已有附件，不会重复创建发布条目。
+
 默认地址为 `http://localhost:17888`，PC Agent 默认监听 `0.0.0.0`。开发时可分别运行：
 
 ```bash
