@@ -107,9 +107,7 @@ function installNodeRuntime() {
       [
         "-NoProfile",
         "-Command",
-        "Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1]",
-        archivePath,
-        temporaryDir,
+        `$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath '${powershellLiteral(archivePath)}' -DestinationPath '${powershellLiteral(temporaryDir)}'`,
       ],
       { stdio: "inherit" },
     );
@@ -213,22 +211,9 @@ function unixLauncher(entry, argument) {
 
 function download(url, destination) {
   console.log(`Downloading ${url}`);
-  if (process.platform === "win32") {
-    execFileSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-Command",
-        "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri $args[0] -OutFile $args[1]",
-        url,
-        destination,
-      ],
-      { stdio: "inherit" },
-    );
-    return;
-  }
+  const curl = process.platform === "win32" ? "curl.exe" : "curl";
   execFileSync(
-    "curl",
+    curl,
     [
       "--fail",
       "--location",
@@ -248,6 +233,10 @@ function download(url, destination) {
     ],
     { stdio: "inherit" },
   );
+}
+
+function powershellLiteral(value) {
+  return value.replaceAll("'", "''");
 }
 
 function verifyChecksum(archivePath, checksumsPath) {
