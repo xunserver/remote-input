@@ -61,7 +61,11 @@ function deployApplication() {
   execFileSync(
     pnpm,
     ["--filter", packageName, "deploy", "--prod", appDir],
-    { cwd: workspaceDir, stdio: "inherit" },
+    {
+      cwd: workspaceDir,
+      stdio: "inherit",
+      ...(process.platform === "win32" ? { shell: true } : {}),
+    },
   );
 }
 
