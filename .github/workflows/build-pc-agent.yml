@@ -1,0 +1,89 @@
+name: Build portable PC Agent
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - ".github/workflows/build-pc-agent.yml"
+      - ".npmrc"
+      - "apps/client/**"
+      - "apps/pc-agent/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pc-agent-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            artifact: remote-input-linux-x64
+            archive: remote-input-linux-x64.tar.gz
+          - runner: windows-2022
+            artifact: remote-input-win-x64
+            archive: remote-input-win-x64.zip
+          - runner: macos-15
+            artifact: remote-input-darwin-arm64
+            archive: remote-input-darwin-arm64.tar.gz
+          - runner: macos-15-intel
+            artifact: remote-input-darwin-x64
+            archive: remote-input-darwin-x64.tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+
+      - name: Install Linux HID build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libudev-dev
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify portable PC Agent
+        run: pnpm turbo run package:portable --filter=@remote-input/pc-agent
+
+      - name: Create Unix archive
+        if: runner.os != 'Windows'
+        working-directory: apps/pc-agent/release
+        run: tar -czf "${{ matrix.archive }}" "${{ matrix.artifact }}"
+
+      - name: Create Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -LiteralPath "apps/pc-agent/release/${{ matrix.artifact }}" -DestinationPath "apps/pc-agent/release/${{ matrix.archive }}"
+
+      - name: Upload portable PC Agent
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: apps/pc-agent/release/${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 14

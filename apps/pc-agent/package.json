@@ -6,6 +6,7 @@
   "main": "./dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-public.mjs",
+    "package:portable": "node scripts/package-portable.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "node --test --test-timeout=10000 tests/*.test.mjs",
     "start": "node dist/main.js",

@@ -4,6 +4,7 @@ dist-pages
 .turbo
 playwright-report
 test-results
+release
 /public
 firmware/esp32s3/build/
 firmware/esp32s3/managed_components/

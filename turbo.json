@@ -11,6 +11,12 @@
       "outputs": ["dist-pages/**"],
       "env": ["VITE_BASE_PATH", "VITE_PROTOCOL_DEBUG"]
     },
+    "package:portable": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "outputs": ["release/**"],
+      "env": ["REMOTE_INPUT_NODE_VERSION", "REMOTE_INPUT_NODE_MIRROR"]
+    },
     "check": {
       "dependsOn": ["^build"],
       "outputs": []

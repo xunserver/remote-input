@@ -64,6 +64,32 @@ pnpm build
 pnpm start
 ```
 
+### 免安装 Node.js 的 PC Agent 发行包
+
+在目标操作系统和 CPU 架构的构建机上运行：
+
+```bash
+pnpm package:pc-agent
+```
+
+产物位于 `apps/pc-agent/release/remote-input-<platform>-<arch>/`，包含生产应用、原生依赖和
+经过 SHA-256 校验的官方 Node.js Runtime。接收端用户不需要安装 Node.js 或 pnpm，保持
+产物目录结构不变并运行 `start.cmd`（Windows）、`start.command`（macOS）或 `start.sh`
+（Linux）即可。登录启动项也应通过产物目录中的安装/卸载脚本配置。
+
+发行包默认内置构建机当前使用的 Node.js 版本；可以通过
+`REMOTE_INPUT_NODE_VERSION=24.x.x pnpm package:pc-agent` 固定其他完整版本号。由于
+`node-hid` 是原生模块，每个发行包必须在对应的平台和架构上构建，不应把一个平台的
+`node_modules` 与另一个平台的 Runtime 混合。Node.js 仅在构建机上需要。
+
+网络较慢时可设置 `REMOTE_INPUT_NODE_MIRROR` 更换 Runtime 二进制下载源；校验清单始终
+从 `nodejs.org` 获取，镜像文件仍必须通过 Node.js 官方 SHA-256 校验才会进入发行包。
+
+`.github/workflows/build-pc-agent.yml` 会在 `main` 的相关改动、`v*` 标签或手动触发时，
+分别使用原生 GitHub runner 构建 Linux x64、Windows x64、macOS ARM64 和 macOS Intel
+x64 压缩包，并作为 Actions artifacts 保留 14 天。打包阶段会使用内置 Runtime 实际加载
+一次 `node-hid`，原生模块与目标平台不匹配时任务会失败，不会上传不可运行的产物。
+
 默认地址为 `http://localhost:17888`，PC Agent 默认监听 `0.0.0.0`。开发时可分别运行：
 
 ```bash

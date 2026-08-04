@@ -5,6 +5,7 @@
   "description": "",
   "scripts": {
     "build": "turbo run build",
+    "package:pc-agent": "turbo run package:portable --filter=@remote-input/pc-agent",
     "build:pages": "turbo run build:pages --filter=@remote-input/client",
     "check": "turbo run check",
     "test": "turbo run test",

@@ -3,6 +3,7 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
+  injectWorkspacePackages: true
 
 importers:
 
@@ -111,7 +112,7 @@ importers:
     devDependencies:
       '@remote-input/client':
         specifier: workspace:*
-        version: link:../client
+        version: file:apps/client(typescript@7.0.2)
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
@@ -244,6 +245,21 @@ packages:
     resolution: {integrity: sha512-9zOJ6ZQRAena31MpOH9VSzIz8Ou3YJ/wtY/eQm5T2uhfhG7/U3COrMS8xOtUrZrp9OgdmzEnIYODye3nY1VqzA==}
     engines: {node: '>=20'}
     hasBin: true
+
+  '@remote-input/client@file:apps/client':
+    resolution: {directory: apps/client, type: directory}
+
+  '@remote-input/device-protocol@file:packages/device-protocol':
+    resolution: {directory: packages/device-protocol, type: directory}
+
+  '@remote-input/protocol@file:packages/protocol':
+    resolution: {directory: packages/protocol, type: directory}
+
+  '@remote-input/sdk@file:packages/sdk':
+    resolution: {directory: packages/sdk, type: directory}
+
+  '@remote-input/web-agent-sdk@file:packages/web-agent-sdk':
+    resolution: {directory: packages/web-agent-sdk, type: directory}
 
   '@rolldown/binding-android-arm64@1.1.5':
     resolution: {integrity: sha512-lZg8fqIv2v7FF237bwMgzGZEJvGL79/s5knJ/i6FmsGF4XXlzccZ4jb+TrFIxtSSxFtIpdsgrPZeMk1I9AFcyQ==}
@@ -1250,6 +1266,15 @@ snapshots:
       - '@vue/composition-api'
       - vue
 
+  '@floating-ui/vue@1.1.11(vue@3.5.40(typescript@7.0.2))':
+    dependencies:
+      '@floating-ui/dom': 1.8.0
+      '@floating-ui/utils': 0.2.12
+      vue-demi: 0.14.10(vue@3.5.40(typescript@7.0.2))
+    transitivePeerDependencies:
+      - '@vue/composition-api'
+      - vue
+
   '@internationalized/date@3.12.2':
     dependencies:
       '@swc/helpers': 0.5.23
@@ -1281,6 +1306,10 @@ snapshots:
     dependencies:
       vue: 3.5.40(typescript@6.0.3)
 
+  '@lucide/vue@1.25.0(vue@3.5.40(typescript@7.0.2))':
+    dependencies:
+      vue: 3.5.40(typescript@7.0.2)
+
   '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
     dependencies:
       '@emnapi/core': 1.11.1
@@ -1293,6 +1322,38 @@ snapshots:
   '@playwright/test@1.62.0':
     dependencies:
       playwright: 1.62.0
+
+  '@remote-input/client@file:apps/client(typescript@7.0.2)':
+    dependencies:
+      '@lucide/vue': 1.25.0(vue@3.5.40(typescript@7.0.2))
+      '@remote-input/protocol': file:packages/protocol
+      '@remote-input/sdk': file:packages/sdk
+      '@remote-input/web-agent-sdk': file:packages/web-agent-sdk
+      '@vueuse/core': 14.3.0(vue@3.5.40(typescript@7.0.2))
+      class-variance-authority: 0.7.1
+      clsx: 2.1.1
+      reka-ui: 2.10.1(vue@3.5.40(typescript@7.0.2))
+      tailwind-merge: 3.6.0
+      vue: 3.5.40(typescript@7.0.2)
+    transitivePeerDependencies:
+      - '@vue/composition-api'
+      - typescript
+
+  '@remote-input/device-protocol@file:packages/device-protocol': {}
+
+  '@remote-input/protocol@file:packages/protocol':
+    dependencies:
+      '@remote-input/device-protocol': file:packages/device-protocol
+
+  '@remote-input/sdk@file:packages/sdk':
+    dependencies:
+      '@remote-input/protocol': file:packages/protocol
+
+  '@remote-input/web-agent-sdk@file:packages/web-agent-sdk':
+    dependencies:
+      '@remote-input/device-protocol': file:packages/device-protocol
+      '@remote-input/protocol': file:packages/protocol
+      '@remote-input/sdk': file:packages/sdk
 
   '@rolldown/binding-android-arm64@1.1.5':
     optional: true
@@ -1427,6 +1488,11 @@ snapshots:
     dependencies:
       '@tanstack/virtual-core': 3.17.5
       vue: 3.5.40(typescript@6.0.3)
+
+  '@tanstack/vue-virtual@3.13.33(vue@3.5.40(typescript@7.0.2))':
+    dependencies:
+      '@tanstack/virtual-core': 3.17.5
+      vue: 3.5.40(typescript@7.0.2)
 
   '@turbo/darwin-64@2.10.4':
     optional: true
@@ -1610,11 +1676,22 @@ snapshots:
       '@vueuse/shared': 14.3.0(vue@3.5.40(typescript@6.0.3))
       vue: 3.5.40(typescript@6.0.3)
 
+  '@vueuse/core@14.3.0(vue@3.5.40(typescript@7.0.2))':
+    dependencies:
+      '@types/web-bluetooth': 0.0.21
+      '@vueuse/metadata': 14.3.0
+      '@vueuse/shared': 14.3.0(vue@3.5.40(typescript@7.0.2))
+      vue: 3.5.40(typescript@7.0.2)
+
   '@vueuse/metadata@14.3.0': {}
 
   '@vueuse/shared@14.3.0(vue@3.5.40(typescript@6.0.3))':
     dependencies:
       vue: 3.5.40(typescript@6.0.3)
+
+  '@vueuse/shared@14.3.0(vue@3.5.40(typescript@7.0.2))':
+    dependencies:
+      vue: 3.5.40(typescript@7.0.2)
 
   alien-signals@3.2.1: {}
 
@@ -1893,6 +1970,22 @@ snapshots:
     transitivePeerDependencies:
       - '@vue/composition-api'
 
+  reka-ui@2.10.1(vue@3.5.40(typescript@7.0.2)):
+    dependencies:
+      '@floating-ui/dom': 1.8.0
+      '@floating-ui/vue': 1.1.11(vue@3.5.40(typescript@7.0.2))
+      '@internationalized/date': 3.12.2
+      '@internationalized/number': 3.6.7
+      '@tanstack/vue-virtual': 3.13.33(vue@3.5.40(typescript@7.0.2))
+      '@vueuse/core': 14.3.0(vue@3.5.40(typescript@7.0.2))
+      '@vueuse/shared': 14.3.0(vue@3.5.40(typescript@7.0.2))
+      aria-hidden: 1.2.6
+      defu: 6.1.7
+      ohash: 2.0.11
+      vue: 3.5.40(typescript@7.0.2)
+    transitivePeerDependencies:
+      - '@vue/composition-api'
+
   rolldown@1.1.5:
     dependencies:
       '@oxc-project/types': 0.139.0
@@ -2025,6 +2118,10 @@ snapshots:
     dependencies:
       vue: 3.5.40(typescript@6.0.3)
 
+  vue-demi@0.14.10(vue@3.5.40(typescript@7.0.2)):
+    dependencies:
+      vue: 3.5.40(typescript@7.0.2)
+
   vue-tsc@3.3.7(typescript@6.0.3):
     dependencies:
       '@volar/typescript': 2.4.28
@@ -2040,6 +2137,16 @@ snapshots:
       '@vue/shared': 3.5.40
     optionalDependencies:
       typescript: 6.0.3
+
+  vue@3.5.40(typescript@7.0.2):
+    dependencies:
+      '@vue/compiler-dom': 3.5.40
+      '@vue/compiler-sfc': 3.5.40
+      '@vue/runtime-dom': 3.5.40
+      '@vue/server-renderer': 3.5.40
+      '@vue/shared': 3.5.40
+    optionalDependencies:
+      typescript: 7.0.2
 
   which@2.0.2:
     dependencies:
