@@ -197,7 +197,7 @@ pnpm build
 再用 Chromium 完成 WebSocket 连接、发送、接收看板、历史和重连等浏览器端到端验证。
 本地运行默认打开可见浏览器并适度放慢操作，CI 环境则自动使用无界面模式。
 首次运行前需要安装一次 Playwright Chromium；测试失败时可在
-`apps/e2e/playwright-report` 和 `apps/e2e/test-results` 查看报告、截图、录像与 trace。
+`e2e/playwright-report` 和 `e2e/test-results` 查看报告、截图、录像与 trace。
 
 在 VS Code 中需要逐步观察、筛选或重复运行用例时，可以运行：
 

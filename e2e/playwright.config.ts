@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 
 const e2eDir = path.dirname(fileURLToPath(import.meta.url));
-const repositoryRoot = path.resolve(e2eDir, "../..");
+const repositoryRoot = path.resolve(e2eDir, "..");
 const port = 17_889;
 const baseURL = `http://127.0.0.1:${port}`;
 const isCI = Boolean(process.env.CI);
@@ -31,7 +31,7 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   webServer: {
-    command: "node apps/e2e/support/test-server.mjs",
+    command: "node e2e/support/test-server.mjs",
     cwd: repositoryRoot,
     reuseExistingServer: false,
     timeout: 30_000,

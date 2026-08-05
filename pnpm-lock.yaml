@@ -71,21 +71,6 @@ importers:
         specifier: ^3.3.7
         version: 3.3.7(typescript@6.0.3)
 
-  apps/e2e:
-    devDependencies:
-      '@playwright/test':
-        specifier: ^1.62.0
-        version: 1.62.0
-      '@remote-input/pc-agent':
-        specifier: workspace:*
-        version: link:../pc-agent
-      '@types/node':
-        specifier: ^26.1.0
-        version: 26.1.1
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-
   apps/pc-agent:
     dependencies:
       '@remote-input/device-protocol':
@@ -119,6 +104,21 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  e2e:
+    devDependencies:
+      '@playwright/test':
+        specifier: ^1.62.0
+        version: 1.62.0
+      '@remote-input/pc-agent':
+        specifier: workspace:*
+        version: link:../apps/pc-agent
+      '@types/node':
+        specifier: ^26.1.0
+        version: 26.1.1
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

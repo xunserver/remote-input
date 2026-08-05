@@ -7,7 +7,7 @@ const e2eDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const repositoryRoot = path.resolve(e2eDir, "../..");
+const repositoryRoot = path.resolve(e2eDir, "..");
 const agentEntry = path.resolve(repositoryRoot, "apps/pc-agent/dist/main.js");
 const agentURL = "http://127.0.0.1:17889/api/info";
 const controlPort = 17_890;
