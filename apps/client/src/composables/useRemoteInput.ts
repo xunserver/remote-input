@@ -553,18 +553,6 @@ export function useRemoteInput() {
     };
     currentOperation.value = processing;
     lastError.value = "";
-    history.value = [
-      {
-        id: operationId,
-        text: `[${key}]`,
-        sentAt: new Date().toISOString(),
-        status: processing.state,
-        stage: processing.stage,
-        message: processing.message,
-        progress: processing.progress,
-      },
-      ...history.value,
-    ].slice(0, maxHistoryItems);
 
     try {
       if (targetRuntime.method === "bluetooth") {
@@ -586,7 +574,6 @@ export function useRemoteInput() {
             message: "按键已发送，等待接收端状态通知。",
           };
           currentOperation.value = waiting;
-          updateHistory(history, waiting);
         }
         armBluetoothStatusTimeout(operationId);
         return true;
@@ -603,7 +590,6 @@ export function useRemoteInput() {
         message: `接收端已按下 ${key}。`,
       };
       currentOperation.value = succeeded;
-      updateHistory(history, succeeded);
       return true;
     } catch (error) {
       clearBluetoothStatusTimeout();
@@ -619,7 +605,6 @@ export function useRemoteInput() {
       };
       currentOperation.value = failed;
       if (runtime === targetRuntime) lastError.value = message;
-      updateHistory(history, failed);
       return false;
     } finally {
       if (operationEpoch === targetOperationEpoch) {

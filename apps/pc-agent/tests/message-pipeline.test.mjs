@@ -77,6 +77,23 @@ test("WebSocket and HID inputs share one serial queue and expose lifecycle state
   ));
 });
 
+test("keyboard commands execute without being saved to message history", async () => {
+  const store = new MessageStore();
+  const processed = [];
+  const queue = new InputQueue(store, async (input) => {
+    processed.push(input);
+  });
+  const acceptInput = createInputService(store, queue);
+
+  await acceptInput("websocket", {
+    key: "Enter",
+    operationId: "key-1",
+  });
+
+  assert.deepEqual(processed, [{ key: "Enter", operationId: "key-1" }]);
+  assert.deepEqual(store.snapshot(), []);
+});
+
 test("queue overflow and processor errors mark their messages failed", async () => {
   const store = new MessageStore();
   const activeStarted = deferred();

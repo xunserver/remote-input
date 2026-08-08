@@ -16,10 +16,9 @@ export function createInputService(
   queue: InputQueue,
 ): AcceptInput {
   return async (source, command, onStatus) => {
-    const message = store.create(
-      source,
-      "key" in command ? `[${command.key}]` : command.text,
-    );
+    const message = "key" in command
+      ? undefined
+      : store.create(source, command.text);
     await queue.enqueue(message, command, onStatus);
   };
 }

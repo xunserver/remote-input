@@ -80,11 +80,10 @@ watch(
 const agent = new WebHidAgent({
   onText(command) {
     error.value = "";
+    if ("key" in command) return;
     messages.value = [
       ...messages.value,
-      createWebHidHistoryMessage(
-        "key" in command ? `[${command.key}]` : command.text,
-      ),
+      createWebHidHistoryMessage(command.text),
     ].slice(-maxWebHidHistoryItems);
   },
   onError(cause) {

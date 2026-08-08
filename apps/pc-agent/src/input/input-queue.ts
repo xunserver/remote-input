@@ -10,7 +10,7 @@ import type {
 
 type InputJob = {
   command: RemoteInputCommand;
-  message: ReceivedMessage;
+  message?: ReceivedMessage;
   onStatus?: (status: InputStatus) => void;
   resolve: () => void;
   reject: (error: unknown) => void;
@@ -40,17 +40,19 @@ export class InputQueue {
   ) {}
 
   enqueue(
-    message: ReceivedMessage,
+    message: ReceivedMessage | undefined,
     command: RemoteInputCommand,
     onStatus?: (status: InputStatus) => void,
   ): Promise<void> {
     emitStatus(command, onStatus, "queued", 10, "输入已进入接收队列。");
     if (this.queue.length >= this.maxWaitingJobs) {
       const error = new InputQueueFullError();
-      this.store.update(message.id, {
-        status: "failed",
-        error: error.message,
-      });
+      if (message) {
+        this.store.update(message.id, {
+          status: "failed",
+          error: error.message,
+        });
+      }
       emitStatus(command, onStatus, "failed", 100, error.message);
       return Promise.reject(error);
     }
@@ -58,7 +60,7 @@ export class InputQueue {
     const completion = new Promise<void>((resolve, reject) => {
       this.queue.push({
         command,
-        message,
+        ...(message === undefined ? {} : { message }),
         ...(onStatus === undefined ? {} : { onStatus }),
         resolve,
         reject,
@@ -75,7 +77,9 @@ export class InputQueue {
     while (this.queue.length > 0) {
       const job = this.queue.shift();
       if (!job) continue;
-      this.store.update(job.message.id, { status: "processing" });
+      if (job.message) {
+        this.store.update(job.message.id, { status: "processing" });
+      }
       emitStatus(
         job.command,
         job.onStatus,
@@ -93,7 +97,9 @@ export class InputQueue {
             message,
           );
         });
-        this.store.update(job.message.id, { status: "succeeded" });
+        if (job.message) {
+          this.store.update(job.message.id, { status: "succeeded" });
+        }
         emitStatus(
           job.command,
           job.onStatus,
@@ -107,10 +113,12 @@ export class InputQueue {
         );
         job.resolve();
       } catch (error) {
-        this.store.update(job.message.id, {
-          status: "failed",
-          error: formatError(error),
-        });
+        if (job.message) {
+          this.store.update(job.message.id, {
+            status: "failed",
+            error: formatError(error),
+          });
+        }
         emitStatus(
           job.command,
           job.onStatus,

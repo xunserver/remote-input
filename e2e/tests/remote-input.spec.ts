@@ -101,10 +101,10 @@ test("optionally presses Enter after sending text", async ({ page, request }) =>
   await sender.sendButton.click();
 
   await expect(sender.input).toHaveValue("");
-  await expectMessages(request, [text, "[Enter]"]);
+  await expectMessages(request, [text]);
   await expect(
     sender.recentHistory.getByText("[Enter]", { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test("keeps Enter as a newline in multiline mode and honors copy-only control", async ({
