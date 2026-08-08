@@ -90,6 +90,23 @@ test("sends single-line input with Enter", async ({ page, request }) => {
   await expectMessages(request, [text]);
 });
 
+test("optionally presses Enter after sending text", async ({ page, request }) => {
+  const sender = new SenderPage(page);
+  await sender.open();
+  await sender.connectWebSocket();
+
+  const text = "发送后确认";
+  await page.getByLabel("Enter", { exact: true }).check();
+  await sender.input.fill(text);
+  await sender.sendButton.click();
+
+  await expect(sender.input).toHaveValue("");
+  await expectMessages(request, [text, "[Enter]"]);
+  await expect(
+    sender.recentHistory.getByText("[Enter]", { exact: true }),
+  ).toBeVisible();
+});
+
 test("keeps Enter as a newline in multiline mode and honors copy-only control", async ({
   context,
   page,

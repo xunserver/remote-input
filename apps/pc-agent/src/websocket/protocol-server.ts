@@ -8,6 +8,7 @@ import {
 } from "@remote-input/protocol";
 import {
   inputStatusMethod,
+  parseKeyCommand,
   parseInputCommand,
   type InputStatus,
 } from "@remote-input/sdk";
@@ -101,6 +102,23 @@ export class RemoteWebSocketServer {
       await this.options.acceptInput(
         "websocket",
         parseInputCommand(payload),
+        (status) => this.notifyInputStatus(session, status),
+      );
+    });
+
+    session.registerHandler("sendKey", async (payload) => {
+      await this.options.acceptInput(
+        "websocket",
+        parseKeyCommand(payload),
+        (status) => this.notifyInputStatus(session, status),
+      );
+      return null;
+    });
+
+    session.registerNotificationHandler("sendKey", async (payload) => {
+      await this.options.acceptInput(
+        "websocket",
+        parseKeyCommand(payload),
         (status) => this.notifyInputStatus(session, status),
       );
     });

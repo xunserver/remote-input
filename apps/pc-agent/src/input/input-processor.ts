@@ -1,10 +1,15 @@
 import { applyClipboardInput } from "../clipboard.js";
+import { pressKeyboardKey } from "../keyboard.js";
 import type { InputProcessor } from "./input-queue.js";
 
 export type InputMode = "paste" | "dev";
 
 export function createInputProcessor(mode: InputMode): InputProcessor {
-  return mode === "dev" ? printReceivedText : applyClipboardInput;
+  if (mode === "dev") return printReceivedText;
+  return (command, onStage) =>
+    "key" in command
+      ? pressKeyboardKey(command, onStage)
+      : applyClipboardInput(command, onStage);
 }
 
 export function printReceivedText(
@@ -12,8 +17,9 @@ export function printReceivedText(
 ): Promise<void> {
   console.log(
     `Received input: ${JSON.stringify({
-      text: command.text,
-      control: command.control,
+      ...("key" in command
+        ? { key: command.key }
+        : { text: command.text, control: command.control }),
     })}`,
   );
   return Promise.resolve();

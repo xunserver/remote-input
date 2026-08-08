@@ -40,6 +40,28 @@ test("sendText responds only after the shared input service completes", async (c
   assert.equal(await response, null);
 });
 
+test("sendKey accepts supported keyboard keys", async (context) => {
+  const accepted = [];
+  const fixture = await createFixture(async (source, input) => {
+    accepted.push([source, input]);
+  });
+  context.after(() => fixture.close());
+  const client = await fixture.connectClient();
+
+  assert.equal(await client.session.request("sendKey", {
+    key: "Enter",
+    operationId: "key-1",
+  }), null);
+  assert.deepEqual(accepted, [[
+    "websocket",
+    { key: "Enter", operationId: "key-1" },
+  ]]);
+  await assert.rejects(
+    client.session.request("sendKey", { key: "Unsupported" }),
+    isHandlerError,
+  );
+});
+
 test("invalid payloads and input failures remain protocol errors", async (context) => {
   const fixture = await createFixture(async (_source, text) => {
     if (text === "fail") throw new Error("private detail");
@@ -98,7 +120,11 @@ async function createFixture(acceptText) {
   const protocolServer = new RemoteWebSocketServer({
     server,
     acceptInput: (source, command, onStatus) =>
-      acceptText(source, command.text, onStatus),
+      acceptText(
+        source,
+        "text" in command ? command.text : command,
+        onStatus,
+      ),
     runtimeStatus,
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

@@ -27,6 +27,7 @@ const {
   openConnectionSettings,
   closeConnectionSettings,
   sendInput,
+  sendKey,
   clearHistory,
 } = useRemoteInput();
 </script>
@@ -57,6 +58,7 @@ const {
           :connection-state="connectionState"
           :is-busy="isBusy"
           :on-send="sendInput"
+          :on-send-key="sendKey"
         />
         <InputHistory
           :history="history"

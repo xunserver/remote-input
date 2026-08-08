@@ -2,6 +2,25 @@ import type { JsonValue } from "@remote-input/protocol";
 
 export const inputStatusMethod = "inputStatus";
 
+export const keyboardKeys = [
+  "Enter",
+  "Backspace",
+  "Tab",
+  "Escape",
+  "Delete",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+  "Space",
+] as const;
+
+export type KeyboardKey = (typeof keyboardKeys)[number];
+
 export type InputControl = {
   paste: boolean;
   restoreClipboard: boolean;
@@ -17,11 +36,19 @@ export type InputCommand = {
   control: InputControl;
 };
 
+export type KeyCommand = {
+  operationId?: string;
+  key: KeyboardKey;
+};
+
+export type RemoteInputCommand = InputCommand | KeyCommand;
+
 export type InputStatusStage =
   | "queued"
   | "processing"
   | "copied"
   | "pasted"
+  | "key_pressed"
   | "clipboard_restored"
   | "succeeded"
   | "failed";
@@ -48,6 +75,42 @@ export function createSendTextPayload(
       paste: options.paste ?? true,
       restoreClipboard: options.restoreClipboard ?? false,
     },
+  };
+}
+
+export function createSendKeyPayload(
+  key: KeyboardKey,
+  operationId?: string,
+): JsonValue {
+  if (!isKeyboardKey(key)) {
+    throw new TypeError("sendKey requires a supported keyboard key.");
+  }
+  return {
+    key,
+    ...(operationId === undefined ? {} : { operationId }),
+  };
+}
+
+export function parseKeyCommand(payload: JsonValue): KeyCommand {
+  if (
+    !isRecord(payload) ||
+    !isKeyboardKey(payload.key) ||
+    Object.keys(payload).some(
+      (key) => key !== "key" && key !== "operationId",
+    )
+  ) {
+    throw new TypeError("sendKey payload must contain a supported key.");
+  }
+  const operationId = payload.operationId;
+  if (
+    operationId !== undefined &&
+    (typeof operationId !== "string" || operationId.length === 0)
+  ) {
+    throw new TypeError("sendKey operationId must be a non-empty string.");
+  }
+  return {
+    key: payload.key,
+    ...(operationId === undefined ? {} : { operationId }),
   };
 }
 
@@ -123,10 +186,16 @@ function isInputStatusStage(value: unknown): value is InputStatusStage {
     value === "processing" ||
     value === "copied" ||
     value === "pasted" ||
+    value === "key_pressed" ||
     value === "clipboard_restored" ||
     value === "succeeded" ||
     value === "failed"
   );
+}
+
+export function isKeyboardKey(value: unknown): value is KeyboardKey {
+  return typeof value === "string" &&
+    (keyboardKeys as readonly string[]).includes(value);
 }
 
 function isRecord(value: unknown): value is Record<string, JsonValue> {

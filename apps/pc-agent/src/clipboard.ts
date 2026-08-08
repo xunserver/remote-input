@@ -1,9 +1,14 @@
 import { spawn } from "node:child_process";
-import type { InputProcessor } from "./input/input-queue.js";
+import type { InputCommand, InputStatusStage } from "@remote-input/sdk";
 
 const clipboardRestoreDelayMs = 200;
 
-export const applyClipboardInput: InputProcessor = async (
+export type TextInputProcessor = (
+  command: InputCommand,
+  onStage: (stage: InputStatusStage, message: string) => void,
+) => Promise<void>;
+
+export const applyClipboardInput: TextInputProcessor = async (
   command,
   onStage,
 ) => {
@@ -23,40 +28,40 @@ export function createClipboardInputProcessor(
   clipboard: ClipboardIO,
   paste: () => Promise<void> = pasteFromClipboard,
   wait: (milliseconds: number) => Promise<void> = delay,
-): InputProcessor {
+): TextInputProcessor {
   return async (command, onStage) => {
-  const previous = command.control.restoreClipboard
-    ? await clipboard.read()
-    : undefined;
-  let inputError: unknown;
-  try {
-    await clipboard.write(command.text);
-    onStage("copied", "文字已复制到接收端剪贴板。");
-    if (command.control.paste) {
-      await paste();
-      onStage("pasted", "接收端已触发系统粘贴。");
-    }
-  } catch (error) {
-    inputError = error;
-  } finally {
-    if (previous !== undefined) {
+    const previous = command.control.restoreClipboard
+      ? await clipboard.read()
+      : undefined;
+    let inputError: unknown;
+    try {
+      await clipboard.write(command.text);
+      onStage("copied", "文字已复制到接收端剪贴板。");
       if (command.control.paste) {
-        await wait(clipboardRestoreDelayMs);
+        await paste();
+        onStage("pasted", "接收端已触发系统粘贴。");
       }
-      try {
-        await clipboard.write(previous);
-        onStage("clipboard_restored", "接收端原剪贴板已恢复。");
-      } catch (restoreError) {
-        throw inputError === undefined
-          ? restoreError
-          : new AggregateError(
-              [inputError, restoreError],
-              "输入失败，且原剪贴板未能恢复。",
-            );
+    } catch (error) {
+      inputError = error;
+    } finally {
+      if (previous !== undefined) {
+        if (command.control.paste) {
+          await wait(clipboardRestoreDelayMs);
+        }
+        try {
+          await clipboard.write(previous);
+          onStage("clipboard_restored", "接收端原剪贴板已恢复。");
+        } catch (restoreError) {
+          throw inputError === undefined
+            ? restoreError
+            : new AggregateError(
+                [inputError, restoreError],
+                "输入失败，且原剪贴板未能恢复。",
+              );
+        }
       }
     }
-  }
-  if (inputError !== undefined) throw inputError;
+    if (inputError !== undefined) throw inputError;
   };
 }
 

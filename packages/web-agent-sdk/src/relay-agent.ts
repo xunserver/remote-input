@@ -14,9 +14,10 @@ import {
 } from "@remote-input/protocol";
 import {
   inputStatusMethod,
+  parseKeyCommand,
   parseInputCommand,
-  type InputCommand,
   type InputStatus,
+  type RemoteInputCommand,
 } from "@remote-input/sdk";
 
 export interface HidChannel {
@@ -30,7 +31,7 @@ export interface ReceivedTextContext {
 }
 
 export type TextProcessor = (
-  command: InputCommand,
+  command: RemoteInputCommand,
   context: ReceivedTextContext,
   onStatus: (status: InputStatus) => void,
 ) => Promise<void> | void;
@@ -83,7 +84,7 @@ export class RelayAgent {
     request: RequestMessage | NotificationMessage,
     transferId: number,
   ): Promise<void> {
-    const command = readSendText(request);
+    const command = readInputCommand(request);
     await this.processText(
       command,
       {
@@ -121,16 +122,19 @@ export class RelayAgent {
   }
 }
 
-function readSendText(
+function readInputCommand(
   request: RequestMessage | NotificationMessage,
-): InputCommand {
-  if (
-    request.method !== "sendText" ||
-    !request.payload
-  ) {
+): RemoteInputCommand {
+  if (!request.payload) {
     throw new Error(
-      "Unsupported input message; expected sendText.",
+      "Input message payload is required.",
     );
   }
-  return parseInputCommand(request.payload);
+  if (request.method === "sendText") {
+    return parseInputCommand(request.payload);
+  }
+  if (request.method === "sendKey") {
+    return parseKeyCommand(request.payload);
+  }
+  throw new Error("Unsupported input message; expected sendText or sendKey.");
 }

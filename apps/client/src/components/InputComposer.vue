@@ -25,6 +25,7 @@ import { Spinner } from "@shadcn/spinner";
 import { Textarea } from "@shadcn/textarea";
 import type { ConnectionState } from "@/types/remote-input";
 import type { InputControl } from "@remote-input/sdk";
+import type { KeyboardKey } from "@remote-input/sdk";
 
 type InputMode = "single" | "multi";
 
@@ -32,7 +33,25 @@ type InputComposerProps = {
   connectionState: ConnectionState;
   isBusy: boolean;
   onSend: (text: string, control: InputControl) => Promise<boolean>;
+  onSendKey: (key: KeyboardKey) => Promise<boolean>;
 };
+
+const quickKeys: { key: KeyboardKey; label: string }[] = [
+  { key: "Enter", label: "Enter" },
+  { key: "Backspace", label: "Backspace" },
+  { key: "Tab", label: "Tab" },
+  { key: "Escape", label: "Esc" },
+  { key: "Delete", label: "Delete" },
+  { key: "Home", label: "Home" },
+  { key: "End", label: "End" },
+  { key: "PageUp", label: "PgUp" },
+  { key: "PageDown", label: "PgDn" },
+  { key: "ArrowLeft", label: "←" },
+  { key: "ArrowUp", label: "↑" },
+  { key: "ArrowDown", label: "↓" },
+  { key: "ArrowRight", label: "→" },
+  { key: "Space", label: "Space" },
+];
 
 const props = defineProps<InputComposerProps>();
 const mode = ref<InputMode>("single");
@@ -40,6 +59,7 @@ const text = ref("");
 const sendInFlight = ref(false);
 const paste = ref(true);
 const restoreClipboard = ref(true);
+const sendEnterAfterText = ref(false);
 
 const isReady = computed(() => props.connectionState === "ready");
 const isSending = computed(() => props.isBusy || sendInFlight.value);
@@ -60,11 +80,15 @@ async function send(): Promise<void> {
 
   sendInFlight.value = true;
   try {
-    if (await props.onSend(text.value, {
+    const sent = await props.onSend(text.value, {
       paste: paste.value,
       restoreClipboard: restoreClipboard.value,
-    })) {
+    });
+    if (sent) {
       text.value = "";
+      if (sendEnterAfterText.value) {
+        await props.onSendKey("Enter");
+      }
     }
   } finally {
     sendInFlight.value = false;
@@ -201,22 +225,60 @@ function handleKeyDown(event: KeyboardEvent): void {
               : "请先完成对端连接"
           }}
         </p>
-        <Button
-          data-testid="send-button"
-          size="lg"
-          class="h-12 w-full sm:w-auto sm:min-w-32"
-          :disabled="!canSend"
-          @click="send"
-        >
-          <Spinner v-if="isSending" data-icon="inline-start" />
-          <SendHorizonal
-            v-else
-            data-icon="inline-start"
-            aria-hidden="true"
-          />
-          {{ isSending ? "发送中" : "发送" }}
-        </Button>
+        <div class="flex w-full items-center gap-3 sm:w-auto">
+          <label
+            for="send-enter-after-text"
+            class="flex shrink-0 cursor-pointer items-center gap-2 text-sm"
+          >
+            <input
+              id="send-enter-after-text"
+              v-model="sendEnterAfterText"
+              type="checkbox"
+              class="size-4 shrink-0 accent-foreground"
+              :disabled="!isReady || isSending"
+            />
+            <span>Enter</span>
+          </label>
+          <Button
+            data-testid="send-button"
+            size="lg"
+            class="h-12 min-w-0 flex-1 sm:min-w-32"
+            :disabled="!canSend"
+            @click="send"
+          >
+            <Spinner v-if="isSending" data-icon="inline-start" />
+            <SendHorizonal
+              v-else
+              data-icon="inline-start"
+              aria-hidden="true"
+            />
+            {{ isSending ? "发送中" : "发送" }}
+          </Button>
+        </div>
       </CardFooter>
+
+      <div class="border-t px-4 py-3 sm:px-5">
+        <div class="mb-2 flex items-center justify-between gap-3">
+          <p class="text-sm font-medium">常用按键</p>
+          <p class="text-xs text-muted-foreground">发送到当前活动窗口</p>
+        </div>
+        <div class="flex flex-wrap gap-2" role="group" aria-label="常用按键">
+          <Button
+            v-for="item in quickKeys"
+            :key="item.key"
+            type="button"
+            variant="outline"
+            size="sm"
+            class="min-w-11 font-mono"
+            :class="{ 'min-w-24': item.key === 'Backspace' || item.key === 'Space' }"
+            :disabled="!isReady || isSending"
+            :aria-label="`发送 ${item.key} 键`"
+            @click="props.onSendKey(item.key)"
+          >
+            {{ item.label }}
+          </Button>
+        </div>
+      </div>
     </Card>
 
     <DialogContent

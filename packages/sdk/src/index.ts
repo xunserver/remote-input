@@ -1,8 +1,12 @@
 export { Client } from "./client.js";
 export type { ClientOptions } from "./client.js";
 export {
+  createSendKeyPayload,
   createSendTextPayload,
   inputStatusMethod,
+  isKeyboardKey,
+  keyboardKeys,
+  parseKeyCommand,
   parseInputCommand,
   parseInputStatus,
 } from "./input.js";
@@ -12,6 +16,9 @@ export type {
   InputStatus,
   InputStatusListener,
   InputStatusStage,
+  KeyboardKey,
+  KeyCommand,
+  RemoteInputCommand,
   SendTextOptions,
 } from "./input.js";
 

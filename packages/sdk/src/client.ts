@@ -11,9 +11,11 @@ import {
   type Transport,
 } from "@remote-input/protocol";
 import {
+  createSendKeyPayload,
   createSendTextPayload,
   inputStatusMethod,
   parseInputStatus,
+  type KeyboardKey,
   type InputStatusListener,
   type SendTextOptions,
 } from "./input.js";
@@ -86,6 +88,28 @@ export class Client {
       "sendText",
       createSendTextPayload(text, options),
     );
+  }
+
+  sendKey(key: KeyboardKey, operationId?: string): Promise<JsonValue> {
+    try {
+      return this.#session.request(
+        "sendKey",
+        createSendKeyPayload(key, operationId),
+      );
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
+  sendKeyUnconfirmed(key: KeyboardKey, operationId?: string): Promise<void> {
+    try {
+      return this.#session.notify(
+        "sendKey",
+        createSendKeyPayload(key, operationId),
+      );
+    } catch (error) {
+      return Promise.reject(error);
+    }
   }
 
   request(method: string, payload: JsonValue): Promise<JsonValue> {

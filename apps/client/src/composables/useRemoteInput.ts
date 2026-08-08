@@ -13,6 +13,7 @@ import {
   sdkErrorCodes,
   type InputControl,
   type InputStatus,
+  type KeyboardKey,
 } from "@remote-input/sdk";
 import {
   isInputBusy,
@@ -528,6 +529,105 @@ export function useRemoteInput() {
     }
   }
 
+  async function sendKey(key: KeyboardKey): Promise<boolean> {
+    const targetRuntime = runtime;
+    if (
+      operationInFlight.value ||
+      connectionState.value !== "ready" ||
+      !targetRuntime
+    ) {
+      return false;
+    }
+
+    operationInFlight.value = true;
+    clearBluetoothStatusTimeout();
+    const targetOperationEpoch = ++operationEpoch;
+    const operationId = createOperationId();
+    const processing: OperationStatus = {
+      operationId,
+      revision: 0,
+      state: "processing",
+      stage: "sending",
+      progress: 50,
+      message: `正在发送 ${key} 按键。`,
+    };
+    currentOperation.value = processing;
+    lastError.value = "";
+    history.value = [
+      {
+        id: operationId,
+        text: `[${key}]`,
+        sentAt: new Date().toISOString(),
+        status: processing.state,
+        stage: processing.stage,
+        message: processing.message,
+        progress: processing.progress,
+      },
+      ...history.value,
+    ].slice(0, maxHistoryItems);
+
+    try {
+      if (targetRuntime.method === "bluetooth") {
+        await targetRuntime.client.sendKeyUnconfirmed(key, operationId);
+        if (operationEpoch !== targetOperationEpoch) return false;
+        const operation = currentOperation.value;
+        if (!operation || operation.operationId !== operationId) return false;
+        if (operation.state === "failed") return false;
+        if (operation.state === "succeeded") {
+          clearBluetoothStatusTimeout();
+          return true;
+        }
+        if (operation.revision === 0) {
+          const waiting: OperationStatus = {
+            ...processing,
+            revision: 1,
+            stage: "sent",
+            progress: 20,
+            message: "按键已发送，等待接收端状态通知。",
+          };
+          currentOperation.value = waiting;
+          updateHistory(history, waiting);
+        }
+        armBluetoothStatusTimeout(operationId);
+        return true;
+      }
+
+      await targetRuntime.client.sendKey(key, operationId);
+      if (operationEpoch !== targetOperationEpoch) return false;
+      const succeeded: OperationStatus = {
+        ...processing,
+        revision: 1,
+        state: "succeeded",
+        stage: "done",
+        progress: 100,
+        message: `接收端已按下 ${key}。`,
+      };
+      currentOperation.value = succeeded;
+      updateHistory(history, succeeded);
+      return true;
+    } catch (error) {
+      clearBluetoothStatusTimeout();
+      if (operationEpoch !== targetOperationEpoch) return false;
+      const message = formatRequestError(error);
+      const failed: OperationStatus = {
+        ...processing,
+        revision: 1,
+        state: "failed",
+        stage: "failed",
+        progress: 100,
+        message,
+      };
+      currentOperation.value = failed;
+      if (runtime === targetRuntime) lastError.value = message;
+      updateHistory(history, failed);
+      return false;
+    } finally {
+      if (operationEpoch === targetOperationEpoch) {
+        operationInFlight.value = false;
+      }
+    }
+  }
+
   onUnmounted(() => {
     disposeRuntime();
   });
@@ -557,6 +657,7 @@ export function useRemoteInput() {
       settingsOpen.value = false;
     },
     sendInput,
+    sendKey,
     clearHistory: () => {
       history.value = [];
     },

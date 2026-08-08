@@ -3,13 +3,13 @@ import {
   type ReceivedMessage,
 } from "../messages/message-store.js";
 import type {
-  InputCommand,
   InputStatus,
   InputStatusStage,
+  RemoteInputCommand,
 } from "@remote-input/sdk";
 
 type InputJob = {
-  command: InputCommand;
+  command: RemoteInputCommand;
   message: ReceivedMessage;
   onStatus?: (status: InputStatus) => void;
   resolve: () => void;
@@ -17,7 +17,7 @@ type InputJob = {
 };
 
 export type InputProcessor = (
-  command: InputCommand,
+  command: RemoteInputCommand,
   onStage: (stage: InputStatusStage, message: string) => void,
 ) => Promise<void>;
 
@@ -41,7 +41,7 @@ export class InputQueue {
 
   enqueue(
     message: ReceivedMessage,
-    command: InputCommand,
+    command: RemoteInputCommand,
     onStatus?: (status: InputStatus) => void,
   ): Promise<void> {
     emitStatus(command, onStatus, "queued", 10, "输入已进入接收队列。");
@@ -99,9 +99,11 @@ export class InputQueue {
           job.onStatus,
           "succeeded",
           100,
-          job.command.control.paste
-            ? "接收端已完成输入。"
-            : "接收端已复制到剪贴板。",
+          "key" in job.command
+            ? `接收端已按下 ${job.command.key}。`
+            : job.command.control.paste
+              ? "接收端已完成输入。"
+              : "接收端已复制到剪贴板。",
         );
         job.resolve();
       } catch (error) {
@@ -125,7 +127,7 @@ export class InputQueue {
 }
 
 function emitStatus(
-  command: InputCommand,
+  command: RemoteInputCommand,
   listener: ((status: InputStatus) => void) | undefined,
   stage: InputStatusStage,
   progress: number,
@@ -143,6 +145,7 @@ function emitStatus(
 function stageProgress(stage: InputStatusStage): number {
   if (stage === "copied") return 50;
   if (stage === "pasted") return 75;
+  if (stage === "key_pressed") return 75;
   if (stage === "clipboard_restored") return 90;
   return 25;
 }

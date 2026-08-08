@@ -70,6 +70,34 @@ test("sendText maps to the documented request shape", async () => {
   });
 });
 
+test("sendKey supports confirmed and unconfirmed keyboard commands", async () => {
+  const transport = new TestTransport();
+  const client = new Client({ transport });
+
+  assert.deepEqual(await client.sendKey("Enter", "key-1"), {
+    echoed: { key: "Enter", operationId: "key-1" },
+  });
+  await client.sendKeyUnconfirmed("Backspace", "key-2");
+
+  assert.deepEqual(transport.sent, [
+    {
+      type: "request",
+      requestId: 1,
+      method: "sendKey",
+      payload: { key: "Enter", operationId: "key-1" },
+    },
+    {
+      type: "notify",
+      method: "sendKey",
+      payload: { key: "Backspace", operationId: "key-2" },
+    },
+  ]);
+  await assert.rejects(
+    client.sendKey("Unsupported"),
+    /supported keyboard key/,
+  );
+});
+
 test("sendTextUnconfirmed completes after Transport.send without waiting for a Response", async () => {
   const transport = new TestTransport();
   transport.send = (message, options) => {

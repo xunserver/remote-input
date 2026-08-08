@@ -68,6 +68,20 @@ function emitRequest(device, text, transferId = 17) {
   }
 }
 
+function emitKeyRequest(device, key, transferId = 18) {
+  const request = new TextEncoder().encode(JSON.stringify({
+    type: "request",
+    requestId: 10,
+    method: "sendKey",
+    payload: { key, operationId: "key-op" },
+  }));
+  for (const frame of splitRelayMessage(transferId, request, HID_PAYLOAD_BYTES)) {
+    const report = new Uint8Array(HID_REPORT_BYTES);
+    report.set(encodeRelayFrame(frame));
+    device.emit(report);
+  }
+}
+
 test("WebHidAgent receives UTF-8 text from a vendor-defined collection", async () => {
   const device = new FakeDevice();
   const hid = new FakeHidNavigator();
@@ -103,6 +117,26 @@ test("WebHidAgent receives UTF-8 text from a vendor-defined collection", async (
   assert.deepEqual(states, ["connecting", "connected"]);
   await agent.close();
   assert.equal(device.opened, false);
+});
+
+test("WebHidAgent receives keyboard commands", async () => {
+  const device = new FakeDevice();
+  const hid = new FakeHidNavigator();
+  hid.requested = [device];
+  const received = [];
+  const agent = new WebHidAgent({
+    environment: { hid, isSecureContext: true },
+    onText: async (command, context) => received.push({ command, context }),
+  });
+
+  await agent.connect();
+  emitKeyRequest(device, "Backspace");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(received, [{
+    command: { key: "Backspace", operationId: "key-op" },
+    context: { requestId: 10, transferId: 18 },
+  }]);
+  await agent.close();
 });
 
 test("WebHidAgent restores authorized devices and reports physical disconnects", async () => {

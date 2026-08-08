@@ -82,7 +82,9 @@ const agent = new WebHidAgent({
     error.value = "";
     messages.value = [
       ...messages.value,
-      createWebHidHistoryMessage(command.text),
+      createWebHidHistoryMessage(
+        "key" in command ? `[${command.key}]` : command.text,
+      ),
     ].slice(-maxWebHidHistoryItems);
   },
   onError(cause) {
