@@ -96,7 +96,12 @@ test("optionally presses Enter after sending text", async ({ page, request }) =>
   await sender.connectWebSocket();
 
   const text = "发送后确认";
-  await page.getByLabel("Enter", { exact: true }).check();
+  await page.locator("#send-enter-after-text").check();
+  await expect(page.locator("#send-enter-after-text-settings")).toBeChecked();
+  await page.reload();
+  await sender.expectReady();
+  await expect(page.locator("#send-enter-after-text")).toBeChecked();
+  await expect(page.locator("#send-enter-after-text-settings")).toBeChecked();
   await sender.input.fill(text);
   await sender.sendButton.click();
 
@@ -365,6 +370,9 @@ test("exposes working send controls in the mobile settings sheet", async ({
   await page.locator("#multi-line-mode-mobile").check();
   await page.locator("#paste-after-copy-mobile").uncheck();
   await page.locator("#restore-clipboard-mobile").uncheck();
+  await page.locator("#send-enter-after-text-mobile").check();
+  await expect(page.locator("#send-enter-after-text")).toBeChecked();
+  await page.locator("#send-enter-after-text-mobile").uncheck();
   await page.getByRole("button", { name: "完成", exact: true }).click();
 
   await sender.input.fill("移动端第一行");

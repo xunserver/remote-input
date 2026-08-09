@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { SendHorizonal, SlidersHorizontal } from "@lucide/vue";
 import { Button } from "@shadcn/button";
 import {
@@ -28,6 +28,9 @@ import type { InputControl } from "@remote-input/sdk";
 import type { KeyboardKey } from "@remote-input/sdk";
 
 type InputMode = "single" | "multi";
+
+const sendEnterAfterTextStorageKey =
+  "remote-input.send-enter-after-text";
 
 type InputComposerProps = {
   connectionState: ConnectionState;
@@ -59,7 +62,9 @@ const text = ref("");
 const sendInFlight = ref(false);
 const paste = ref(true);
 const restoreClipboard = ref(true);
-const sendEnterAfterText = ref(false);
+const sendEnterAfterText = ref(loadSendEnterAfterText());
+
+watch(sendEnterAfterText, storeSendEnterAfterText, { flush: "sync" });
 
 const isReady = computed(() => props.connectionState === "ready");
 const isSending = computed(() => props.isBusy || sendInFlight.value);
@@ -105,6 +110,25 @@ function handleKeyDown(event: KeyboardEvent): void {
     void send();
   }
 }
+
+function loadSendEnterAfterText(): boolean {
+  try {
+    return localStorage.getItem(sendEnterAfterTextStorageKey) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function storeSendEnterAfterText(enabled: boolean): void {
+  try {
+    localStorage.setItem(
+      sendEnterAfterTextStorageKey,
+      enabled ? "true" : "false",
+    );
+  } catch {
+    // 偏好保存失败不影响当前页面中的发送行为。
+  }
+}
 </script>
 
 <template>
@@ -136,7 +160,7 @@ function handleKeyDown(event: KeyboardEvent): void {
         </div>
 
         <fieldset
-          class="hidden gap-2 rounded-lg border bg-muted/30 p-2 sm:grid sm:grid-cols-3"
+          class="hidden gap-2 rounded-lg border bg-muted/30 p-2 sm:grid sm:grid-cols-4"
         >
           <legend class="sr-only">发送控制</legend>
           <label
@@ -187,6 +211,23 @@ function handleKeyDown(event: KeyboardEvent): void {
               <span class="block text-sm font-medium">保留原剪贴板</span>
               <span class="mt-0.5 block text-xs text-muted-foreground">
                 输入完成后恢复原内容
+              </span>
+            </span>
+          </label>
+          <label
+            for="send-enter-after-text-settings"
+            class="flex cursor-pointer items-start gap-3 rounded-md bg-background px-3 py-2.5"
+          >
+            <input
+              id="send-enter-after-text-settings"
+              v-model="sendEnterAfterText"
+              type="checkbox"
+              class="mt-0.5 size-4 shrink-0 accent-foreground"
+            />
+            <span class="min-w-0">
+              <span class="block text-sm font-medium">Enter</span>
+              <span class="mt-0.5 block text-xs text-muted-foreground">
+                文字输入完成后按一次 Enter
               </span>
             </span>
           </label>
@@ -343,6 +384,23 @@ function handleKeyDown(event: KeyboardEvent): void {
             <span class="block text-sm font-medium">保留原剪贴板</span>
             <span class="mt-0.5 block text-xs text-muted-foreground">
               输入完成后恢复原内容
+            </span>
+          </span>
+        </label>
+        <label
+          for="send-enter-after-text-mobile"
+          class="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3"
+        >
+          <input
+            id="send-enter-after-text-mobile"
+            v-model="sendEnterAfterText"
+            type="checkbox"
+            class="mt-0.5 size-4 shrink-0 accent-foreground"
+          />
+          <span>
+            <span class="block text-sm font-medium">Enter</span>
+            <span class="mt-0.5 block text-xs text-muted-foreground">
+              文字输入完成后按一次 Enter
             </span>
           </span>
         </label>
